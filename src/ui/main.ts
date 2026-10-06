@@ -129,18 +129,12 @@ function renderConnect() {
     </div>
     <div class="card">
       <h2>Device settings</h2>
-      ${settings.dimensionsVerified ? '' : '<p class="warn">Dimensions are unverified defaults (this hat: 32×16). Confirm on the hat before trusting them.</p>'}
-      <div class="row">
-        <div><label for="s-w">Width</label><input id="s-w" type="number" min="1" max="256" value="${settings.width}" /></div>
-        <div><label for="s-h">Height</label><input id="s-h" type="number" min="1" max="256" value="${settings.height}" /></div>
-      </div>
       <label for="s-rot">Rotation</label>
       <select id="s-rot">${[0, 90, 180, 270].map((r) => `<option ${r === settings.transform.rotation ? 'selected' : ''}>${r}</option>`).join('')}</select>
       <label><input type="checkbox" id="s-mh" ${settings.transform.mirrorH ? 'checked' : ''}/> Mirror horizontally</label>
       <label><input type="checkbox" id="s-mv" ${settings.transform.mirrorV ? 'checked' : ''}/> Mirror vertically</label>
-      <label><input type="checkbox" id="s-ver" ${settings.dimensionsVerified ? 'checked' : ''}/> Dimensions verified on my hat</label>
       <div class="row">
-        <div><label for="s-chunk">Chunk bytes (spike: 8)</label><input id="s-chunk" type="number" min="1" max="512" value="${settings.chunkSize}" /></div>
+        <div><label for="s-chunk">Chunk bytes</label><input id="s-chunk" type="number" min="1" max="512" value="${settings.chunkSize}" /></div>
         <div><label for="s-delay">Write delay ms</label><input id="s-delay" type="number" min="0" max="1000" value="${settings.interWriteDelayMs}" /></div>
       </div>
       <p class="small">Chunk size and delay apply on the next connection. Only raise them after testing on the hat.</p>
@@ -170,11 +164,8 @@ function renderConnect() {
   const readSettings = () => {
     settings = {
       ...settings,
-      width: clampInt($<HTMLInputElement>('#s-w').value, 1, 256, settings.width),
-      height: clampInt($<HTMLInputElement>('#s-h').value, 1, 256, settings.height),
       chunkSize: clampInt($<HTMLInputElement>('#s-chunk').value, 1, 512, settings.chunkSize),
       interWriteDelayMs: clampInt($<HTMLInputElement>('#s-delay').value, 0, 1000, settings.interWriteDelayMs),
-      dimensionsVerified: $<HTMLInputElement>('#s-ver').checked,
       transform: {
         rotation: Number($<HTMLSelectElement>('#s-rot').value) as 0 | 90 | 180 | 270,
         mirrorH: $<HTMLInputElement>('#s-mh').checked, mirrorV: $<HTMLInputElement>('#s-mv').checked,
@@ -183,7 +174,7 @@ function renderConnect() {
     persistSettings();
     void refreshPreview();
   };
-  root.querySelectorAll('#s-w,#s-h,#s-rot,#s-mh,#s-mv,#s-ver,#s-chunk,#s-delay').forEach((e) => e.addEventListener('change', readSettings));
+  root.querySelectorAll('#s-rot,#s-mh,#s-mv,#s-chunk,#s-delay').forEach((e) => e.addEventListener('change', readSettings));
   renderStatus();
 }
 
@@ -239,7 +230,7 @@ function renderCreate() {
       <select id="c-kind"><option value="text">Text</option><option value="solid">Solid color</option><option value="image">Image (PNG/JPEG/GIF)</option></select>
       <div id="c-text">
         <label for="c-str">Text</label><input id="c-str" type="text" maxlength="200" value="HI" />
-        <label for="c-speed">Scroll speed (when text is too wide): <b id="c-speed-val">${DEFAULT_SPEED}</b></label>
+        <label for="c-speed">Scroll speed: <b id="c-speed-val">${DEFAULT_SPEED}</b></label>
         <input id="c-speed" type="range" min="1" max="10" step="1" value="${DEFAULT_SPEED}" />
         <p id="c-warn" class="warn small"></p>
       </div>
@@ -501,6 +492,7 @@ function setupPwa() {
 
 async function main() {
   try { settings = await loadSettings(); } catch (e) { settings = DEFAULT_SETTINGS; banner(`<b>Storage unavailable:</b> ${esc((e as Error).message)}. Presets cannot be saved.`); }
+  settings = { ...settings, width: DEFAULT_SETTINGS.width, height: DEFAULT_SETTINGS.height }; // fixed 32x16 panel
   newController();
   renderConnect();
   renderCreate();

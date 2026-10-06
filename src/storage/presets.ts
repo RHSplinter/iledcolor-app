@@ -16,7 +16,7 @@ export interface Settings {
 }
 export const DEFAULT_SETTINGS: Settings = {
   width: 32, height: 16, transform: { rotation: 0, mirrorH: false, mirrorV: false }, brightness: 8,
-  dimensionsVerified: false, chunkSize: 8, interWriteDelayMs: 10,
+  dimensionsVerified: true, chunkSize: 492, interWriteDelayMs: 1,
 };
 
 export const EXPORT_VERSION = 1;
