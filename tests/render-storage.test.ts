@@ -102,3 +102,14 @@ describe('gif encoder extras', () => {
     expect(String.fromCharCode(...gif.subarray(0, 6))).toBe('GIF89a');
   });
 });
+
+import { splitRuns } from '../src/render/segments';
+
+describe('splitRuns', () => {
+  it('separates ASCII, emoji clusters and unsupported characters', () => {
+    const r = splitRuns('Hi 👍🏽 ❤️ é');
+    expect(r.runs.map((x) => x.kind)).toEqual(['text', 'emoji', 'text', 'emoji', 'text']);
+    expect(r.runs[1]!.text).toBe('👍🏽');
+    expect(r.unsupported).toEqual(['é']);
+  });
+});
