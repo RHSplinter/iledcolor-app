@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111111" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <title>LED Hat Controller</title>
+</head>
+<body>
+  <header>
+    <div id="status" class="pill" role="status" aria-live="polite">Disconnected</div>
+    <div id="offline" class="pill muted">Checking offline…</div>
+  </header>
+  <div id="banner" hidden></div>
+  <main>
+    <section id="view-connect" class="view"></section>
+    <section id="view-create" class="view" hidden></section>
+    <section id="view-presets" class="view" hidden></section>
+  </main>
+  <nav>
+    <button data-tab="connect" aria-selected="true">Connect</button>
+    <button data-tab="create" aria-selected="false">Create</button>
+    <button data-tab="presets" aria-selected="false">Presets</button>
+  </nav>
+  <script type="module" src="/src/ui/main.ts"></script>
+</body>
+</html>

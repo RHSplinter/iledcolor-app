@@ -1,0 +1,31 @@
+:root { color-scheme: dark; --bg:#111; --fg:#eee; --card:#1c1c1e; --accent:#4da3ff; --warn:#ffb020; --bad:#ff5a5a; --ok:#4cd964; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; padding-bottom:calc(64px + env(safe-area-inset-bottom)); }
+header { display:flex; gap:8px; padding:calc(8px + env(safe-area-inset-top)) 12px 8px; position:sticky; top:0; background:var(--bg); z-index:2; flex-wrap:wrap; }
+.pill { padding:4px 10px; border-radius:99px; background:var(--card); font-size:14px; }
+.pill.ok { color:var(--ok); } .pill.err { color:var(--bad); } .pill.busy { color:var(--warn); } .muted { color:#999; }
+#banner { margin:8px 12px; padding:10px 12px; border-radius:8px; background:#2a2a1a; border:1px solid var(--warn); }
+main { padding:0 12px; max-width:560px; margin:0 auto; }
+.card { background:var(--card); border-radius:12px; padding:12px; margin:10px 0; }
+.card h2 { margin:0 0 8px; font-size:16px; }
+label { display:block; margin:8px 0 2px; font-size:14px; color:#bbb; }
+input, select, textarea, button { font:inherit; color:inherit; }
+input[type=text], input[type=number], select, textarea { width:100%; padding:8px; border-radius:8px; border:1px solid #333; background:#000; }
+input[type=color] { width:56px; height:40px; border:0; background:none; padding:0; }
+input[type=range] { width:100%; }
+button { padding:10px 14px; border-radius:10px; border:0; background:#2c2c2e; min-height:44px; }
+button.primary { background:var(--accent); color:#001; font-weight:600; }
+button.danger { background:#4a2020; }
+button:disabled { opacity:.45; }
+.row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.row > * { flex:0 1 auto; }
+canvas#preview { display:block; max-width:100%; background:#000; border:1px solid #333; margin:8px auto; }
+.warn { color:var(--warn); } .bad { color:var(--bad); } .small { font-size:13px; color:#aaa; }
+nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:#000; padding-bottom:env(safe-area-inset-bottom); border-top:1px solid #222; }
+nav button { flex:1; border-radius:0; background:none; min-height:56px; }
+nav button[aria-selected=true] { color:var(--accent); font-weight:600; }
+progress { width:100%; }
+ul.list { list-style:none; padding:0; margin:0; }
+ul.list li { display:flex; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid #2a2a2a; }
+ul.list li span { flex:1; overflow:hidden; text-overflow:ellipsis; }
+[hidden] { display:none !important; }
