@@ -1,6 +1,6 @@
 import {
   Cmd, buildConnect, buildContinueFrames, buildDimming, buildDisplayEnable, buildEndStream,
-  buildImageStream, buildStartStream, buildTestPass, parseNotification, type RgbImage,
+  buildGifStream, buildImageStream, buildStartStream, buildTestPass, parseNotification, type RgbImage,
 } from '../protocol/framing';
 import { SelectionCancelledError, SPIKE_PROFILE, type Transport, type TransportProfile } from '../transport/types';
 
@@ -151,8 +151,16 @@ export class DeviceController {
   }
 
   async upload(img: RgbImage): Promise<UploadResult> {
+    return this.uploadStream(buildImageStream(img, this.profile.maxStreamBytes));
+  }
+
+  /** Looping GIF (e.g. a scrolling marquee) played by the hat itself. */
+  async uploadGif(gif: Uint8Array, width: number, height: number): Promise<UploadResult> {
+    return this.uploadStream(buildGifStream(gif, width, height, this.profile.maxStreamBytes));
+  }
+
+  private async uploadStream({ bytes, crc }: { bytes: Uint8Array; crc: number }): Promise<UploadResult> {
     // Validate everything before any BLE write.
-    const { bytes, crc } = buildImageStream(img, this.profile.maxStreamBytes);
     const frames = buildContinueFrames(bytes, this.profile.chunkSize);
     const start = buildStartStream(crc, bytes.length);
     const end = buildEndStream();

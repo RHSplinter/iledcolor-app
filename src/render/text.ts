@@ -35,3 +35,28 @@ export function renderText(text: string, width: number, height: number, fg: Rgb,
   for (let i = 0; i < width * height; i++) pixels.set(rgba[i * 4]! >= 128 ? fg : bg, i * 3);
   return { image: { width, height, pixels }, unsupported, clipped: measured > width };
 }
+
+export interface MarqueeRender { frames: RgbImage[]; unsupported: string[] }
+
+/** Frames of text scrolling in from the right and out to the left; the hat loops them as a GIF. */
+export function renderMarquee(text: string, width: number, height: number, fg: Rgb, bg: Rgb, step = 2): MarqueeRender {
+  const unsupported = unsupportedChars(text);
+  const shown = [...text].filter((c) => !unsupported.includes(c)).join('');
+  const probe = document.createElement('canvas').getContext('2d')!;
+  probe.font = `${FONT_PX}px ${FONT_FAMILY}`;
+  const stripW = Math.max(1, Math.ceil(probe.measureText(shown).width));
+  const strip = renderText(shown, stripW, height, fg, bg).image;
+  const frames: RgbImage[] = [];
+  for (let shift = 0; shift < stripW + width; shift += step) {
+    const pixels = new Uint8Array(width * height * 3);
+    for (let i = 0; i < width * height; i++) pixels.set(bg, i * 3);
+    for (let x = 0; x < width; x++) {
+      const sx = x + shift - width;
+      if (sx < 0 || sx >= stripW) continue;
+      for (let y = 0; y < height; y++)
+        pixels.set(strip.pixels.subarray((y * stripW + sx) * 3, (y * stripW + sx) * 3 + 3), (y * width + x) * 3);
+    }
+    frames.push({ width, height, pixels });
+  }
+  return { frames, unsupported };
+}

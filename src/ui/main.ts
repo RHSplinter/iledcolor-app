@@ -4,9 +4,11 @@ import { DeviceController, DeviceError } from '../controller/deviceController';
 import type { RgbImage } from '../protocol/framing';
 import { imageToMatrix, shrinkForStorage, type Fit } from '../render/image';
 import { cornerTest, drawPreview, parseHexColor, solid, transformImage } from '../render/matrix';
-import { ensureFont, renderText } from '../render/text';
+import { encodeGif } from '../render/gif';
+import { gifToFrames, MAX_GIF_STORE_BYTES } from '../render/gifDecode';
+import { ensureFont, renderMarquee, renderText } from '../render/text';
 import { deletePreset, listPresets, loadSettings, replaceAllPresets, requestPersistence, savePreset, saveSettings } from '../storage/db';
-import { DEFAULT_SETTINGS, exportJson, parseImport, type Content, type Preset, type Settings } from '../storage/presets';
+import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, parseImport, type Content, type Preset, type Settings } from '../storage/presets';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
@@ -19,6 +21,11 @@ let controller: DeviceController;
 let deviceName = '';
 let useMock = location.hash === '#mock'; // dev/test only: in-memory hat
 let lastImage: RgbImage | null = null; // retained across disconnects
+let lastFrames: RgbImage[] | null = null; // set when the content is a marquee
+let lastDelays: number[] = [];
+let previewTimer: ReturnType<typeof setTimeout> | undefined;
+/** Scroll speed 1 (slow) .. 10 (fast) -> per-frame delay at 2 px per frame. */
+const marqueeDelay = (speed: number) => Math.round(220 / speed);
 let sendNote = '';
 let brightnessNote = '';
 let displayNote = '';
@@ -122,7 +129,7 @@ function renderConnect() {
     </div>
     <div class="card">
       <h2>Device settings</h2>
-      ${settings.dimensionsVerified ? '' : '<p class="warn">Dimensions are unverified defaults (reference panel: 16×32). Confirm on the hat before trusting them.</p>'}
+      ${settings.dimensionsVerified ? '' : '<p class="warn">Dimensions are unverified defaults (this hat: 32×16). Confirm on the hat before trusting them.</p>'}
       <div class="row">
         <div><label for="s-w">Width</label><input id="s-w" type="number" min="1" max="256" value="${settings.width}" /></div>
         <div><label for="s-h">Height</label><input id="s-h" type="number" min="1" max="256" value="${settings.height}" /></div>
@@ -229,9 +236,11 @@ function renderCreate() {
   $('#view-create').innerHTML = `
     <div class="card">
       <label for="c-kind">Content</label>
-      <select id="c-kind"><option value="text">Text</option><option value="solid">Solid color</option><option value="image">Image (PNG/JPEG)</option></select>
+      <select id="c-kind"><option value="text">Text</option><option value="solid">Solid color</option><option value="image">Image (PNG/JPEG/GIF)</option></select>
       <div id="c-text">
         <label for="c-str">Text</label><input id="c-str" type="text" maxlength="200" value="HI" />
+        <label for="c-speed">Scroll speed (when text is too wide): <b id="c-speed-val">${DEFAULT_SPEED}</b></label>
+        <input id="c-speed" type="range" min="1" max="10" step="1" value="${DEFAULT_SPEED}" />
         <p id="c-warn" class="warn small"></p>
       </div>
       <div class="row">
@@ -239,7 +248,7 @@ function renderCreate() {
         <div><label for="c-bg">Background</label><input id="c-bg" type="color" value="#000000" /></div>
       </div>
       <div id="c-image" hidden>
-        <label for="c-file">Image file</label><input id="c-file" type="file" accept="image/png,image/jpeg" />
+        <label for="c-file">Image file</label><input id="c-file" type="file" accept="image/png,image/jpeg,image/gif" />
         <label for="c-fit">Fit</label><select id="c-fit"><option>contain</option><option>cover</option><option>stretch</option></select>
         <p class="small">Transparent areas are filled with the background color.</p>
       </div>
@@ -251,15 +260,16 @@ function renderCreate() {
       <div class="row"><input id="c-name" type="text" placeholder="Preset name" maxlength="60" style="flex:1" /><button id="btn-save">Save preset</button></div>
     </div>`;
   $('#c-kind').onchange = () => { syncKind(); void refreshPreview(); };
-  ['#c-str', '#c-fg', '#c-bg', '#c-fit'].forEach((s) => ($(s).oninput = () => void refreshPreview()));
+  ['#c-str', '#c-fg', '#c-bg', '#c-fit', '#c-speed'].forEach((s) => ($(s).oninput = () => void refreshPreview()));
   $<HTMLInputElement>('#c-file').onchange = async (ev) => {
     const f = (ev.target as HTMLInputElement).files?.[0];
     if (!f) return;
     $('#c-err').textContent = '';
-    try { imageDataUrl = await shrinkForStorage(f); imageBlob = f; } catch (e) { imageBlob = null; imageDataUrl = ''; $('#c-err').textContent = (e as Error).message; }
+    try { imageDataUrl = f.type === 'image/gif' ? await gifDataUrl(f) : await shrinkForStorage(f); imageBlob = f; } catch (e) { imageBlob = null; imageDataUrl = ''; $('#c-err').textContent = (e as Error).message; }
     void refreshPreview();
   };
-  $('#btn-send').onclick = () => lastImage && sendImage(lastImage);
+  $<HTMLInputElement>('#c-speed').addEventListener('input', (e) => { $('#c-speed-val').textContent = (e.target as HTMLInputElement).value; });
+  $('#btn-send').onclick = () => (lastFrames ? sendMarquee(lastFrames, lastDelays) : lastImage && sendImage(lastImage));
   $('#btn-cancel').onclick = () => controller.cancelUpload();
   $('#btn-save').onclick = savePresetClick;
   syncKind();
@@ -277,23 +287,33 @@ function currentContent(): Content {
   const k = $<HTMLSelectElement>('#c-kind').value;
   const fg = $<HTMLInputElement>('#c-fg').value, bg = $<HTMLInputElement>('#c-bg').value;
   if (k === 'solid') return { kind: 'solid', color: fg };
-  if (k === 'text') return { kind: 'text', text: $<HTMLInputElement>('#c-str').value, fg, bg };
+  if (k === 'text') return { kind: 'text', text: $<HTMLInputElement>('#c-str').value, fg, bg, speed: Number($<HTMLInputElement>('#c-speed').value) };
   if (!imageDataUrl) throw new Error('Choose an image first.');
   return { kind: 'image', dataUrl: imageDataUrl, fit: $<HTMLSelectElement>('#c-fit').value as Fit, bg };
 }
 
-async function renderContent(c: Content): Promise<{ image: RgbImage; warnings: string[] }> {
+async function renderContent(c: Content): Promise<{ image: RgbImage; frames?: RgbImage[]; delays?: number[]; warnings: string[] }> {
   const [w, h] = logicalDims();
   if (c.kind === 'solid') return { image: physical(solid(w, h, parseHexColor(c.color))), warnings: [] };
   if (c.kind === 'text') {
     await ensureFont();
     const r = renderText(c.text, w, h, parseHexColor(c.fg), parseHexColor(c.bg));
+    if (r.clipped) { // too wide for the display: scroll it instead
+      const m = renderMarquee(c.text, w, h, parseHexColor(c.fg), parseHexColor(c.bg));
+      const frames = m.frames.map(physical);
+      const warnings = m.unsupported.length ? [`Unsupported characters skipped: ${m.unsupported.join(' ')}`] : [];
+      return { image: frames[0]!, frames, delays: frames.map(() => marqueeDelay(c.speed ?? DEFAULT_SPEED)), warnings };
+    }
     const warnings: string[] = [];
     if (r.unsupported.length) warnings.push(`Unsupported characters skipped: ${r.unsupported.join(' ')}`);
-    if (r.clipped) warnings.push('Text is wider than the display and is clipped (scrolling is not available yet).');
     return { image: physical(r.image), warnings };
   }
   const blob = imageBlob ?? (await (await fetch(c.dataUrl)).blob());
+  if (blob.type === 'image/gif') {
+    const g = await gifToFrames(blob, w, h, c.fit, parseHexColor(c.bg));
+    const frames = g.frames.map(physical);
+    return frames.length > 1 ? { image: frames[0]!, frames, delays: g.delays, warnings: [] } : { image: frames[0]!, warnings: [] };
+  }
   return { image: physical(await imageToMatrix(blob, w, h, c.fit, parseHexColor(c.bg))), warnings: [] };
 }
 
@@ -302,15 +322,28 @@ async function refreshPreview(content?: Content) {
   const canvas = document.getElementById('preview') as HTMLCanvasElement | null;
   if (!canvas) return;
   try {
-    const { image, warnings } = await renderContent(content ?? currentContent());
+    const { image, frames, delays, warnings } = await renderContent(content ?? currentContent());
     if (seq !== renderSeq) return;
     lastImage = image;
+    lastFrames = frames ?? null;
+    lastDelays = delays ?? [];
+    clearTimeout(previewTimer);
     drawPreview(canvas, image);
+    if (frames) {
+      let i = 0;
+      const tick = () => {
+        drawPreview(canvas, frames[i % frames.length]!);
+        previewTimer = setTimeout(tick, delays?.[i % frames.length] ?? 100);
+        i++;
+      };
+      tick();
+    }
     $('#c-warn').textContent = warnings.join(' ');
     $('#c-err').textContent = '';
   } catch (e) {
     if (seq !== renderSeq) return;
-    lastImage = null;
+    lastImage = null; lastFrames = null;
+    clearTimeout(previewTimer);
     $('#c-err').textContent = (e as Error).message;
   }
   updateButtons();
@@ -328,6 +361,25 @@ async function sendImage(img: RgbImage) {
     sendNote = e instanceof DeviceError && e.kind === 'cancelled' ? 'Upload cancelled.' : `Upload unconfirmed: ${(e as Error).message}`;
   }
   setNote();
+}
+async function sendMarquee(frames: RgbImage[], delays: number[]) {
+  sendNote = 'Sending animation…';
+  setNote();
+  try {
+    const gif = encodeGif(frames, delays);
+    const r = await controller.uploadGif(gif, settings.width, settings.height);
+    sendNote = r === 'confirmed' ? 'Animation upload confirmed.' : 'Sent, not confirmed.';
+  } catch (e) {
+    sendNote = e instanceof DeviceError && e.kind === 'cancelled' ? 'Upload cancelled.' : `Upload failed: ${(e as Error).message}`;
+  }
+  setNote();
+}
+async function gifDataUrl(f: File): Promise<string> {
+  if (f.size > MAX_GIF_STORE_BYTES) throw new Error('GIF is too large (limit 1 MB).');
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:image/gif;base64,${btoa(bin)}`;
 }
 function setNote() { const n = document.getElementById('send-note'); if (n) n.textContent = sendNote; }
 
@@ -406,7 +458,7 @@ function setCreateFrom(c: Content) {
   $<HTMLSelectElement>('#c-kind').value = c.kind;
   syncKind();
   if (c.kind === 'solid') $<HTMLInputElement>('#c-fg').value = c.color;
-  if (c.kind === 'text') { $<HTMLInputElement>('#c-str').value = c.text; $<HTMLInputElement>('#c-fg').value = c.fg; $<HTMLInputElement>('#c-bg').value = c.bg; }
+  if (c.kind === 'text') { $<HTMLInputElement>('#c-str').value = c.text; $<HTMLInputElement>('#c-fg').value = c.fg; $<HTMLInputElement>('#c-bg').value = c.bg; $<HTMLInputElement>('#c-speed').value = String(c.speed ?? DEFAULT_SPEED); $('#c-speed-val').textContent = $<HTMLInputElement>('#c-speed').value; }
   if (c.kind === 'image') { $<HTMLInputElement>('#c-bg').value = c.bg; $<HTMLSelectElement>('#c-fit').value = c.fit; }
 }
 

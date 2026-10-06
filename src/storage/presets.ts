@@ -3,7 +3,7 @@ import type { Transform } from '../render/matrix';
 
 export type Content =
   | { kind: 'solid'; color: string }
-  | { kind: 'text'; text: string; fg: string; bg: string }
+  | { kind: 'text'; text: string; fg: string; bg: string; speed?: number }
   | { kind: 'image'; dataUrl: string; fit: Fit; bg: string };
 
 export interface Preset { id: string; name: string; content: Content; updatedAt: number }
@@ -15,7 +15,7 @@ export interface Settings {
   chunkSize: number; interWriteDelayMs: number;
 }
 export const DEFAULT_SETTINGS: Settings = {
-  width: 16, height: 32, transform: { rotation: 0, mirrorH: false, mirrorV: false }, brightness: 8,
+  width: 32, height: 16, transform: { rotation: 0, mirrorH: false, mirrorV: false }, brightness: 8,
   dimensionsVerified: false, chunkSize: 8, interWriteDelayMs: 10,
 };
 
@@ -34,16 +34,19 @@ export function exportJson(settings: Settings, presets: Preset[]): string {
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isInt = (v: unknown, lo: number, hi: number): v is number => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
 
+export const DEFAULT_SPEED = 5;
+function speedOf(v: unknown): number { if (!isInt(v, 1, 10)) throw new Error('invalid speed'); return v; }
+
 export function validateContent(c: unknown): Content {
   if (!isObj(c)) throw new Error('content must be an object');
   const color = (v: unknown, n: string) => { if (typeof v !== 'string' || !HEX.test(v)) throw new Error(`invalid ${n}`); return v; };
   if (c.kind === 'solid') return { kind: 'solid', color: color(c.color, 'color') };
   if (c.kind === 'text') {
     if (typeof c.text !== 'string' || c.text.length > 200) throw new Error('invalid text');
-    return { kind: 'text', text: c.text, fg: color(c.fg, 'fg'), bg: color(c.bg, 'bg') };
+    return { kind: 'text', text: c.text, fg: color(c.fg, 'fg'), bg: color(c.bg, 'bg'), ...(c.speed === undefined ? {} : { speed: speedOf(c.speed) }) };
   }
   if (c.kind === 'image') {
-    if (typeof c.dataUrl !== 'string' || !/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(c.dataUrl)
+    if (typeof c.dataUrl !== 'string' || !/^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(c.dataUrl)
       || c.dataUrl.length > 1_500_000) throw new Error('invalid image data');
     if (c.fit !== 'contain' && c.fit !== 'cover' && c.fit !== 'stretch') throw new Error('invalid fit');
     return { kind: 'image', dataUrl: c.dataUrl, fit: c.fit, bg: color(c.bg, 'bg') };

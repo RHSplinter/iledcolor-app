@@ -157,6 +157,17 @@ export function buildImageStream(img: RgbImage, maxBytes = MAX_STREAM_BYTES) {
   return { bytes, crc };
 }
 
+/** Complete stream for a looping GIF using the reference's GIF metadata profile. */
+export function buildGifStream(gif: Uint8Array, width: number, height: number, maxBytes = MAX_STREAM_BYTES) {
+  const limit = Math.min(maxBytes, MAX_STREAM_BYTES);
+  const payload = new Uint8Array(METADATA_LEN + gif.length);
+  payload.set(buildImageMetadata(width, height, GIF_METADATA_DEFAULTS), 0);
+  payload.set(gif, METADATA_LEN);
+  const { bytes, crc } = wrapStream(payload);
+  if (bytes.length > limit) throw new RangeError(`encoded stream is ${bytes.length} bytes; limit is ${limit}`);
+  return { bytes, crc };
+}
+
 /** Split a stream into Continue frames. Frames are never split across writes. */
 export function buildContinueFrames(stream: Uint8Array, chunkSize: number): Uint8Array[] {
   if (!Number.isInteger(chunkSize) || chunkSize < 1) throw new RangeError('invalid chunk size');

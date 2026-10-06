@@ -73,3 +73,32 @@ describe('preset import/export', () => {
   });
   it('rejects oversized input', () => expect(() => parseImport('x'.repeat(5 * 1024 * 1024))).toThrow(/too large/));
 });
+
+import { encodeGif } from '../src/render/gif';
+import { buildGifStream } from '../src/protocol/framing';
+
+describe('gif marquee', () => {
+  const frame = (on: number) => {
+    const pixels = new Uint8Array(32 * 16 * 3);
+    pixels.set([255, 255, 255], on * 3);
+    return { width: 32, height: 16, pixels };
+  };
+  it('encodes a looping GIF89a and wraps it in a stream', () => {
+    const gif = encodeGif([frame(0), frame(5)], 60);
+    expect(String.fromCharCode(...gif.subarray(0, 6))).toBe('GIF89a');
+    expect(gif[gif.length - 1]).toBe(0x3b);
+    expect(gif[6]! | (gif[7]! << 8)).toBe(32);
+    const s = buildGifStream(gif, 32, 16);
+    expect(s.bytes.length).toBe(24 + 22 + gif.length);
+  });
+});
+
+describe('gif encoder extras', () => {
+  it('quantizes frames with more than 256 colours and accepts per-frame delays', () => {
+    const pixels = new Uint8Array(32 * 16 * 3);
+    for (let i = 0; i < pixels.length; i++) pixels[i] = (i * 37) & 255;
+    const f = { width: 32, height: 16, pixels };
+    const gif = encodeGif([f, f], [40, 80]);
+    expect(String.fromCharCode(...gif.subarray(0, 6))).toBe('GIF89a');
+  });
+});
