@@ -52,6 +52,10 @@ export async function loadSettings(): Promise<Settings> {
 }
 export const saveSettings = (s: Settings) => tx('kv', 'readwrite', (st) => { st.put(s, 'settings'); }).then(() => undefined);
 
+/** Untyped key-value access for feature settings that validate themselves (e.g. approach mode). */
+export const loadKv = (key: string) => tx<unknown>('kv', 'readonly', (s) => s.get(key));
+export const saveKv = (key: string, value: unknown) => tx('kv', 'readwrite', (st) => { st.put(value, key); }).then(() => undefined);
+
 /** Ask the browser not to evict our data; harmless if unsupported. */
 export async function requestPersistence(): Promise<boolean> {
   try { return (await navigator.storage?.persist?.()) ?? false; } catch { return false; }

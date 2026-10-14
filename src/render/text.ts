@@ -2,6 +2,7 @@ import '@fontsource/press-start-2p/latin-400.css';
 import type { RgbImage } from '../protocol/framing';
 import type { Rgb } from './matrix';
 import { splitRuns } from './segments';
+import { sliceSpan, spanStep } from './span';
 
 export const FONT_FAMILY = '"Press Start 2P"';
 export const FONT_PX = 8; // the font is designed on an 8px grid; other sizes blur
@@ -62,6 +63,13 @@ export function renderText(text: string, width: number, height: number, fg: Rgb,
 }
 
 export interface MarqueeRender { frames: RgbImage[]; unsupported: string[] }
+
+/** Frames for cap `index` of a marquee spanning `total` caps side by side, plus the step used. */
+export function renderSpanMarquee(text: string, width: number, height: number, total: number, index: number, fg: Rgb, bg: Rgb): MarqueeRender & { step: number } {
+  const { strip, unsupported } = renderStrip(text, height, fg, bg);
+  const step = spanStep(strip.width, width, total);
+  return { frames: sliceSpan(strip, width, total, index, bg, step), unsupported, step };
+}
 
 /** Frames of text scrolling in from the right and out to the left; the hat loops them as a GIF. */
 export function renderMarquee(text: string, width: number, height: number, fg: Rgb, bg: Rgb, step = 2): MarqueeRender {

@@ -29,3 +29,7 @@ ul.list { list-style:none; padding:0; margin:0; }
 ul.list li { display:flex; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid #2a2a2a; }
 ul.list li span { flex:1; overflow:hidden; text-overflow:ellipsis; }
 [hidden] { display:none !important; }
+
+fieldset.tier { border:1px solid #333; border-radius:8px; margin:0 0 12px; padding:8px 12px; }
+fieldset.tier legend { padding:0 6px; font-weight:600; }
+.pill.muted { opacity:.6; }

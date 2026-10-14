@@ -12,6 +12,9 @@ import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, parseImport, type Content,
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
+import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
+import { isNativeApp, platformName } from '../platform';
+import { approachCapIds, initApproach, renderApproach } from '../approach/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -19,6 +22,8 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 let settings: Settings;
 let controller: DeviceController;
 let deviceName = '';
+let connectedDeviceId: string | null = null; // native only: lets approach mode take over this cap
+const native = isNativeApp();
 let useMock = location.hash === '#mock'; // dev/test only: in-memory hat
 let lastImage: RgbImage | null = null; // retained across disconnects
 let lastFrames: RgbImage[] | null = null; // set when the content is a marquee
@@ -94,7 +99,7 @@ function banner(html: string | null) {
 // ---------- Connect view ---------------------------------------------------------
 
 function renderConnect() {
-  const sup = bluetoothSupport();
+  const sup: ReturnType<typeof bluetoothSupport> = native ? { ok: true } : bluetoothSupport();
   const root = $('#view-connect');
   root.innerHTML = `
     <div class="card">
@@ -190,8 +195,17 @@ function persistSettings() {
 async function onConnect() {
   newController();
   deviceName = '';
+  connectedDeviceId = null;
   await controller.connect(async () => {
     if (useMock) { deviceName = 'mock'; return new MockTransport(); }
+    if (native) {
+      const d = await chooseNativeCap();
+      if (approachCapIds().includes(d.deviceId)) throw new Error('This cap is used by approach mode. Remove it there first.');
+      deviceName = d.name;
+      const t = await connectNativeCap(d.deviceId);
+      connectedDeviceId = d.deviceId;
+      return t;
+    }
     const sup = bluetoothSupport();
     if (!sup.ok) throw new Error(sup.reason);
     const r = await connectWebBluetooth();
@@ -457,12 +471,14 @@ function setCreateFrom(c: Content) {
 
 function showTab(name: string) {
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  for (const v of ['connect', 'create', 'presets']) $(`#view-${v}`).hidden = v !== name;
+  for (const v of ['connect', 'create', 'presets', 'approach']) $(`#view-${v}`).hidden = v !== name;
   if (name === 'presets') void renderPresets();
+  if (name === 'approach') renderApproach();
 }
 
 function setupPwa() {
   const offline = $('#offline');
+  if (native) { offline.textContent = platformName() === 'ios' ? 'iOS app' : 'Android app'; offline.className = 'pill ok'; return; }
   const updateSW = registerSW({
     onOfflineReady() { offline.textContent = 'Ready for offline use'; offline.className = 'pill ok'; },
     onNeedRefresh() {
@@ -490,10 +506,34 @@ function setupPwa() {
     setTimeout(() => { const h = document.getElementById('install-help'); if (h && !deferred) h.hidden = false; }, 1500);
 }
 
+function approachContext(): Parameters<typeof initApproach>[0] {
+  return {
+    native, mock: useMock,
+    profile: () => profileFor(settings),
+    logicalDims, physical, marqueeDelay, trace,
+    renderContent: (c) => renderContent(c),
+    chooseCap: () => chooseNativeCap(),
+    connectCap: (id) => connectNativeCap(id),
+    readRssi: (id) => readCapRssi(id),
+    startScan: (cb) => (native ? startNativeScan((r) => cb({ deviceId: r.device.deviceId, name: r.localName ?? r.device.name, rssi: r.rssi, uuids: r.uuids })) : Promise.resolve()),
+    stopScan: () => (native ? stopNativeScan() : Promise.resolve()),
+    releaseConnectTabCap(deviceId) {
+      if (controller.state !== 'Ready' || !connectedDeviceId || (deviceId && deviceId !== connectedDeviceId)) return null;
+      const handed = { deviceId: connectedDeviceId, name: deviceName, controller };
+      newController();
+      connectedDeviceId = null;
+      deviceName = '';
+      renderStatus();
+      return handed;
+    },
+  };
+}
+
 async function main() {
   try { settings = await loadSettings(); } catch (e) { settings = DEFAULT_SETTINGS; banner(`<b>Storage unavailable:</b> ${esc((e as Error).message)}. Presets cannot be saved.`); }
   settings = { ...settings, width: DEFAULT_SETTINGS.width, height: DEFAULT_SETTINGS.height }; // fixed 32x16 panel
   newController();
+  await initApproach(approachContext());
   renderConnect();
   renderCreate();
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));

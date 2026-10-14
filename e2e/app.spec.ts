@@ -40,3 +40,20 @@ test('rejects a corrupt preset import visibly', async ({ page }) => {
   await page.setInputFiles('#p-import', { name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{nope') });
   await expect(page.locator('#p-msg')).toContainText('Import failed');
 });
+
+test('approach mode (mock): two caps greet each other, peers grow the group', async ({ page }) => {
+  await page.goto('/#mock');
+  await page.click('nav button[data-tab=approach]');
+  await page.click('#ap-add');
+  await page.click('#ap-add');
+  await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(2);
+  await page.fill('#ap-settle', '0');
+  await page.locator('#ap-settle').dispatchEvent('change');
+  await page.click('#ap-start');
+  await expect(page.locator('#ap-status')).toContainText('2 caps', { timeout: 15_000 });
+  await expect(page.locator('#ap-caps')).toContainText('Hi ', { timeout: 15_000 });
+  await page.click('#ap-sim-peer');
+  await page.click('#ap-sim-peer');
+  await expect(page.locator('#ap-status')).toContainText('4 caps', { timeout: 15_000 });
+  await expect(page.locator('#ap-caps')).toContainText('span', { timeout: 15_000 });
+});
