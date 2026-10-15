@@ -40,6 +40,11 @@ Both use the same Approach tab and engine; only the setup differs.
 For a P2P spanned marquee all phones must use the same tier text/colours/speed, because each phone renders its
 own slice locally. Slice order follows phone IDs (not physical left/right) and start times are only roughly aligned.
 
+Hardware check (Pixel 9 Pro, release APK, one cap per phone): with only cap A connected, the phone grouped the
+still-unconnected cap B (2 caps → greeting uploaded to cap A). Connecting cap B elsewhere (it stops advertising, as when
+another phone takes it) returned cap A to the solo content after ~9 s; releasing cap B brought the greeting back after
+~7 s. The phone-to-phone beacon path is covered by unit and mock tests; it still needs a run with two app phones.
+
 ### Proximity and grouping
 
 - RSSI is smoothed with an exponential moving average. The app uses hysteresis with defaults: **near ≥ -70 dBm** and **away < -80 dBm**. These thresholds can be set in the app. Entries without updates expire after 8 s.
