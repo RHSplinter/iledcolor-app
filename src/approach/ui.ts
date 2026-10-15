@@ -431,6 +431,7 @@ export function renderApproach() {
   const hub = settings.mode === 'hub';
   root.innerHTML = `
     <div class="card">
+      <label class="switch"><input type="checkbox" role="switch" id="ap-start" ${running ? 'checked' : ''} ${available && !switching ? '' : 'disabled'} /> Approach mode ${running ? 'on' : 'off'}</label>
       <h2>Approach mode</h2>
       ${available ? '' : '<p class="warn">Approach mode needs the Android or iOS app (BLE scanning, several cap connections and a phone beacon are not available to web apps).</p>'}
       ${ctx.mock ? '<p class="warn">Mock mode: caps and nearby phones are simulated; use the RSSI sliders.</p>' : ''}
@@ -443,7 +444,6 @@ export function renderApproach() {
         <label><input type="radio" name="ap-mode" value="p2p" ${settings.mode === 'p2p' ? 'checked' : ''} ${running ? 'disabled' : ''}/> P2P (one cap per phone)</label>
         <label><input type="radio" name="ap-mode" value="hub" ${settings.mode === 'hub' ? 'checked' : ''} ${running ? 'disabled' : ''}/> Master (several caps on this phone)</label>
       </fieldset>
-      <label class="switch"><input type="checkbox" role="switch" id="ap-start" ${running ? 'checked' : ''} ${available && !switching ? '' : 'disabled'} /> Approach mode ${running ? 'on' : 'off'}</label>
       <div class="row">
         <button id="ap-resync" ${running ? '' : 'disabled'}>Resend to all</button>
       </div>

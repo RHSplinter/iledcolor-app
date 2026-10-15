@@ -165,6 +165,11 @@ test('the Connect tab cap is cap 1 of approach mode', async ({ page }) => {
 test('approach switch is remembered across reloads', async ({ page }) => {
   await page.goto('/#mock');
   await page.click('nav button[data-tab=approach]');
+  await expect(page.locator('#view-approach .card').first().evaluate((card) => {
+    const toggle = card.querySelector('#ap-start')!;
+    const heading = card.querySelector('h2')!;
+    return (toggle.compareDocumentPosition(heading) & 4) !== 0;
+  })).resolves.toBe(true);
   const sw = page.getByRole('switch');
   await expect(sw).not.toBeChecked();
   await sw.click();
