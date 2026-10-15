@@ -68,6 +68,26 @@ test('approach mode (mock): two caps greet each other, peers grow the group', as
   await expect(page.locator('#ap-caps')).not.toContainText('span');
 });
 
+test('the Connect tab cap is cap 1 of approach mode', async ({ page }) => {
+  await page.goto('/#mock');
+  await page.click('#btn-connect');
+  await expect(page.locator('#status')).toContainText('Ready');
+  await page.click('nav button[data-tab=approach]');
+  await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(1);
+  await expect(page.locator('#ap-caps li[data-key]').first()).toContainText('Ready');
+  await page.click('#ap-add');
+  await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(2);
+  await page.click('nav [data-tab=connect]');
+  await page.click('#btn-disconnect');
+  await expect(page.locator('#status')).toHaveText('Disconnected');
+  await page.click('nav button[data-tab=approach]');
+  await expect(page.locator('#ap-caps li[data-key]').first()).toContainText('Disconnected');
+  await expect(page.locator('#ap-caps li[data-key]').nth(1)).toContainText('Ready');
+  await page.locator('#ap-caps li[data-key]').first().locator('[data-act=connect]').click();
+  await page.click('nav [data-tab=connect]');
+  await expect(page.locator('#status')).toContainText('Ready');
+});
+
 test('approach switch is remembered across reloads', async ({ page }) => {
   await page.goto('/#mock');
   await page.click('nav button[data-tab=approach]');

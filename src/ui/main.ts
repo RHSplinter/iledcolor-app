@@ -14,7 +14,7 @@ import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
-import { approachCapIds, initApproach, renderApproach } from '../approach/ui';
+import { connectAsPrimary, disconnectPrimary, initApproach, renderApproach, type PrimaryCap } from '../approach/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -22,7 +22,6 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 let settings: Settings;
 let controller: DeviceController;
 let deviceName = '';
-let connectedDeviceId: string | null = null; // native only: lets approach mode take over this cap
 const native = isNativeApp();
 let useMock = location.hash === '#mock'; // dev/test only: in-memory hat
 let lastImage: RgbImage | null = null; // retained across disconnects
@@ -53,12 +52,27 @@ function newController() {
   controller = new DeviceController({ profile: profileFor(settings), onTrace: trace });
   controller.subscribe(renderStatus);
 }
+/** In the app (and mock mode) the Connect tab's cap is cap 1 of approach mode: one shared connection. */
+const sharedCap = () => native || useMock;
+const watched = new WeakSet<DeviceController>();
+function onPrimaryChange(p: PrimaryCap | null) {
+  if (p) {
+    controller = p.controller;
+    deviceName = p.name;
+    if (!watched.has(controller)) { watched.add(controller); controller.subscribe(renderStatus); }
+  } else {
+    newController();
+    deviceName = '';
+  }
+  renderStatus();
+}
 
 // ---------- status & chrome ----------------------------------------------------
 
 function renderStatus() {
   const s = controller.state;
   const el = $('#status');
+  if (!el) return;
   const cls = s === 'Ready' ? 'ok' : s === 'Error' ? 'err' : s === 'Disconnected' ? 'muted' : 'busy';
   el.className = `pill ${cls}`;
   const p = controller.progress;
@@ -148,7 +162,7 @@ function renderConnect() {
   $('#btn-connect').onclick = onConnect;
   $('#btn-copylog').onclick = () => navigator.clipboard?.writeText(traceLog.join('\n'));
   $('#btn-clearlog').onclick = () => { traceLog.length = 0; $('#trace').textContent = ''; };
-  $('#btn-disconnect').onclick = () => controller.disconnect();
+  $('#btn-disconnect').onclick = () => (sharedCap() ? disconnectPrimary() : controller.disconnect());
   $('#btn-test-color').onclick = () => sendImage(solid(settings.width, settings.height, [255, 0, 0]));
   $('#btn-test-corner').onclick = () => sendImage(physical(cornerTest(...logicalDims())));
   $('#btn-disp-on').onclick = () => control('display', () => controller.setDisplay(true), (n) => (displayNote = n), 'dstate', 'On');
@@ -193,19 +207,19 @@ function persistSettings() {
 }
 
 async function onConnect() {
+  if (sharedCap()) {
+    try {
+      const d = useMock ? { deviceId: `mock-${Date.now().toString(36)}`, name: 'iledcolor-MOCK' } : await chooseNativeCap();
+      await connectAsPrimary(d.deviceId, d.name);
+    } catch (e) {
+      if ((e as Error).name !== 'SelectionCancelledError') { const m = document.getElementById('conn-msg'); if (m) m.textContent = (e as Error).message; }
+    }
+    renderStatus();
+    return;
+  }
   newController();
   deviceName = '';
-  connectedDeviceId = null;
   await controller.connect(async () => {
-    if (useMock) { deviceName = 'mock'; return new MockTransport(); }
-    if (native) {
-      const d = await chooseNativeCap();
-      if (approachCapIds().includes(d.deviceId)) throw new Error('This cap is used by approach mode. Remove it there first.');
-      deviceName = d.name;
-      const t = await connectNativeCap(d.deviceId);
-      connectedDeviceId = d.deviceId;
-      return t;
-    }
     const sup = bluetoothSupport();
     if (!sup.ok) throw new Error(sup.reason);
     const r = await connectWebBluetooth();
@@ -517,15 +531,7 @@ function approachContext(): Parameters<typeof initApproach>[0] {
     readRssi: (id) => readCapRssi(id),
     startScan: (cb) => (native ? startNativeScan((r) => cb({ deviceId: r.device.deviceId, name: r.localName ?? r.device.name, rssi: r.rssi, uuids: r.uuids, localName: r.localName, manufacturerData: r.manufacturerData })) : Promise.resolve()),
     stopScan: () => (native ? stopNativeScan() : Promise.resolve()),
-    releaseConnectTabCap(deviceId) {
-      if (controller.state !== 'Ready' || !connectedDeviceId || (deviceId && deviceId !== connectedDeviceId)) return null;
-      const handed = { deviceId: connectedDeviceId, name: deviceName, controller };
-      newController();
-      connectedDeviceId = null;
-      deviceName = '';
-      renderStatus();
-      return handed;
-    },
+    onPrimaryChange,
   };
 }
 

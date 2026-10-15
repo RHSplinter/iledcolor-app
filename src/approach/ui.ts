@@ -27,9 +27,11 @@ export interface ApproachContext {
   readRssi(deviceId: string): Promise<number>;
   startScan(cb: (a: Advertisement) => void): Promise<void>;
   stopScan(): Promise<void>;
-  /** Hands over the cap connected on the Connect tab (if it is this device, or any when omitted). */
-  releaseConnectTabCap(deviceId?: string): { deviceId: string; name: string; controller: DeviceController } | null;
+  /** The first cap is also the Connect tab's cap; called whenever it (or its controller) changes. */
+  onPrimaryChange(p: PrimaryCap | null): void;
 }
+
+export interface PrimaryCap { deviceId: string; name: string; controller: DeviceController }
 
 interface CapEntry extends LocalCap {
   deviceId: string;
@@ -42,6 +44,8 @@ interface CapEntry extends LocalCap {
   lastReconnect: number;
   mock?: MockTransport;
   mockRssi: number;
+  /** Disconnected by the user: no automatic reconnect until connected again. */
+  manualOff?: boolean;
   preview?: { frames: RgbImage[]; delays: number[] };
 }
 interface SimPeer { id: number; caps: number; rssi: number }
@@ -128,6 +132,16 @@ function syncEngineCaps() {
   engine.setLocalCaps(caps.map((c) => ({ key: c.key, bleName: c.bleName, label: c.label })));
   engine.invalidate();
   if (running) void startBeacon();
+  notifyPrimary();
+}
+
+let primaryCtl: DeviceController | null = null;
+function notifyPrimary() {
+  const c = caps[0];
+  const ctl = c?.controller ?? null;
+  if (ctl === primaryCtl) return;
+  primaryCtl = ctl;
+  ctx.onPrimaryChange(c ? { deviceId: c.deviceId, name: c.bleName, controller: c.controller } : null);
 }
 
 // ---------- cap management ------------------------------------------------------
@@ -138,23 +152,47 @@ function makeController(): DeviceController {
   return ctl;
 }
 
-async function addCap(deviceId: string, bleName: string, label?: string, existing?: DeviceController) {
+async function addCap(deviceId: string, bleName: string, label?: string, front = false) {
   if (caps.some((c) => c.deviceId === deviceId)) { note(`${bleName} is already in the list`); return; }
   const entry: CapEntry = {
     key: deviceId, deviceId, bleName, label: '', customLabel: label && !isAutoLabel(label) ? label : undefined,
-    controller: existing ?? makeController(), note: '', lastReconnect: Date.now(), mockRssi: -55,
+    controller: makeController(), note: '', lastReconnect: Date.now(), mockRssi: -55,
   };
-  if (existing) existing.subscribe(() => renderCapsSoon());
-  caps.push(entry);
+  if (front) caps.unshift(entry); else caps.push(entry);
   syncEngineCaps();
   persistCaps();
   renderCaps(); renderStatus();
-  if (!existing) await connectEntry(entry);
+  await connectEntry(entry);
+}
+
+/** Connect tab: the chosen cap becomes cap 1 here (added in front, or moved there) and is connected. */
+export async function connectAsPrimary(deviceId: string, bleName: string): Promise<void> {
+  const c = caps.find((x) => x.deviceId === deviceId);
+  if (!c) { await addCap(deviceId, bleName, undefined, true); return; }
+  if (caps[0] !== c) {
+    caps = [c, ...caps.filter((x) => x !== c)];
+    syncEngineCaps();
+    persistCaps();
+    renderCaps(); renderStatus();
+  }
+  await connectEntry(c);
+}
+
+/** Connect tab "Disconnect": disconnects cap 1 and keeps it disconnected (no auto-reconnect). */
+export function disconnectPrimary(): void {
+  const c = caps[0];
+  if (!c) return;
+  c.manualOff = true;
+  c.controller.disconnect();
+  note(`${c.label}: disconnected`);
+  renderCaps(); renderStatus();
 }
 
 async function connectEntry(c: CapEntry) {
   if (c.controller.state !== 'Disconnected' && c.controller.state !== 'Error') return;
+  c.manualOff = false;
   c.controller = makeController();
+  notifyPrimary();
   c.lastReconnect = Date.now();
   c.lastSig = undefined;
   await c.controller.connect(async () => {
@@ -196,8 +234,7 @@ async function onAddCap() {
   }
   try {
     const d = await ctx.chooseCap();
-    const handed = ctx.releaseConnectTabCap(d.deviceId);
-    await addCap(d.deviceId, d.name, undefined, handed?.controller);
+    await addCap(d.deviceId, d.name);
   } catch (e) {
     if ((e as Error).name !== 'SelectionCancelledError') note(`add failed: ${(e as Error).message}`);
   }
@@ -208,8 +245,7 @@ async function onConnectSaved() {
   if (!Array.isArray(saved) || !saved.length) { note('no saved caps yet'); return; }
   for (const s of saved) {
     if (typeof s?.deviceId !== 'string' || typeof s.bleName !== 'string') continue;
-    const handed = ctx.releaseConnectTabCap(s.deviceId);
-    await addCap(s.deviceId, s.bleName, typeof s.label === 'string' ? s.label : undefined, handed?.controller);
+    await addCap(s.deviceId, s.bleName, typeof s.label === 'string' ? s.label : undefined);
   }
 }
 
@@ -276,7 +312,7 @@ async function loop() {
         c.rssi = r;
         engine.onLocalRssi(c.key, r, now);
       } catch { /* RSSI read can fail during an upload; the next tick retries */ }
-    } else if ((st === 'Disconnected' || st === 'Error') && now - c.lastReconnect > 8000) {
+    } else if ((st === 'Disconnected' || st === 'Error') && !c.manualOff && now - c.lastReconnect > 8000) {
       note(`${c.label}: reconnecting…`);
       void connectEntry(c);
     }
@@ -398,11 +434,10 @@ export function renderApproach() {
     </div>
     <div class="card">
       <h2>Caps on this phone</h2>
-      <p class="small">A cap accepts one Bluetooth connection. Connect every cap you carry (or, as a hub, several caps) here. Order = left-to-right position for spanning marquees.</p>
+      <p class="small">A cap accepts one Bluetooth connection. Connect every cap you carry (or, as a hub, several caps) here. Order = left-to-right position for spanning marquees. Cap 1 is the cap of the Connect tab.</p>
       <div class="row">
         <button id="ap-add" ${available ? '' : 'disabled'}>Add cap</button>
         <button id="ap-saved" ${available && !ctx.mock ? '' : 'disabled'}>Connect saved caps</button>
-        <button id="ap-adopt" ${available && !ctx.mock ? '' : 'disabled'}>Take cap from Connect tab</button>
       </div>
       <ul class="list" id="ap-caps"></ul>
       ${ctx.mock ? '<div class="row"><button id="ap-sim-peer">Simulate nearby phone</button></div><ul class="list" id="ap-peers"></ul>' : ''}
@@ -445,11 +480,6 @@ export function renderApproach() {
   $('#ap-resync').onclick = () => { caps.forEach((c) => (c.lastSig = undefined)); engine.invalidate(); note('resending to all caps'); };
   $('#ap-add').onclick = () => void onAddCap();
   $('#ap-saved').onclick = () => void onConnectSaved();
-  $('#ap-adopt').onclick = () => {
-    const h = ctx.releaseConnectTabCap();
-    if (!h) { note('no cap is connected on the Connect tab'); return; }
-    void addCap(h.deviceId, h.name, undefined, h.controller);
-  };
   const simBtn = document.getElementById('ap-sim-peer');
   if (simBtn) simBtn.onclick = () => { simPeers.push({ id: (crypto.getRandomValues(new Uint32Array(1))[0]! || 1) >>> 0, caps: 1, rssi: -60 }); renderApproach(); };
   for (const id of TIER_IDS) {
