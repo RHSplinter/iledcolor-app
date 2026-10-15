@@ -1,4 +1,4 @@
-import { formatMeters } from '../src/approach/distance';
+import { dbmForMeters, formatMeters } from '../src/approach/distance';
 import { describe, expect, it } from 'vitest';
 import { capHash16, decodeBeacon, decodeBeaconName, encodeBeacon, fitBeaconName, maskHas, nearMaskFor, NAME_COMPANY_ID } from '../src/approach/beaconCodec';
 import { ProximityTracker } from '../src/approach/proximity';
@@ -328,5 +328,12 @@ describe('distance estimate', () => {
     expect(formatMeters(-85)).toBe('≈ 11 m');
     expect(formatMeters(-110)).toBe('> 50 m');
     expect(formatMeters(undefined)).toBe('');
+    expect(dbmForMeters(4)).toBe(-75);
+    expect(formatMeters(dbmForMeters(3))).toBe('≈ 2.8 m');
+  });
+
+  it('moves the old -80 dBm away default to about 4 m', () => {
+    expect(validateApproach({ leaveDbm: -80 }).leaveDbm).toBe(-75);
+    expect(validateApproach({ leaveDbm: -85 }).leaveDbm).toBe(-85);
   });
 });

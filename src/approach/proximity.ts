@@ -10,7 +10,7 @@ export interface ProximityOptions {
   alpha: number;
 }
 
-export const DEFAULT_PROXIMITY: ProximityOptions = { enterDbm: -70, leaveDbm: -80, staleMs: 8000, alpha: 0.3 };
+export const DEFAULT_PROXIMITY: ProximityOptions = { enterDbm: -70, leaveDbm: -75, staleMs: 8000, alpha: 0.3 };
 
 interface Entry { ema: number; near: boolean; lastSeen: number }
 

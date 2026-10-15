@@ -11,6 +11,11 @@ export function estimateMeters(rssi: number): number {
   return Math.pow(10, (RSSI_AT_1M - rssi) / (10 * PATH_LOSS_EXPONENT));
 }
 
+/** RSSI at which the estimate reaches the given distance. */
+export function dbmForMeters(m: number): number {
+  return Math.round(RSSI_AT_1M - 10 * PATH_LOSS_EXPONENT * Math.log10(m));
+}
+
 export function formatMeters(rssi: number | undefined): string {
   if (rssi === undefined || !Number.isFinite(rssi)) return '';
   const m = estimateMeters(rssi);

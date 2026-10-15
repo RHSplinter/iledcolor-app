@@ -9,7 +9,7 @@ import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
 import { encodeBeacon, fitBeaconName } from './beaconCodec';
-import { formatMeters } from './distance';
+import { dbmForMeters, formatMeters } from './distance';
 import { ApproachEngine, capLabel, defaultLabel, planFor, type Advertisement, type Assignment, type LocalCap, type Member, type Plan } from './engine';
 import { DEFAULT_APPROACH, TEMPLATE_HELP, TIER_IDS, TIER_LABELS, tierFor, validateApproach, type ApproachSettings, type TierId } from './tiers';
 
@@ -524,10 +524,11 @@ export function renderApproach() {
     <div class="card">
       <h2>Detection</h2>
       <div class="row">
-        <div><label for="ap-enter">Near at ≥ dBm</label><input id="ap-enter" type="number" min="-110" max="-20" value="${settings.enterDbm}" /></div>
-        <div><label for="ap-leave">Away below dBm</label><input id="ap-leave" type="number" min="-120" max="-20" value="${settings.leaveDbm}" /></div>
+        <div><label for="ap-enter">Near at ≥ dBm</label><input id="ap-enter" type="number" min="-110" max="-20" value="${settings.enterDbm}" /><span class="small" id="ap-enter-m">${formatMeters(settings.enterDbm)}</span></div>
+        <div><label for="ap-leave">Away below dBm</label><input id="ap-leave" type="number" min="-120" max="-20" value="${settings.leaveDbm}" /><span class="small" id="ap-leave-m">${formatMeters(settings.leaveDbm)}</span></div>
         <div><label for="ap-settle">Settle s</label><input id="ap-settle" type="number" min="0" max="30" step="0.5" value="${settings.settleMs / 1000}" /></div>
       </div>
+      <div class="row small"><span>Away beyond</span>${[3, 4, 5].map((m) => `<button type="button" data-away-m="${m}" class="${dbmForMeters(m) === settings.leaveDbm ? 'primary' : ''}">${m} m</button>`).join('')}</div>
       ${hub ? `<label><input type="checkbox" id="ap-beacon" ${settings.beacon ? 'checked' : ''}/> Advertise this phone to other phones</label>
       <label><input type="checkbox" id="ap-count" ${settings.countNearbyCaps ? 'checked' : ''}/> Count nearby caps that are not connected here</label>` : ''}
       <p class="small">RSSI is a rough distance signal (≈ -55 dBm touching, -70 dBm about 1–2 m); the metres shown are estimates from it and can be off by a factor of two. Raise "Near at" to require closer contact.</p>
@@ -584,6 +585,15 @@ export function renderApproach() {
     } catch (e) { msg.textContent = (e as Error).message; }
   };
   const num = (id: string, d: number) => { const v = Number($<HTMLInputElement>(id).value); return Number.isFinite(v) ? v : d; };
+  for (const id of ['#ap-enter', '#ap-leave']) $<HTMLInputElement>(id).addEventListener('input', (e) => {
+    $(`${id}-m`).textContent = formatMeters(Number((e.target as HTMLInputElement).value));
+  });
+  root.querySelectorAll<HTMLButtonElement>('[data-away-m]').forEach((b) => (b.onclick = () => {
+    const leaveDbm = dbmForMeters(Number(b.dataset.awayM));
+    updateSettings({ ...settings, leaveDbm, enterDbm: Math.max(settings.enterDbm, leaveDbm) });
+    note(`caps count as away beyond about ${b.dataset.awayM} m (${leaveDbm} dBm)`);
+    renderApproach();
+  }));
   root.querySelectorAll('#ap-enter,#ap-leave,#ap-settle,#ap-beacon,#ap-count').forEach((el) => el.addEventListener('change', () => {
     updateSettings({
       ...settings,

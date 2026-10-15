@@ -49,7 +49,7 @@ export const DEFAULT_APPROACH: ApproachSettings = {
     moreThan8: { mode: 'span', text: 'Crowd of {count} caps!', fg: '#ff6020', bg: '#000000', speed: 6 },
   },
   enterDbm: -70,
-  leaveDbm: -80,
+  leaveDbm: -75, // ≈ 4 m: caps count as away before they are really out of range
   settleMs: 2000,
   staleMs: 8000,
   beacon: true,
@@ -79,11 +79,13 @@ export function validateApproach(raw: unknown): ApproachSettings {
   }
   const enterDbm = num(r.enterDbm, -110, -20, DEFAULT_APPROACH.enterDbm);
   const mode = r.mode === 'hub' ? 'hub' : 'p2p';
+  // -80 was the old default (≈ 7 m); move it to the closer 4 m default.
+  const leave = r.leaveDbm === -80 ? DEFAULT_APPROACH.leaveDbm : r.leaveDbm;
   return {
     mode,
     tiers,
     enterDbm,
-    leaveDbm: Math.min(enterDbm, num(r.leaveDbm, -120, -20, DEFAULT_APPROACH.leaveDbm)),
+    leaveDbm: Math.min(enterDbm, num(leave, -120, -20, DEFAULT_APPROACH.leaveDbm)),
     settleMs: num(r.settleMs, 0, 30000, DEFAULT_APPROACH.settleMs),
     staleMs: num(r.staleMs, 2000, 60000, DEFAULT_APPROACH.staleMs),
     // P2P only works when phones advertise themselves.
