@@ -47,6 +47,8 @@ test('approach mode (mock): two caps greet each other, peers grow the group', as
   await page.click('#ap-add');
   await page.click('#ap-add');
   await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(2);
+  await page.locator('input[data-tier=solo][data-field=text]').fill('SOLO');
+  await page.locator('input[data-tier=solo][data-field=text]').dispatchEvent('change');
   await page.fill('#ap-settle', '0');
   await page.locator('#ap-settle').dispatchEvent('change');
   await page.click('#ap-start');
@@ -56,6 +58,14 @@ test('approach mode (mock): two caps greet each other, peers grow the group', as
   await page.click('#ap-sim-peer');
   await expect(page.locator('#ap-status')).toContainText('4 caps', { timeout: 15_000 });
   await expect(page.locator('#ap-caps')).toContainText('span', { timeout: 15_000 });
+  await page.getByRole('switch').click();
+  await expect(page.getByRole('switch')).toBeEnabled({ timeout: 15_000 });
+  await expect(page.locator('#ap-status')).toContainText('Stopped');
+  await expect(page.locator('#ap-caps')).not.toContainText('span');
+  await expect(page.locator('#ap-caps')).not.toContainText('Hi ');
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText(['"SOLO"', '"SOLO"']);
+  await page.waitForTimeout(2500);
+  await expect(page.locator('#ap-caps')).not.toContainText('span');
 });
 
 test('approach switch is remembered across reloads', async ({ page }) => {

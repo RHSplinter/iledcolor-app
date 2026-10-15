@@ -9,7 +9,7 @@ import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
 import { encodeBeacon, fitBeaconName } from './beaconCodec';
-import { ApproachEngine, capLabel, defaultLabel, type Advertisement, type Assignment, type LocalCap, type Member, type Plan } from './engine';
+import { ApproachEngine, capLabel, defaultLabel, planFor, type Advertisement, type Assignment, type LocalCap, type Member, type Plan } from './engine';
 import { DEFAULT_APPROACH, TEMPLATE_HELP, TIER_IDS, TIER_LABELS, tierFor, validateApproach, type ApproachSettings, type TierId } from './tiers';
 
 /** What the approach tab needs from the rest of the app. */
@@ -58,6 +58,7 @@ let userName = '';
 let caps: CapEntry[] = [];
 let simPeers: SimPeer[] = [];
 let running = false;
+let switching = false;
 let loopTimer: ReturnType<typeof setInterval> | undefined;
 let applying: Promise<void> | null = null;
 let pendingPlan: Plan | null = null;
@@ -99,8 +100,18 @@ export async function initApproach(c: ApproachContext): Promise<void> {
 
 /** The approach switch: starts/stops scanning, beacon and uploads and remembers the choice. */
 async function setEnabled(on: boolean) {
-  void saveKv('approachEnabled', on).catch(() => undefined);
-  if (on) await start(); else await stop();
+  if (switching) return;
+  switching = true;
+  renderApproach();
+  try {
+    await saveKv('approachEnabled', on);
+    if (on) await start(); else await stop();
+  } catch (e) {
+    note(`could not ${on ? 'enable' : 'disable'} approach mode: ${(e as Error).message}`);
+  } finally {
+    switching = false;
+    renderApproach();
+  }
 }
 
 const persist = () => saveKv('approach', settings).catch((e) => note(`could not save settings: ${(e as Error).message}`));
@@ -239,17 +250,23 @@ async function stop() {
   if (!running) return;
   running = false;
   clearInterval(loopTimer);
+  pendingPlan = null;
   await ctx.stopScan();
   if (ctx.native) {
     await ApproachBeacon.stop().catch(() => undefined);
     void ApproachBeacon.setKeepAwake({ on: false }).catch(() => undefined);
   }
   beaconNote = ''; scanNote = '';
+  // Finish any in-flight group upload before restoring solo content, so it cannot overwrite the reset.
+  await applying;
+  schedule(planFor([], engine.getLocalCaps(), settings));
+  await applying;
   note('approach mode stopped');
   renderApproach();
 }
 
 async function loop() {
+  if (!running) return;
   const now = Date.now();
   await Promise.all(caps.map(async (c) => {
     const st = c.controller.state;
@@ -264,6 +281,7 @@ async function loop() {
       void connectEntry(c);
     }
   }));
+  if (!running) return;
   for (const p of simPeers)
     engine.onAdvertisement({ deviceId: `sim-${p.id}`, rssi: p.rssi + (Math.random() * 4 - 2), uuids: [encodeBeacon({ phoneId: p.id, capCount: p.caps, capHashes: [] })] }, now);
   for (const [id, n] of nearby) if (now - n.seen > 10000) nearby.delete(id);
@@ -372,7 +390,7 @@ export function renderApproach() {
       <label for="ap-name">Your name</label>
       <input id="ap-name" type="text" maxlength="16" value="${esc(userName)}" placeholder="${esc(defaultLabel(phoneId, 0))}" autocomplete="nickname" />
       <p class="small">Shown on other phones and used in their greetings (e.g. "Hi ${esc(userName || 'Anna')}!"). Your caps are labelled with it unless you rename them below.</p>
-      <label class="switch"><input type="checkbox" role="switch" id="ap-start" ${running ? 'checked' : ''} ${available ? '' : 'disabled'} /> Approach mode ${running ? 'on' : 'off'}</label>
+      <label class="switch"><input type="checkbox" role="switch" id="ap-start" ${running ? 'checked' : ''} ${available && !switching ? '' : 'disabled'} /> Approach mode ${running ? 'on' : 'off'}</label>
       <div class="row">
         <button id="ap-resync" ${running ? '' : 'disabled'}>Resend to all</button>
       </div>
