@@ -156,6 +156,52 @@ describe('ApproachEngine', () => {
   });
 });
 
+describe('P2P mode (one cap per phone)', () => {
+  const pair = (s: ApproachSettings) => {
+    const a = new ApproachEngine(0xa, s), b = new ApproachEngine(0xb, s);
+    a.setLocalCaps([{ key: 'CA', bleName: 'iledcolor-A', label: 'Ann' }]);
+    b.setLocalCaps([{ key: 'CB', bleName: 'iledcolor-B', label: 'Bob' }]);
+    const hear = (rssi: number, now: number) => {
+      a.onLocalRssi('CA', -45, now);
+      b.onLocalRssi('CB', -45, now);
+      a.onAdvertisement({ deviceId: 'pb', rssi, uuids: [encodeBeacon(b.beacon())] }, now);
+      b.onAdvertisement({ deviceId: 'pa', rssi, uuids: [encodeBeacon(a.beacon())] }, now);
+    };
+    return { a, b, hear };
+  };
+
+  it('greets while near, returns to solo when apart or silent, and greets again on rejoin', () => {
+    const { a, b, hear } = pair(settings({ staleMs: 8000 }));
+    hear(-90, 0); // far apart
+    expect(a.tick(0)!.perCap.get('CA')).toMatchObject({ text: 'Ann' });
+    expect(b.tick(0)!.perCap.get('CB')).toMatchObject({ text: 'Bob' });
+    for (let t = 1000; t <= 3000; t += 1000) hear(-55, t); // approach
+    const pa = a.tick(3000)!, pb = b.tick(3000)!;
+    expect(pa.tier).toBe('pair');
+    expect(pa.perCap.get('CA')).toMatchObject({ kind: 'individual', text: `Hi ${defaultLabel(0xb, 0)}!` });
+    expect(pb.perCap.get('CB')).toMatchObject({ kind: 'individual', text: `Hi ${defaultLabel(0xa, 0)}!` });
+    for (let t = 4000; t <= 8000; t += 1000) hear(-95, t); // walk apart
+    expect(a.tick(8000)!.perCap.get('CA')).toMatchObject({ text: 'Ann' });
+    expect(b.tick(8000)!.perCap.get('CB')).toMatchObject({ text: 'Bob' });
+    for (let t = 9000; t <= 12000; t += 1000) hear(-50, t); // rejoin
+    expect(a.tick(12000)!.tier).toBe('pair');
+    // Peer phone goes silent (switched off / out of range): stale expiry falls back to solo.
+    a.onLocalRssi('CA', -45, 21000);
+    expect(a.tick(21000)!.perCap.get('CA')).toMatchObject({ text: 'Ann' });
+  });
+
+  it('gives each phone a complementary slice of the same spanned marquee', () => {
+    const base = settings();
+    const s: ApproachSettings = { ...base, tiers: { ...base.tiers, pair: { ...base.tiers.pair, mode: 'span', text: '{count} caps!' } } };
+    const { a, b, hear } = pair(s);
+    for (let t = 0; t <= 2000; t += 1000) hear(-50, t);
+    const sa = a.tick(2000)!.perCap.get('CA')!, sb = b.tick(2000)!.perCap.get('CB')!;
+    expect(sa).toMatchObject({ kind: 'span', total: 2, text: '2 caps!' });
+    expect(sb).toMatchObject({ kind: 'span', total: 2, text: '2 caps!' });
+    expect(new Set([(sa as { index: number }).index, (sb as { index: number }).index])).toEqual(new Set([0, 1]));
+  });
+});
+
 describe('span marquee slicing', () => {
   const strip = (w: number) => {
     const pixels = new Uint8Array(w * 2 * 3);

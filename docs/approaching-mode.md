@@ -26,6 +26,20 @@ A cap accepts **one** BLE connection. We confirmed on the hardware that a cap **
 
 The service-UUID encoding exists because iOS can advertise only service UUIDs and a local name, not manufacturer data. The same beacon therefore works on both platforms.
 
+### Hub mode vs. P2P mode
+
+Both use the same Approach tab and engine; only the setup differs.
+
+- **Hub ("master")**: one phone connects several caps; their proximity is the RSSI between that phone and each cap.
+- **P2P**: every wearer runs the app on their own phone with their own cap connected and starts Approach mode.
+  Phones detect each other through the `LEDHAT` beacon; each phone only uploads to its own cap.
+  While another phone is near (≥ enter threshold, settled), the cap shows the group tier (greeting or its marquee slice);
+  when it drops below the leave threshold or is not heard for `staleMs`, the cap falls back to the solo content.
+  Hub and P2P mix freely: a phone with 3 caps meeting a phone with 1 cap forms a group of 4.
+
+For a P2P spanned marquee all phones must use the same tier text/colours/speed, because each phone renders its
+own slice locally. Slice order follows phone IDs (not physical left/right) and start times are only roughly aligned.
+
 ### Proximity and grouping
 
 - RSSI is smoothed with an exponential moving average. The app uses hysteresis with defaults: **near ≥ -70 dBm** and **away < -80 dBm**. These thresholds can be set in the app. Entries without updates expire after 8 s.
