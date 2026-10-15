@@ -8,6 +8,7 @@ import type { Content, GroupContent } from '../storage/presets';
 import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
+import { MotionSupport } from './motionSupport';
 import { encodeBeacon, fitBeaconName } from './beaconCodec';
 import { dbmForMeters, formatMeters } from './distance';
 import { ApproachEngine, capLabel, defaultLabel, planFor, type Advertisement, type Assignment, type LocalCap, type Member, type Plan } from './engine';
@@ -71,6 +72,8 @@ let pendingPlan: Plan | null = null;
 let lastPlan: Plan | null = null;
 let beaconNote = '';
 let scanNote = '';
+let motionNote = '';
+let motionSupport: MotionSupport | undefined;
 /** What is on air (uuid|name) and when it was (re)started; the loop re-advertises on change and periodically. */
 let advertisedSig = '';
 let lastAdvertise = 0;
@@ -110,6 +113,16 @@ export async function initApproach(c: ApproachContext): Promise<void> {
     void saveKv('phoneId', phoneId).catch(() => undefined);
   }
   engine = new ApproachEngine(phoneId, settings);
+  if (ctx.native && !ctx.mock) {
+    motionSupport = new MotionSupport(ApproachBeacon,
+      (sample) => { if (running) engine.onMotion(sample, Date.now()); },
+      (message) => {
+        engine.motion.reset();
+        motionNote = `Motion support unavailable: ${message}. Using RSSI only.`;
+        note(motionNote);
+        renderStatusSoon();
+      });
+  }
   // The switch is remembered: resume approach mode (with the saved caps) after an app restart.
   if ((ctx.native || ctx.mock) && (await loadKv('approachEnabled').catch(() => false)) === true) {
     note('approach mode was on; resuming');
@@ -326,6 +339,10 @@ async function start() {
   engine.invalidate();
   caps.forEach((c) => (c.lastSig = undefined));
   note('approach mode started');
+  motionNote = '';
+  engine.motion.reset();
+  await motionSupport?.start();
+  if (!running) return;
   try {
     await startScanning();
     scanNote = 'Scanning.';
@@ -341,6 +358,8 @@ async function stop() {
   running = false;
   clearInterval(loopTimer);
   pendingPlan = null;
+  await motionSupport?.stop();
+  engine.motion.reset();
   await ctx.stopScan();
   if (ctx.native) {
     await ApproachBeacon.stop().catch(() => undefined);
@@ -676,6 +695,15 @@ function renderStatus() {
        <p>${members.map((m) => `<span class="pill ${m.local ? 'ok' : 'busy'}">${esc(m.label)}${m.source === 'peer' ? ' (phone)' : m.source === 'cap' ? ' (cap)' : ''}</span>`).join(' ') || 'No cap is near yet.'}</p>
        <p>${esc(scanNote)} ${esc(beaconNote)}</p>${lastPlan ? `<p>Last applied: ${lastPlan.count} → ${esc(TIER_LABELS[lastPlan.tier])}</p>` : ''}`
     : '<p>Stopped.</p>';
+  if (running && motionSupport) {
+    const state = engine.motion.state(now);
+    const text = motionNote || (state === 'unavailable'
+      ? 'No recent motion samples; using RSSI only.'
+      : `Motion support: ${state}. ${state === 'turning' ? 'Filtering brief signal swings.' : state === 'moving' ? 'Following sustained RSSI changes faster.' : 'Standard RSSI filtering.'}`);
+    const p = document.createElement('p');
+    p.textContent = text;
+    el.append(p);
+  }
   const nb = document.getElementById('ap-nearby');
   const ph = document.getElementById('ap-phones');
   if (ph) ph.innerHTML = engine.heardPhones(Date.now()).map((p) => `<li><span>${esc(p.label)} · ${p.id} · ${p.capCount} cap${p.capCount === 1 ? '' : 's'}</span><span>${formatMeters(p.rssi)} · ${p.rssi} dBm · ${p.mutual ? 'near (sees you)' : p.near ? 'near' : 'far'}</span></li>`).join('')

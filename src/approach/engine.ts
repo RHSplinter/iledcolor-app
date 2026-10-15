@@ -1,5 +1,6 @@
 import { capHash16, decodeBeacon, decodeBeaconName, maskHas, nearMaskFor, type BeaconInfo } from './beaconCodec';
 import { ProximityTracker } from './proximity';
+import { MotionTracker, type MotionSample } from './motion';
 import { tierFor, type ApproachSettings, type TierId } from './tiers';
 
 /** A cap connected to (and controlled by) this phone. Order = left-to-right span order. */
@@ -102,6 +103,7 @@ export function planFor(members: Member[], localCaps: LocalCap[], s: ApproachSet
  */
 export class ApproachEngine {
   readonly tracker: ProximityTracker;
+  readonly motion = new MotionTracker();
   private localCaps: LocalCap[] = [];
   private peers = new Map<string, BeaconInfo>();
   private peerNames = new Map<string, string>(); // kept across reports: not every report includes the scan response
@@ -124,7 +126,8 @@ export class ApproachEngine {
   /** Forces the next settled tick to return a plan again (after settings change or a failed upload). */
   invalidate() { this.appliedSig = ''; }
 
-  onLocalRssi(key: string, rssi: number, now: number) { this.tracker.update(key, rssi, now); }
+  onMotion(sample: MotionSample, now: number) { this.motion.update(sample, now); }
+  onLocalRssi(key: string, rssi: number, now: number) { this.tracker.update(key, rssi, now, this.motion.state(now)); }
 
   onAdvertisement(a: Advertisement, now: number) {
     if (a.rssi === undefined) return;
@@ -135,7 +138,7 @@ export class ApproachEngine {
       this.peers.set(key, b);
       const name = decodeBeaconName(a.manufacturerData, a.localName);
       if (name) this.peerNames.set(key, name);
-      this.tracker.update(key, a.rssi, now);
+      this.tracker.update(key, a.rssi, now, this.motion.state(now));
       return;
     }
     const name = a.name ?? '';
@@ -143,7 +146,7 @@ export class ApproachEngine {
     if (this.localCaps.some((c) => c.bleName === name || c.key === a.deviceId)) return;
     const key = `cap:${a.deviceId}`;
     this.capNames.set(key, name);
-    this.tracker.update(key, a.rssi, now);
+    this.tracker.update(key, a.rssi, now, this.motion.state(now));
   }
 
   /** The near group, ordered consistently on every phone (by phone id, then cap index). */

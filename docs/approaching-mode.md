@@ -51,6 +51,8 @@ another phone takes it) returned cap A to the solo content after ~9 s; releasing
 - **Symmetric proximity**: two phones rarely receive each other equally well (antennas, pockets, a throttled scan). A peer therefore also counts as near when this phone still hears its beacon and the peer's near mask lists this phone. The mask only uses each phone's own reception, so the rule cannot latch; both phones enter and leave the group together. The "Nearby phones" list shows such peers as "near (sees you)".
 - **Keep-alive**: the beacon is re-advertised every 10 s and whenever its content changes, because some phones stop advertisers silently. The scan is restarted every 4 minutes, since some phones (for example Xiaomi, with a 5-minute `scan_timeout`) quietly downgrade long-running scans, and also after 15 s without any received advertisement. Caps and phones that are already near are kept for twice `staleMs` (16 s by default) after they were last heard, so short radio gaps (scan restarts, missed advertisements) do not split a group.
 - A changed group must stay stable for the **settle time** (2 s by default) before caps are updated. This stops flicker at the edge of the range.
+- **Phone motion support**: while approach mode runs, native Android/iOS sensors provide gravity-free acceleration and gyroscope rotation magnitudes. Motion never decides whether a cap is approaching or leaving by itself: RSSI still supplies the distance evidence, with the same enter/leave thresholds, settle time and expiry. While the phone is moving, at least three threshold-crossing reports spanning 1 s make the RSSI filter respond faster. Reports less than 250 ms apart do not add confirmation, and gaps over 1.5 s reset confirmation. During turning, the filter dampens brief RSSI swings caused by antenna/body orientation; sustained crossing evidence over 2 s restores normal filtering so continued rotation cannot freeze a group. Still phones use the original filter, including when the *other* wearer moves.
+- Sensors are active only for approach mode, pause in the background and resume in the foreground. Missing sensors, denied access, runtime failures, or samples older than 1.5 s fall back to the original RSSI filter. The status shows the motion state or fallback reason. Android uses the linear-acceleration sensor and, when present, the gyroscope; iOS uses Core Motion device motion. These are exposed through the existing app-local native plugin rather than browser motion events, so resuming a saved approach session does not depend on a browser permission gesture. No new Android permission or location access is needed for motion. Acceleration/rotation samples remain on the phone and are not saved or advertised.
 - Every phone sorts the group the same way (by phone ID, then cap index), so all phones agree on the left-to-right order of a spanning marquee and on who is "first".
 - **Mode** (Approach tab, changeable while approach mode is off): **P2P** (default) uses one cap per phone and always advertises the phone; the multi-cap controls (Add cap, saved caps, order, beacon and nearby-cap checkboxes) are hidden. **Master** lets one phone control several caps and shows those controls. Switching to P2P disconnects all caps except cap 1 (the saved list is kept).
 - The cap connected on the **Connect tab** is cap 1 of the Approach tab (one shared connection): connecting there adds it in front (or moves it to the front), "Disconnect" there disconnects cap 1 and stops its automatic reconnect, and the Create tab sends to it.
@@ -63,6 +65,14 @@ another phone takes it) returned cap A to the solo content after ~9 s; releasing
 ### Span mode
 
 The text is rendered once as a wide strip. Each cap gets its slice as a looping animation with the same frame count and timing, at most 120 frames to stay within the cap's 64 KB transfer limit. Uploads to caps on the same phone run in parallel. Across phones, the start is aligned only by the shared settle time, so the marquee is close but not frame-accurate.
+
+**Physical direction cannot be inferred from these sensors.** Accelerometers and gyroscopes measure the
+phone's own motion, not the bearing or position of another phone/cap. Integrating their readings into
+positions drifts quickly, and phones may sit in differently oriented pockets rather than on the caps.
+Motion support therefore does not reorder marquee slices. In Master mode, use the cap list's left/right
+buttons to set local cap order; across phones the deterministic phone-ID order remains. Reliable automatic
+physical ordering would need relative-position measurements, such as direction-capable UWB on supported
+hardware, or an explicit shared layout/calibration.
 
 ### Troubleshooting P2P
 
@@ -82,3 +92,8 @@ If one phone sees the other but not the other way round, check **Detection → N
 ## Testing without hardware
 
 Open the web app with `#mock` and open the **Approach** tab. Mock mode simulates caps and nearby phones, with RSSI sliders, so all tiers can be tried in a browser.
+
+Motion classification, filter behavior for approach/departure/rotation, stale-data fallback, all three RSSI
+sources, and native listener setup/cleanup are covered by automated tests. Browser mock mode intentionally
+does not read real sensors. Real-device sensor behavior and the heuristic thresholds still need validation
+with different phones and carrying positions; no measured improvement in ranging accuracy is claimed.
