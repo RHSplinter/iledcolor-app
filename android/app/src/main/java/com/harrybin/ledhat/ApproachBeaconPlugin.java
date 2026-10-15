@@ -8,6 +8,10 @@ import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.ParcelUuid;
 import android.view.WindowManager;
@@ -32,13 +36,89 @@ import java.util.UUID;
     name = "ApproachBeacon",
     permissions = { @Permission(alias = "advertise", strings = { Manifest.permission.BLUETOOTH_ADVERTISE }) }
 )
-public class ApproachBeaconPlugin extends Plugin {
+public class ApproachBeaconPlugin extends Plugin implements SensorEventListener {
     /** Mirrors beaconCodec.ts: user name as manufacturer data (test company id) in the scan response. */
     private static final int NAME_COMPANY_ID = 0xFFFF;
     private static final byte[] NAME_PREFIX = { 'L', 'H' };
     private static final int NAME_MAX_BYTES = 20;
     private BluetoothLeAdvertiser advertiser;
     private AdvertiseCallback callback;
+    private SensorManager sensors;
+    private boolean motionRequested;
+    private double rotation;
+    private long rotationTime;
+    private long lastMotionEvent;
+
+    @PluginMethod
+    public void startMotion(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            stopMotionInternal();
+            sensors = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+            motionRequested = true;
+            if (!registerMotion()) {
+                motionRequested = false;
+                call.reject("Linear acceleration sensor unavailable", "UNAVAILABLE");
+                return;
+            }
+            call.resolve();
+        });
+    }
+
+    private boolean registerMotion() {
+        if (sensors == null) return false;
+        Sensor acceleration = sensors.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
+        if (acceleration == null || !sensors.registerListener(this, acceleration, SensorManager.SENSOR_DELAY_GAME)) return false;
+        Sensor gyro = sensors.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+        if (gyro != null) sensors.registerListener(this, gyro, SensorManager.SENSOR_DELAY_GAME);
+        return true;
+    }
+
+    @PluginMethod
+    public void stopMotion(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            motionRequested = false;
+            stopMotionInternal();
+            call.resolve();
+        });
+    }
+
+    private void stopMotionInternal() {
+        if (sensors != null) sensors.unregisterListener(this);
+        rotation = 0;
+        rotationTime = lastMotionEvent = 0;
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        double magnitude = Math.sqrt((double) event.values[0] * event.values[0]
+            + (double) event.values[1] * event.values[1] + (double) event.values[2] * event.values[2]);
+        if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
+            rotation = magnitude;
+            rotationTime = event.timestamp;
+        } else if (event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION && event.timestamp - lastMotionEvent >= 100_000_000L) {
+            lastMotionEvent = event.timestamp;
+            JSObject sample = new JSObject();
+            sample.put("acceleration", magnitude);
+            sample.put("rotation", event.timestamp - rotationTime <= 250_000_000L ? rotation : 0);
+            notifyListeners("motion", sample);
+        }
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+
+    @Override
+    protected void handleOnPause() { stopMotionInternal(); }
+
+    @Override
+    protected void handleOnResume() {
+        if (motionRequested && !registerMotion()) {
+            motionRequested = false;
+            JSObject error = new JSObject();
+            error.put("message", "Motion sensors could not resume");
+            notifyListeners("motionError", error);
+        }
+    }
 
     @PluginMethod
     public void start(PluginCall call) {
@@ -122,5 +202,9 @@ public class ApproachBeaconPlugin extends Plugin {
     }
 
     @Override
-    protected void handleOnDestroy() { stopInternal(); }
+    protected void handleOnDestroy() {
+        motionRequested = false;
+        stopMotionInternal();
+        stopInternal();
+    }
 }

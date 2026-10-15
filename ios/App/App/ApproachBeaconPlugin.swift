@@ -1,5 +1,6 @@
 import Capacitor
 import CoreBluetooth
+import CoreMotion
 import UIKit
 
 /// Advertises this phone as an approach-mode participant. iOS peripherals may only
@@ -13,12 +14,76 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setKeepAwake", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startMotion", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopMotion", returnType: CAPPluginReturnPromise),
     ]
 
     private var manager: CBPeripheralManager?
     private var pendingUuid: CBUUID?
     private var pendingName: String?
     private var pendingCall: CAPPluginCall?
+    private let motion = CMMotionManager()
+    private var motionRequested = false
+
+    public override func load() {
+        NotificationCenter.default.addObserver(self, selector: #selector(pauseMotion),
+            name: UIScene.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(resumeMotion),
+            name: UIScene.didActivateNotification, object: nil)
+    }
+
+    @objc func startMotion(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard self.motion.isDeviceMotionAvailable else {
+                call.reject("Device motion sensors unavailable", "UNAVAILABLE")
+                return
+            }
+            self.motionRequested = true
+            self.beginMotion()
+            call.resolve()
+        }
+    }
+
+    private func beginMotion() {
+        motion.stopDeviceMotionUpdates()
+        motion.deviceMotionUpdateInterval = 0.1
+        // The arbitrary reference frame needs no compass or location permission.
+        motion.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { [weak self] data, error in
+            guard let self = self, self.motionRequested else { return }
+            if let error = error {
+                self.motion.stopDeviceMotionUpdates()
+                self.motionRequested = false
+                self.notifyListeners("motionError", data: ["message": error.localizedDescription])
+                return
+            }
+            guard let data = data else { return }
+            let a = data.userAcceleration
+            let r = data.rotationRate
+            self.notifyListeners("motion", data: [
+                "acceleration": sqrt(a.x * a.x + a.y * a.y + a.z * a.z) * 9.80665,
+                "rotation": sqrt(r.x * r.x + r.y * r.y + r.z * r.z),
+            ])
+        }
+    }
+
+    @objc func stopMotion(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.motionRequested = false
+            self.motion.stopDeviceMotionUpdates()
+            call.resolve()
+        }
+    }
+
+    @objc private func pauseMotion() { motion.stopDeviceMotionUpdates() }
+
+    @objc private func resumeMotion() {
+        if motionRequested { beginMotion() }
+    }
+
+    deinit {
+        motion.stopDeviceMotionUpdates()
+        NotificationCenter.default.removeObserver(self)
+    }
 
     @objc func start(_ call: CAPPluginCall) {
         guard let raw = call.getString("uuid"), UUID(uuidString: raw) != nil else {

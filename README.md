@@ -4,6 +4,10 @@
 
 Besides the PWA, the project builds **Android** and **iOS** apps (Capacitor, `android/` and `ios/`) with the same features plus **Approach mode**: when caps come close, they show greetings for each other or one marquee spanning all caps, configurable for 1, 2, up to 4, up to 8, and more than 8 caps. See [docs/approaching-mode.md](docs/approaching-mode.md) for the detection design and [docs/INSTALL.md](docs/INSTALL.md) for building the APK.
 
+Approach mode uses phone accelerometer/gyroscope data to support RSSI filtering, with RSSI-only fallback
+when sensors are unavailable. These sensors cannot locate other caps, so physical marquee ordering still
+uses manual local cap order and deterministic phone-ID order across phones.
+
 ## Project Description
 
 Build a local-first webapp that installs on an Android home screen and controls the hat's LED display directly over Bluetooth Low Energy (BLE). Text, colors, images, and saved presets stay on the phone. No account, vendor app, backend, or internet connection is required during normal use.
