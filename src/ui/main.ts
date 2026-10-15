@@ -515,7 +515,7 @@ function approachContext(): Parameters<typeof initApproach>[0] {
     chooseCap: () => chooseNativeCap(),
     connectCap: (id) => connectNativeCap(id),
     readRssi: (id) => readCapRssi(id),
-    startScan: (cb) => (native ? startNativeScan((r) => cb({ deviceId: r.device.deviceId, name: r.localName ?? r.device.name, rssi: r.rssi, uuids: r.uuids })) : Promise.resolve()),
+    startScan: (cb) => (native ? startNativeScan((r) => cb({ deviceId: r.device.deviceId, name: r.localName ?? r.device.name, rssi: r.rssi, uuids: r.uuids, localName: r.localName, manufacturerData: r.manufacturerData })) : Promise.resolve()),
     stopScan: () => (native ? stopNativeScan() : Promise.resolve()),
     releaseConnectTabCap(deviceId) {
       if (controller.state !== 'Ready' || !connectedDeviceId || (deviceId && deviceId !== connectedDeviceId)) return null;

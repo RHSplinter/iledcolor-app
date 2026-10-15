@@ -1,4 +1,4 @@
-import { capHash16, decodeBeacon, type BeaconInfo } from './beaconCodec';
+import { capHash16, decodeBeacon, decodeBeaconName, type BeaconInfo } from './beaconCodec';
 import { ProximityTracker } from './proximity';
 import { tierFor, type ApproachSettings, type TierId } from './tiers';
 
@@ -20,12 +20,25 @@ export interface Plan {
   perCap: Map<string, Assignment>;
 }
 
-export interface Advertisement { deviceId: string; name?: string; rssi?: number; uuids?: string[] }
+/**
+ * `name` may come from the OS device cache (e.g. a phone's Bluetooth name) and is only used for caps;
+ * `localName`/`manufacturerData` are taken from the advertisement itself and carry a peer's user name.
+ */
+export interface Advertisement {
+  deviceId: string; name?: string; rssi?: number; uuids?: string[];
+  localName?: string; manufacturerData?: Record<string, DataView>;
+}
 
 const ANIMALS = ['Fox', 'Owl', 'Bee', 'Cat', 'Elk', 'Yak', 'Emu', 'Ant', 'Bat', 'Cod', 'Doe', 'Eel', 'Gnu', 'Hen', 'Jay', 'Koi', 'Ram', 'Ape', 'Pig', 'Rat'];
 /** Default cap label; the same formula on every phone gives consistent greetings without exchanging names. */
 export function defaultLabel(phoneId: number, capIndex: number): string {
   return ANIMALS[phoneId % ANIMALS.length]! + (capIndex > 0 ? String(capIndex + 1) : '');
+}
+
+/** Label of a phone's n-th cap: the user name when one is set ("Anna", "Anna2", …), else the animal default. */
+export function capLabel(phoneId: number, capIndex: number, userName?: string): string {
+  const n = userName?.trim();
+  return n ? n + (capIndex > 0 ? String(capIndex + 1) : '') : defaultLabel(phoneId, capIndex);
 }
 const hex8 = (n: number) => n.toString(16).padStart(8, '0');
 
@@ -82,6 +95,7 @@ export class ApproachEngine {
   readonly tracker: ProximityTracker;
   private localCaps: LocalCap[] = [];
   private peers = new Map<string, BeaconInfo>();
+  private peerNames = new Map<string, string>(); // kept across reports: not every report includes the scan response
   private capNames = new Map<string, string>(); // tracker key -> advertised cap name
   private candidateSig = '';
   private candidateSince = 0;
@@ -110,6 +124,8 @@ export class ApproachEngine {
       if (!b || b.phoneId === this.phoneId) continue;
       const key = `peer:${hex8(b.phoneId)}`;
       this.peers.set(key, b);
+      const name = decodeBeaconName(a.manufacturerData, a.localName);
+      if (name) this.peerNames.set(key, name);
       this.tracker.update(key, a.rssi, now);
       return;
     }
@@ -131,11 +147,11 @@ export class ApproachEngine {
     });
     const peerHashes = new Set<number>();
     for (const [key, b] of this.peers) {
-      if (!this.tracker.isNear(key, now)) { if (!this.tracker.keys().includes(key)) this.peers.delete(key); continue; }
+      if (!this.tracker.isNear(key, now)) { if (!this.tracker.keys().includes(key)) { this.peers.delete(key); this.peerNames.delete(key); } continue; }
       b.capHashes.forEach((h) => peerHashes.add(h));
       const id = key.slice(5);
       for (let j = 0; j < b.capCount; j++)
-        out.push({ key: `${key}:${j}`, label: defaultLabel(b.phoneId, j), local: false, sortKey: `${id}:${String(j).padStart(3, '0')}`, source: 'peer' });
+        out.push({ key: `${key}:${j}`, label: capLabel(b.phoneId, j, this.peerNames.get(key)), local: false, sortKey: `${id}:${String(j).padStart(3, '0')}`, source: 'peer' });
     }
     if (this.settings.countNearbyCaps) {
       for (const [key, name] of this.capNames) {
@@ -157,6 +173,18 @@ export class ApproachEngine {
     if (now - this.candidateSince < this.settings.settleMs || sig === this.appliedSig) return null;
     this.appliedSig = sig;
     return plan;
+  }
+
+  /** Other phones currently heard (near or not), with smoothed RSSI, for display and threshold tuning. */
+  heardPhones(now: number): { id: string; label: string; capCount: number; rssi: number; near: boolean }[] {
+    this.tracker.expire(now);
+    const out = [];
+    for (const [key, b] of this.peers) {
+      const rssi = this.tracker.rssi(key);
+      if (rssi === undefined) continue;
+      out.push({ id: key.slice(5), label: capLabel(b.phoneId, 0, this.peerNames.get(key)), capCount: b.capCount, rssi: Math.round(rssi), near: this.tracker.isNear(key, now) });
+    }
+    return out.sort((a, b) => b.rssi - a.rssi);
   }
 
   /** Beacon describing this phone's caps for other phones. */

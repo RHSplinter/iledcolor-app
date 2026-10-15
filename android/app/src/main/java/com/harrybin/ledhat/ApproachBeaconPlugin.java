@@ -21,6 +21,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 /**
@@ -32,6 +33,10 @@ import java.util.UUID;
     permissions = { @Permission(alias = "advertise", strings = { Manifest.permission.BLUETOOTH_ADVERTISE }) }
 )
 public class ApproachBeaconPlugin extends Plugin {
+    /** Mirrors beaconCodec.ts: user name as manufacturer data (test company id) in the scan response. */
+    private static final int NAME_COMPANY_ID = 0xFFFF;
+    private static final byte[] NAME_PREFIX = { 'L', 'H' };
+    private static final int NAME_MAX_BYTES = 20;
     private BluetoothLeAdvertiser advertiser;
     private AdvertiseCallback callback;
 
@@ -69,13 +74,23 @@ public class ApproachBeaconPlugin extends Plugin {
             .setIncludeDeviceName(false)
             .addServiceUuid(new ParcelUuid(UUID.fromString(uuid)))
             .build();
+        AdvertiseData scanResponse = null;
+        String name = call.getString("name", "");
+        if (name != null && !name.trim().isEmpty()) {
+            byte[] utf8 = name.trim().getBytes(StandardCharsets.UTF_8);
+            int len = Math.min(utf8.length, NAME_MAX_BYTES);
+            byte[] payload = new byte[NAME_PREFIX.length + len];
+            System.arraycopy(NAME_PREFIX, 0, payload, 0, NAME_PREFIX.length);
+            System.arraycopy(utf8, 0, payload, NAME_PREFIX.length, len);
+            scanResponse = new AdvertiseData.Builder().setIncludeDeviceName(false).addManufacturerData(NAME_COMPANY_ID, payload).build();
+        }
         final PluginCall pending = call;
         callback = new AdvertiseCallback() {
             @Override public void onStartSuccess(AdvertiseSettings s) { JSObject r = new JSObject(); r.put("advertising", true); pending.resolve(r); }
             @Override public void onStartFailure(int errorCode) { callback = null; pending.reject("Advertising failed (code " + errorCode + ")"); }
         };
         try {
-            advertiser.startAdvertising(settings, data, callback);
+            advertiser.startAdvertising(settings, data, scanResponse, callback);
         } catch (SecurityException e) {
             call.reject("Bluetooth advertise permission missing", e);
         }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { capHash16, decodeBeacon, encodeBeacon } from '../src/approach/beaconCodec';
+import { capHash16, decodeBeacon, decodeBeaconName, encodeBeacon, fitBeaconName, NAME_COMPANY_ID } from '../src/approach/beaconCodec';
 import { ProximityTracker } from '../src/approach/proximity';
 import { DEFAULT_APPROACH, tierFor, validateApproach, type ApproachSettings } from '../src/approach/tiers';
-import { ApproachEngine, defaultLabel, fillTemplate, joinOthers, planFor, type Member } from '../src/approach/engine';
+import { ApproachEngine, capLabel, defaultLabel, fillTemplate, joinOthers, planFor, type Member } from '../src/approach/engine';
 import { sliceSpan, spanStep, MAX_SPAN_FRAMES } from '../src/render/span';
 
 const settings = (over: Partial<ApproachSettings> = {}): ApproachSettings => ({ ...DEFAULT_APPROACH, settleMs: 0, ...over });
@@ -199,6 +199,45 @@ describe('P2P mode (one cap per phone)', () => {
     expect(sa).toMatchObject({ kind: 'span', total: 2, text: '2 caps!' });
     expect(sb).toMatchObject({ kind: 'span', total: 2, text: '2 caps!' });
     expect(new Set([(sa as { index: number }).index, (sb as { index: number }).index])).toEqual(new Set([0, 1]));
+  });
+
+  it('lists heard phones with RSSI and near state, including ones below the near threshold', () => {
+    const { a, hear } = pair(settings());
+    hear(-82, 0);
+    expect(a.heardPhones(0)).toEqual([{ id: '0000000b', label: defaultLabel(0xb, 0), capCount: 1, rssi: -82, near: false }]);
+    for (let t = 1000; t <= 6000; t += 1000) hear(-50, t);
+    expect(a.heardPhones(6000)[0]).toMatchObject({ near: true });
+    expect(a.heardPhones(20000)).toEqual([]);
+  });
+
+  it('greets with the user name a peer sends in its scan response, and keeps it when a report lacks it', () => {
+    const { a, b } = pair(settings());
+    const md = (s: string) => { const bytes = new Uint8Array([0x4c, 0x48, ...new TextEncoder().encode(s)]); return { [String(NAME_COMPANY_ID)]: new DataView(bytes.buffer) }; };
+    for (let t = 0; t <= 3000; t += 1000) {
+      a.onLocalRssi('CA', -45, t);
+      a.onAdvertisement({ deviceId: 'pb', rssi: -50, uuids: [encodeBeacon(b.beacon())], ...(t === 0 ? { manufacturerData: md('Jürgen') } : {}) }, t);
+    }
+    expect(a.tick(3000)!.perCap.get('CA')).toMatchObject({ text: 'Hi Jürgen!' });
+    expect(a.heardPhones(3000)[0]!.label).toBe('Jürgen');
+  });
+});
+
+describe('beacon name', () => {
+  it('fits names into 20 UTF-8 bytes without splitting characters', () => {
+    expect(fitBeaconName('  Anna ')).toBe('Anna');
+    expect(new TextEncoder().encode(fitBeaconName('ÄÖÜäöüßÄÖÜäöü')).length).toBeLessThanOrEqual(20);
+    expect(fitBeaconName('ÄÖÜäöüßÄÖÜäöü')).toBe('ÄÖÜäöüßÄÖÜ');
+  });
+  it('decodes manufacturer data, falls back to the iOS local name, ignores foreign data', () => {
+    const v = new DataView(new Uint8Array([0x4c, 0x48, 0x48, 0x69]).buffer);
+    expect(decodeBeaconName({ [String(NAME_COMPANY_ID)]: v })).toBe('Hi');
+    expect(decodeBeaconName({ '76': v }, 'Mia')).toBe('Mia');
+    expect(decodeBeaconName({ [String(NAME_COMPANY_ID)]: new DataView(new Uint8Array([1, 2, 3]).buffer) })).toBeUndefined();
+  });
+  it('labels caps with the user name', () => {
+    expect(capLabel(7, 0, 'Anna')).toBe('Anna');
+    expect(capLabel(7, 1, 'Anna')).toBe('Anna2');
+    expect(capLabel(7, 0, ' ')).toBe(defaultLabel(7, 0));
   });
 });
 

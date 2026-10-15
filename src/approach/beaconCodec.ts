@@ -37,6 +37,37 @@ export function encodeBeacon(b: BeaconInfo): string {
   return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
 }
 
+/**
+ * The user's display name travels next to the UUID: Android puts it in the scan response as
+ * manufacturer data (test company id 0xFFFF, prefix "LH"); iOS can only set the local name.
+ */
+export const NAME_COMPANY_ID = 0xffff;
+export const NAME_PREFIX = [0x4c, 0x48]; // "LH"
+export const NAME_MAX_BYTES = 20;
+
+/** Trims and shortens a name so its UTF-8 form fits the scan response (never splits a character). */
+export function fitBeaconName(name: string): string {
+  const enc = new TextEncoder();
+  let out = '';
+  for (const ch of name.trim()) {
+    if (enc.encode(out + ch).length > NAME_MAX_BYTES) break;
+    out += ch;
+  }
+  return out;
+}
+
+/** Peer name from an advertisement that carried a beacon UUID; undefined when none was sent. */
+export function decodeBeaconName(manufacturerData?: Record<string, DataView>, localName?: string): string | undefined {
+  const v = manufacturerData?.[String(NAME_COMPANY_ID)];
+  if (v && v.byteLength > NAME_PREFIX.length && NAME_PREFIX.every((p, i) => v.getUint8(i) === p)) {
+    const bytes = new Uint8Array(v.buffer, v.byteOffset + NAME_PREFIX.length, Math.min(v.byteLength - NAME_PREFIX.length, NAME_MAX_BYTES));
+    const s = new TextDecoder().decode(bytes).trim();
+    if (s) return s;
+  }
+  const n = localName?.trim();
+  return n ? n : undefined;
+}
+
 export function decodeBeacon(uuid: string): BeaconInfo | null {
   const s = uuid.replace(/-/g, '').toLowerCase();
   if (!/^[0-9a-f]{32}$/.test(s)) return null;

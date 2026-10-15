@@ -17,6 +17,7 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
 
     private var manager: CBPeripheralManager?
     private var pendingUuid: CBUUID?
+    private var pendingName: String?
     private var pendingCall: CAPPluginCall?
 
     @objc func start(_ call: CAPPluginCall) {
@@ -24,6 +25,8 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
             call.reject("uuid required"); return
         }
         pendingUuid = CBUUID(string: raw)
+        let name = call.getString("name")?.trimmingCharacters(in: .whitespaces) ?? ""
+        pendingName = name.isEmpty ? nil : name
         pendingCall = call
         if let m = manager, m.state == .poweredOn { advertise(m) }
         else if manager == nil { manager = CBPeripheralManager(delegate: self, queue: nil) }
@@ -46,7 +49,10 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
     private func advertise(_ m: CBPeripheralManager) {
         guard let uuid = pendingUuid else { return }
         m.stopAdvertising()
-        m.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [uuid]])
+        var ad: [String: Any] = [CBAdvertisementDataServiceUUIDsKey: [uuid]]
+        // iOS cannot send manufacturer data; the user name goes out as the local name instead.
+        if let n = pendingName { ad[CBAdvertisementDataLocalNameKey] = n }
+        m.startAdvertising(ad)
     }
 
     public func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {

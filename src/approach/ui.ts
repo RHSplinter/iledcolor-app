@@ -8,8 +8,8 @@ import type { Content } from '../storage/presets';
 import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
-import { encodeBeacon } from './beaconCodec';
-import { ApproachEngine, defaultLabel, type Assignment, type LocalCap, type Member, type Plan } from './engine';
+import { encodeBeacon, fitBeaconName } from './beaconCodec';
+import { ApproachEngine, capLabel, defaultLabel, type Advertisement, type Assignment, type LocalCap, type Member, type Plan } from './engine';
 import { DEFAULT_APPROACH, TEMPLATE_HELP, TIER_IDS, TIER_LABELS, tierFor, validateApproach, type ApproachSettings, type TierId } from './tiers';
 
 /** What the approach tab needs from the rest of the app. */
@@ -25,7 +25,7 @@ export interface ApproachContext {
   chooseCap(): Promise<{ deviceId: string; name: string }>;
   connectCap(deviceId: string): Promise<Transport>;
   readRssi(deviceId: string): Promise<number>;
-  startScan(cb: (a: { deviceId: string; name?: string; rssi?: number; uuids?: string[] }) => void): Promise<void>;
+  startScan(cb: (a: Advertisement) => void): Promise<void>;
   stopScan(): Promise<void>;
   /** Hands over the cap connected on the Connect tab (if it is this device, or any when omitted). */
   releaseConnectTabCap(deviceId?: string): { deviceId: string; name: string; controller: DeviceController } | null;
@@ -33,6 +33,8 @@ export interface ApproachContext {
 
 interface CapEntry extends LocalCap {
   deviceId: string;
+  /** Set when the user renamed this cap; otherwise the label follows the user name / position. */
+  customLabel?: string;
   controller: DeviceController;
   rssi?: number;
   note: string;
@@ -52,6 +54,7 @@ let ctx: ApproachContext;
 let settings: ApproachSettings = DEFAULT_APPROACH;
 let engine: ApproachEngine;
 let phoneId = 0;
+let userName = '';
 let caps: CapEntry[] = [];
 let simPeers: SimPeer[] = [];
 let running = false;
@@ -79,6 +82,8 @@ export async function initApproach(c: ApproachContext): Promise<void> {
     settings = validateApproach(await loadKv('approach'));
     const id = await loadKv('phoneId');
     phoneId = typeof id === 'number' && Number.isInteger(id) ? id : 0;
+    const n = await loadKv('userName');
+    userName = typeof n === 'string' ? fitBeaconName(n) : '';
   } catch { settings = DEFAULT_APPROACH; }
   if (!phoneId) {
     phoneId = (crypto.getRandomValues(new Uint32Array(1))[0]! || 1) >>> 0;
@@ -88,9 +93,16 @@ export async function initApproach(c: ApproachContext): Promise<void> {
 }
 
 const persist = () => saveKv('approach', settings).catch((e) => note(`could not save settings: ${(e as Error).message}`));
-const persistCaps = () => saveKv('approachCaps', caps.filter((c) => !c.mock).map<SavedCap>((c) => ({ deviceId: c.deviceId, bleName: c.bleName, label: c.label }))).catch(() => undefined);
+const persistCaps = () => saveKv('approachCaps', caps.filter((c) => !c.mock).map<SavedCap>((c) => ({ deviceId: c.deviceId, bleName: c.bleName, label: c.customLabel ?? '' }))).catch(() => undefined);
+
+/** True for generated labels ("Bee", "Bee2", "Anna2"), which older versions also saved as cap labels. */
+function isAutoLabel(l: string): boolean {
+  for (let k = 0; k < 32; k++) if (l === defaultLabel(phoneId, k) || l === capLabel(phoneId, k, userName)) return true;
+  return false;
+}
 
 function syncEngineCaps() {
+  caps.forEach((c, i) => (c.label = c.customLabel || capLabel(phoneId, i, userName)));
   engine.setLocalCaps(caps.map((c) => ({ key: c.key, bleName: c.bleName, label: c.label })));
   engine.invalidate();
   if (running) void startBeacon();
@@ -107,7 +119,7 @@ function makeController(): DeviceController {
 async function addCap(deviceId: string, bleName: string, label?: string, existing?: DeviceController) {
   if (caps.some((c) => c.deviceId === deviceId)) { note(`${bleName} is already in the list`); return; }
   const entry: CapEntry = {
-    key: deviceId, deviceId, bleName, label: label || defaultLabel(phoneId, caps.length),
+    key: deviceId, deviceId, bleName, label: '', customLabel: label && !isAutoLabel(label) ? label : undefined,
     controller: existing ?? makeController(), note: '', lastReconnect: Date.now(), mockRssi: -55,
   };
   if (existing) existing.subscribe(() => renderCapsSoon());
@@ -185,8 +197,9 @@ async function startBeacon() {
   if (!ctx.native) { beaconNote = settings.beacon ? 'Beacon needs the mobile app.' : ''; return; }
   try {
     if (!settings.beacon) { await ApproachBeacon.stop(); beaconNote = 'Beacon off.'; return; }
-    await ApproachBeacon.start({ uuid: encodeBeacon(engine.beacon()) });
-    beaconNote = `Beacon on (phone ${phoneId.toString(16).padStart(8, '0')}, ${caps.length} cap${caps.length === 1 ? '' : 's'}).`;
+    const name = fitBeaconName(caps[0]?.customLabel || userName);
+    await ApproachBeacon.start({ uuid: encodeBeacon(engine.beacon()), name: name || undefined });
+    beaconNote = `Beacon on${name ? ` as "${name}"` : ''} (phone ${phoneId.toString(16).padStart(8, '0')}, ${caps.length} cap${caps.length === 1 ? '' : 's'}).`;
   } catch (e) { beaconNote = `Beacon failed: ${(e as Error).message}`; }
   renderStatusSoon();
 }
@@ -344,6 +357,9 @@ export function renderApproach() {
       ${available ? '' : '<p class="warn">Approach mode needs the Android or iOS app (BLE scanning, several cap connections and a phone beacon are not available to web apps).</p>'}
       ${ctx.mock ? '<p class="warn">Mock mode: caps and nearby phones are simulated; use the RSSI sliders.</p>' : ''}
       <p class="small">Caps that come close are grouped; every cap then shows the content configured for the group size, either a personal greeting or one marquee running across all caps.</p>
+      <label for="ap-name">Your name</label>
+      <input id="ap-name" type="text" maxlength="16" value="${esc(userName)}" placeholder="${esc(defaultLabel(phoneId, 0))}" autocomplete="nickname" />
+      <p class="small">Shown on other phones and used in their greetings (e.g. "Hi ${esc(userName || 'Anna')}!"). Your caps are labelled with it unless you rename them below.</p>
       <div class="row">
         <button id="ap-start" class="primary" ${available ? '' : 'disabled'}>${running ? 'Stop' : 'Start'}</button>
         <button id="ap-resync" ${running ? '' : 'disabled'}>Resend to all</button>
@@ -376,6 +392,8 @@ export function renderApproach() {
       <label><input type="checkbox" id="ap-beacon" ${settings.beacon ? 'checked' : ''}/> Advertise this phone to other phones (peer mode)</label>
       <label><input type="checkbox" id="ap-count" ${settings.countNearbyCaps ? 'checked' : ''}/> Count nearby caps that are not connected here</label>
       <p class="small">RSSI is a rough distance signal (≈ -55 dBm touching, -70 dBm about 1–2 m). Raise "Near at" to require closer contact.</p>
+      <h3 class="small">Nearby phones (approach beacons)</h3>
+      <ul class="list small" id="ap-phones"></ul>
       <h3 class="small">Nearby caps (advertising)</h3>
       <ul class="list small" id="ap-nearby"></ul>
     </div>
@@ -385,6 +403,15 @@ export function renderApproach() {
     </div>`;
 
   $('#ap-start').onclick = () => void (running ? stop() : start());
+  $<HTMLInputElement>('#ap-name').addEventListener('change', (e) => {
+    const el = e.target as HTMLInputElement;
+    userName = fitBeaconName(el.value);
+    el.value = userName;
+    void saveKv('userName', userName).catch(() => undefined);
+    note(userName ? `name set to "${userName}"` : 'name cleared');
+    syncEngineCaps();
+    renderCaps(); renderStatus();
+  });
   $('#ap-resync').onclick = () => { caps.forEach((c) => (c.lastSig = undefined)); engine.invalidate(); note('resending to all caps'); };
   $('#ap-add').onclick = () => void onAddCap();
   $('#ap-saved').onclick = () => void onConnectSaved();
@@ -456,6 +483,9 @@ function renderStatus() {
        <p>${esc(scanNote)} ${esc(beaconNote)}</p>${lastPlan ? `<p>Last applied: ${lastPlan.count} → ${esc(TIER_LABELS[lastPlan.tier])}</p>` : ''}`
     : '<p>Stopped.</p>';
   const nb = document.getElementById('ap-nearby');
+  const ph = document.getElementById('ap-phones');
+  if (ph) ph.innerHTML = engine.heardPhones(Date.now()).map((p) => `<li><span>${esc(p.label)} · ${p.id} · ${p.capCount} cap${p.capCount === 1 ? '' : 's'}</span><span>${p.rssi} dBm ${p.near ? 'near' : 'far'}</span></li>`).join('')
+    || `<li class="muted">${running ? 'No other phone heard.' : 'Start approach mode to listen.'}</li>`;
   if (nb) nb.innerHTML = [...nearby.values()].sort((a, b) => b.rssi - a.rssi).map((n) => `<li><span>${esc(n.name)}</span><span>${n.rssi} dBm</span></li>`).join('') || '<li class="muted">None seen (connected caps often stop advertising).</li>';
 }
 
@@ -484,7 +514,7 @@ function renderCaps() {
     if (!c) return;
     li.querySelectorAll<HTMLElement>('[data-act]').forEach((el) => {
       const act = el.dataset.act;
-      if (act === 'label') el.addEventListener('change', () => { c.label = (el as HTMLInputElement).value.trim() || defaultLabel(phoneId, caps.indexOf(c)); syncEngineCaps(); persistCaps(); });
+      if (act === 'label') el.addEventListener('change', () => { const v = (el as HTMLInputElement).value.trim(); c.customLabel = v && !isAutoLabel(v) ? v : undefined; syncEngineCaps(); persistCaps(); renderCaps(); });
       else if (act === 'rssi') el.addEventListener('input', () => { c.mockRssi = Number((el as HTMLInputElement).value); });
       else if (act === 'up') el.onclick = () => moveCap(c.key, -1);
       else if (act === 'down') el.onclick = () => moveCap(c.key, 1);
