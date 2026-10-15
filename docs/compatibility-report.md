@@ -41,4 +41,7 @@ Observed ack formats that differ from the app's assumptions (below) must be reco
 - StartStream ack `5406000301005e`.
 - Continue ack `540000050000000001005a`: body = seq(4) + status 0x01. **Deviation:** its length field
   (5) excludes the checksum, unlike all other acks. The parser accepts this form for cmd 0x00 only.
+- While charging, uploading normal content/animation from the app replaces the hat's built-in
+  charging animation (confirmed by user on hardware). Whether the charging animation returns on
+  re-plugging is not yet recorded.
 - Still to record: EndStream ack, brightness/display acks, larger chunk sizes, persistence after power cycle.
