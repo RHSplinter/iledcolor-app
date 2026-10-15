@@ -20,7 +20,11 @@ export function tierFor(count: number): TierId {
 export type TierMode = 'individual' | 'span';
 export interface TierConfig { mode: TierMode; text: string; fg: string; bg: string; speed: number }
 
+export type ApproachMode = 'p2p' | 'hub';
+
 export interface ApproachSettings {
+  /** p2p: one cap on this phone, phones find each other via beacons. hub: this phone controls several caps. */
+  mode: ApproachMode;
   tiers: Record<TierId, TierConfig>;
   enterDbm: number;
   leaveDbm: number;
@@ -36,6 +40,7 @@ export interface ApproachSettings {
 export const TEMPLATE_HELP = '{me} = this cap, {other} = the other cap(s), {count} = caps together, {index} = position in the group';
 
 export const DEFAULT_APPROACH: ApproachSettings = {
+  mode: 'p2p',
   tiers: {
     solo: { mode: 'individual', text: '{me}', fg: '#00c8ff', bg: '#000000', speed: 5 },
     pair: { mode: 'individual', text: 'Hi {other}!', fg: '#ffd000', bg: '#000000', speed: 5 },
@@ -72,13 +77,16 @@ export function validateApproach(raw: unknown): ApproachSettings {
     };
   }
   const enterDbm = num(r.enterDbm, -110, -20, DEFAULT_APPROACH.enterDbm);
+  const mode = r.mode === 'hub' ? 'hub' : 'p2p';
   return {
+    mode,
     tiers,
     enterDbm,
     leaveDbm: Math.min(enterDbm, num(r.leaveDbm, -120, -20, DEFAULT_APPROACH.leaveDbm)),
     settleMs: num(r.settleMs, 0, 30000, DEFAULT_APPROACH.settleMs),
     staleMs: num(r.staleMs, 2000, 60000, DEFAULT_APPROACH.staleMs),
-    beacon: typeof r.beacon === 'boolean' ? r.beacon : DEFAULT_APPROACH.beacon,
+    // P2P only works when phones advertise themselves.
+    beacon: mode === 'p2p' || (typeof r.beacon === 'boolean' ? r.beacon : DEFAULT_APPROACH.beacon),
     countNearbyCaps: typeof r.countNearbyCaps === 'boolean' ? r.countNearbyCaps : DEFAULT_APPROACH.countNearbyCaps,
   };
 }

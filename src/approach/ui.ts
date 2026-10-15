@@ -167,6 +167,7 @@ async function addCap(deviceId: string, bleName: string, label?: string, front =
 
 /** Connect tab: the chosen cap becomes cap 1 here (added in front, or moved there) and is connected. */
 export async function connectAsPrimary(deviceId: string, bleName: string): Promise<void> {
+  if (settings.mode === 'p2p') for (const o of caps.filter((x) => x.deviceId !== deviceId)) removeCap(o.key);
   const c = caps.find((x) => x.deviceId === deviceId);
   if (!c) { await addCap(deviceId, bleName, undefined, true); return; }
   if (caps[0] !== c) {
@@ -246,6 +247,7 @@ async function onConnectSaved() {
   for (const s of saved) {
     if (typeof s?.deviceId !== 'string' || typeof s.bleName !== 'string') continue;
     await addCap(s.deviceId, s.bleName, typeof s.label === 'string' ? s.label : undefined);
+    if (settings.mode === 'p2p') break;
   }
 }
 
@@ -417,6 +419,7 @@ export function renderApproach() {
   const root = document.getElementById('view-approach');
   if (!root || !ctx) return;
   const available = ctx.native || ctx.mock;
+  const hub = settings.mode === 'hub';
   root.innerHTML = `
     <div class="card">
       <h2>Approach mode</h2>
@@ -426,6 +429,11 @@ export function renderApproach() {
       <label for="ap-name">Your name</label>
       <input id="ap-name" type="text" maxlength="16" value="${esc(userName)}" placeholder="${esc(defaultLabel(phoneId, 0))}" autocomplete="nickname" />
       <p class="small">Shown on other phones and used in their greetings (e.g. "Hi ${esc(userName || 'Anna')}!"). Your caps are labelled with it unless you rename them below.</p>
+      <fieldset class="row" style="border:0;padding:0;margin:.5em 0">
+        <legend class="small">Mode</legend>
+        <label><input type="radio" name="ap-mode" value="p2p" ${settings.mode === 'p2p' ? 'checked' : ''} ${running ? 'disabled' : ''}/> P2P (one cap per phone)</label>
+        <label><input type="radio" name="ap-mode" value="hub" ${settings.mode === 'hub' ? 'checked' : ''} ${running ? 'disabled' : ''}/> Master (several caps on this phone)</label>
+      </fieldset>
       <label class="switch"><input type="checkbox" role="switch" id="ap-start" ${running ? 'checked' : ''} ${available && !switching ? '' : 'disabled'} /> Approach mode ${running ? 'on' : 'off'}</label>
       <div class="row">
         <button id="ap-resync" ${running ? '' : 'disabled'}>Resend to all</button>
@@ -433,12 +441,15 @@ export function renderApproach() {
       <div id="ap-status" class="small" aria-live="polite"></div>
     </div>
     <div class="card">
-      <h2>Caps on this phone</h2>
-      <p class="small">A cap accepts one Bluetooth connection. Connect every cap you carry (or, as a hub, several caps) here. Order = left-to-right position for spanning marquees. Cap 1 is the cap of the Connect tab.</p>
+      <h2>${hub ? 'Caps on this phone' : 'Your cap'}</h2>
+      ${hub
+        ? `<p class="small">A cap accepts one Bluetooth connection. Connect all caps this phone controls. Order = left-to-right position for spanning marquees. Cap 1 is the cap of the Connect tab.</p>
       <div class="row">
         <button id="ap-add" ${available ? '' : 'disabled'}>Add cap</button>
         <button id="ap-saved" ${available && !ctx.mock ? '' : 'disabled'}>Connect saved caps</button>
-      </div>
+      </div>`
+        : `<p class="small">P2P: this phone controls one cap; other phones with the app are detected nearby. Connect it here or on the Connect tab.</p>
+      ${caps.length ? '' : `<div class="row"><button id="ap-add" ${available ? '' : 'disabled'}>Connect cap</button></div>`}`}
       <ul class="list" id="ap-caps"></ul>
       ${ctx.mock ? '<div class="row"><button id="ap-sim-peer">Simulate nearby phone</button></div><ul class="list" id="ap-peers"></ul>' : ''}
     </div>
@@ -454,8 +465,8 @@ export function renderApproach() {
         <div><label for="ap-leave">Away below dBm</label><input id="ap-leave" type="number" min="-120" max="-20" value="${settings.leaveDbm}" /></div>
         <div><label for="ap-settle">Settle s</label><input id="ap-settle" type="number" min="0" max="30" step="0.5" value="${settings.settleMs / 1000}" /></div>
       </div>
-      <label><input type="checkbox" id="ap-beacon" ${settings.beacon ? 'checked' : ''}/> Advertise this phone to other phones (peer mode)</label>
-      <label><input type="checkbox" id="ap-count" ${settings.countNearbyCaps ? 'checked' : ''}/> Count nearby caps that are not connected here</label>
+      ${hub ? `<label><input type="checkbox" id="ap-beacon" ${settings.beacon ? 'checked' : ''}/> Advertise this phone to other phones</label>
+      <label><input type="checkbox" id="ap-count" ${settings.countNearbyCaps ? 'checked' : ''}/> Count nearby caps that are not connected here</label>` : ''}
       <p class="small">RSSI is a rough distance signal (≈ -55 dBm touching, -70 dBm about 1–2 m). Raise "Near at" to require closer contact.</p>
       <h3 class="small">Nearby phones (approach beacons)</h3>
       <ul class="list small" id="ap-phones"></ul>
@@ -478,8 +489,11 @@ export function renderApproach() {
     renderCaps(); renderStatus();
   });
   $('#ap-resync').onclick = () => { caps.forEach((c) => (c.lastSig = undefined)); engine.invalidate(); note('resending to all caps'); };
-  $('#ap-add').onclick = () => void onAddCap();
-  $('#ap-saved').onclick = () => void onConnectSaved();
+  root.querySelectorAll<HTMLInputElement>('input[name=ap-mode]').forEach((el) => (el.onchange = () => setMode(el.value === 'hub' ? 'hub' : 'p2p')));
+  const addBtn = document.getElementById('ap-add');
+  if (addBtn) addBtn.onclick = () => void onAddCap();
+  const savedBtn = document.getElementById('ap-saved');
+  if (savedBtn) savedBtn.onclick = () => void onConnectSaved();
   const simBtn = document.getElementById('ap-sim-peer');
   if (simBtn) simBtn.onclick = () => { simPeers.push({ id: (crypto.getRandomValues(new Uint32Array(1))[0]! || 1) >>> 0, caps: 1, rssi: -60 }); renderApproach(); };
   for (const id of TIER_IDS) {
@@ -499,13 +513,28 @@ export function renderApproach() {
       enterDbm: num('#ap-enter', settings.enterDbm),
       leaveDbm: num('#ap-leave', settings.leaveDbm),
       settleMs: num('#ap-settle', settings.settleMs / 1000) * 1000,
-      beacon: $<HTMLInputElement>('#ap-beacon').checked,
-      countNearbyCaps: $<HTMLInputElement>('#ap-count').checked,
+      beacon: document.querySelector<HTMLInputElement>('#ap-beacon')?.checked ?? settings.beacon,
+      countNearbyCaps: document.querySelector<HTMLInputElement>('#ap-count')?.checked ?? settings.countNearbyCaps,
     });
     if (running) void startBeacon();
   }));
   renderCaps();
   renderStatus();
+}
+
+/** P2P keeps only cap 1 on this phone; extra caps are disconnected (still saved for Master mode). */
+function setMode(mode: 'p2p' | 'hub') {
+  if (running || mode === settings.mode) { renderApproach(); return; }
+  updateSettings({ ...settings, mode });
+  if (mode === 'p2p' && caps.length > 1) {
+    const saved = caps.filter((c) => !c.mock).map<SavedCap>((c) => ({ deviceId: c.deviceId, bleName: c.bleName, label: c.customLabel ?? '' }));
+    for (const c of caps.slice(1)) { c.controller.disconnect(); engine.tracker.forget(c.key); }
+    caps = caps.slice(0, 1);
+    syncEngineCaps();
+    void saveKv('approachCaps', saved).catch(() => undefined);
+  }
+  note(mode === 'p2p' ? 'mode: P2P (one cap per phone)' : 'mode: Master (several caps)');
+  renderApproach();
 }
 
 function updateSettings(s: ApproachSettings) {
@@ -563,8 +592,8 @@ function renderCaps() {
       <canvas class="ap-prev" width="64" height="32" style="background:#000;border:1px solid #333;image-rendering:pixelated;height:32px"></canvas>
       <small class="cap-note" style="flex:1">${esc(c.note)}</small>
       ${ctx.mock || c.deviceId.startsWith('mock-') ? `<label class="small">RSSI <input type="range" data-act="rssi" min="-100" max="-40" value="${c.mockRssi}" /></label>` : ''}
-      <button data-act="up" aria-label="move left" ${i === 0 ? 'disabled' : ''}>◀</button>
-      <button data-act="down" aria-label="move right" ${i === caps.length - 1 ? 'disabled' : ''}>▶</button>
+      ${settings.mode === 'hub' ? `<button data-act="up" aria-label="move left" ${i === 0 ? 'disabled' : ''}>◀</button>
+      <button data-act="down" aria-label="move right" ${i === caps.length - 1 ? 'disabled' : ''}>▶</button>` : ''}
       ${c.controller.state === 'Disconnected' || c.controller.state === 'Error' ? '<button data-act="connect">Reconnect</button>' : ''}
       <button data-act="remove" class="danger">Remove</button>
     </li>`;

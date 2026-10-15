@@ -44,6 +44,8 @@ test('rejects a corrupt preset import visibly', async ({ page }) => {
 test('approach mode (mock): two caps greet each other, peers grow the group', async ({ page }) => {
   await page.goto('/#mock');
   await page.click('nav button[data-tab=approach]');
+  await expect(page.locator('#ap-beacon')).toHaveCount(0); // P2P is the default: multi-cap settings hidden
+  await page.check('input[name=ap-mode][value=hub]');
   await page.click('#ap-add');
   await page.click('#ap-add');
   await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(2);
@@ -75,6 +77,8 @@ test('the Connect tab cap is cap 1 of approach mode', async ({ page }) => {
   await page.click('nav button[data-tab=approach]');
   await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(1);
   await expect(page.locator('#ap-caps li[data-key]').first()).toContainText('Ready');
+  await expect(page.locator('#ap-add')).toHaveCount(0);
+  await page.check('input[name=ap-mode][value=hub]');
   await page.click('#ap-add');
   await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(2);
   await page.click('nav [data-tab=connect]');
