@@ -7,14 +7,14 @@ import { cornerTest, drawPreview, parseHexColor, solid, transformImage } from '.
 import { encodeGif } from '../render/gif';
 import { gifToFrames, MAX_GIF_STORE_BYTES } from '../render/gifDecode';
 import { ensureFont, renderMarquee, renderText } from '../render/text';
-import { deletePreset, listPresets, loadSettings, replaceAllPresets, requestPersistence, savePreset, saveSettings } from '../storage/db';
-import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, isGroupPreset, parseImport, type Content, type Preset, type Settings } from '../storage/presets';
+import { deletePreset, listPresets, loadKv, loadSettings, replaceAllPresets, requestPersistence, saveKv, savePreset, saveSettings } from '../storage/db';
+import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, isGroupPreset, parseImport, validateContent, type Content, type Preset, type Settings } from '../storage/presets';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
-import { applyGroupContent, connectAsPrimary, disconnectPrimary, initApproach, renderApproach, type PrimaryCap } from '../approach/ui';
+import { applyGroupContent, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, renderApproach, type PrimaryCap } from '../approach/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -33,9 +33,9 @@ const marqueeDelay = (speed: number) => Math.round(220 / speed);
 let sendNote = '';
 let brightnessNote = '';
 let displayNote = '';
-let imageBlob: Blob | null = null;
 let imageDataUrl = '';
 let renderSeq = 0;
+let savedCreateContent: Content | undefined;
 
 function profileFor(s: Settings): TransportProfile {
   return { ...SPIKE_PROFILE, chunkSize: s.chunkSize, interWriteDelayMs: s.interWriteDelayMs };
@@ -284,7 +284,7 @@ function renderCreate() {
     const f = (ev.target as HTMLInputElement).files?.[0];
     if (!f) return;
     $('#c-err').textContent = '';
-    try { imageDataUrl = f.type === 'image/gif' ? await gifDataUrl(f) : await shrinkForStorage(f); imageBlob = f; } catch (e) { imageBlob = null; imageDataUrl = ''; $('#c-err').textContent = (e as Error).message; }
+    try { imageDataUrl = f.type === 'image/gif' ? await gifDataUrl(f) : await shrinkForStorage(f); } catch (e) { imageDataUrl = ''; $('#c-err').textContent = (e as Error).message; }
     void refreshPreview();
   };
   $<HTMLInputElement>('#c-speed').addEventListener('input', (e) => { $('#c-speed-val').textContent = (e.target as HTMLInputElement).value; });
@@ -292,6 +292,10 @@ function renderCreate() {
   $('#btn-cancel').onclick = () => controller.cancelUpload();
   $('#btn-save').onclick = savePresetClick;
   syncKind();
+  if (savedCreateContent) {
+    if (savedCreateContent.kind === 'image') imageDataUrl = savedCreateContent.dataUrl;
+    setCreateFrom(savedCreateContent);
+  }
   void refreshPreview();
   updateButtons();
 }
@@ -303,6 +307,10 @@ function syncKind() {
 }
 
 function currentContent(): Content {
+  if (!document.getElementById('c-kind')) {
+    if (!savedCreateContent) throw new Error('Choose content on the Create tab first.');
+    return savedCreateContent;
+  }
   const k = $<HTMLSelectElement>('#c-kind').value;
   const fg = $<HTMLInputElement>('#c-fg').value, bg = $<HTMLInputElement>('#c-bg').value;
   if (k === 'solid') return { kind: 'solid', color: fg };
@@ -327,7 +335,7 @@ async function renderContent(c: Content): Promise<{ image: RgbImage; frames?: Rg
     if (r.unsupported.length) warnings.push(`Unsupported characters skipped: ${r.unsupported.join(' ')}`);
     return { image: physical(r.image), warnings };
   }
-  const blob = imageBlob ?? (await (await fetch(c.dataUrl)).blob());
+  const blob = await (await fetch(c.dataUrl)).blob();
   if (blob.type === 'image/gif') {
     const g = await gifToFrames(blob, w, h, c.fit, parseHexColor(c.bg));
     const frames = g.frames.map(physical);
@@ -341,8 +349,12 @@ async function refreshPreview(content?: Content) {
   const canvas = document.getElementById('preview') as HTMLCanvasElement | null;
   if (!canvas) return;
   try {
-    const { image, frames, delays, warnings } = await renderContent(content ?? currentContent());
+    const selected = content ?? currentContent();
+    const { image, frames, delays, warnings } = await renderContent(selected);
     if (seq !== renderSeq) return;
+    savedCreateContent = selected;
+    createContentChanged();
+    void saveKv('createContent', selected).catch((e) => { $('#c-err').textContent = `Could not save Create content: ${(e as Error).message}`; });
     lastImage = image;
     lastFrames = frames ?? null;
     lastDelays = delays ?? [];
@@ -437,7 +449,6 @@ async function renderPresets() {
     const p = presets.find((x) => x.id === id)!;
     if (b.dataset.act === 'del') { await deletePreset(id).catch((e) => ($('#p-msg').textContent = e.message)); void renderPresets(); return; }
     if (isGroupPreset(p)) { applyGroupContent(p.groups); showTab('approach'); return; }
-    imageBlob = null;
     if (p.content.kind === 'image') imageDataUrl = p.content.dataUrl;
     try {
       const { image } = await renderContent(p.content);
@@ -527,6 +538,7 @@ function approachContext(): Parameters<typeof initApproach>[0] {
     profile: () => profileFor(settings),
     logicalDims, physical, marqueeDelay, trace,
     renderContent: (c) => renderContent(c),
+    createContent: currentContent,
     chooseCap: () => chooseNativeCap(),
     connectCap: (id) => connectNativeCap(id),
     readRssi: (id) => readCapRssi(id),
@@ -540,6 +552,10 @@ async function main() {
   try { settings = await loadSettings(); } catch (e) { settings = DEFAULT_SETTINGS; banner(`<b>Storage unavailable:</b> ${esc((e as Error).message)}. Presets cannot be saved.`); }
   settings = { ...settings, width: DEFAULT_SETTINGS.width, height: DEFAULT_SETTINGS.height }; // fixed 32x16 panel
   newController();
+  try {
+    const saved = await loadKv('createContent');
+    if (saved !== undefined) savedCreateContent = validateContent(saved);
+  } catch (e) { banner(`<b>Could not restore Create content:</b> ${esc((e as Error).message)}`); }
   await initApproach(approachContext());
   renderConnect();
   renderCreate();

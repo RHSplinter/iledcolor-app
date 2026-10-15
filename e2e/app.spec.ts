@@ -73,6 +73,44 @@ test('group content presets: save, export, load', async ({ page }) => {
   await expect(page.locator('ul.list li', { hasText: 'Bavarian' })).toContainText('group content');
 });
 
+test('solo uses Create content, restores it after approaching, and remembers the choice', async ({ page }) => {
+  await page.goto('/#mock');
+  await page.click('#btn-connect');
+  await page.click('nav [data-tab=create]');
+  await page.selectOption('#c-kind', 'solid');
+  await page.locator('#c-fg').fill('#ff0000');
+  await page.click('nav [data-tab=approach]');
+  await page.check('#ap-solo-create');
+  await expect(page.locator('[data-tier=solo][data-field=text]')).toBeHidden();
+  await page.fill('#ap-settle', '0');
+  await page.locator('#ap-settle').dispatchEvent('change');
+  await page.check('#ap-start');
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Create tab content', { timeout: 15000 });
+  const pixel = () => page.locator('#ap-caps canvas').evaluate((cv: HTMLCanvasElement) =>
+    Array.from(cv.getContext('2d')!.getImageData(1, 1, 1, 1).data).slice(0, 3));
+  await expect.poll(pixel).toEqual([255, 0, 0]);
+  await page.click('#ap-sim-peer');
+  await expect(page.locator('#ap-caps .cap-note')).toContainText('Hi ', { timeout: 15000 });
+  await page.locator('#ap-peers [data-act=rssi]').fill('-100');
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Create tab content', { timeout: 15000 });
+  await expect.poll(pixel).toEqual([255, 0, 0]);
+  await page.click('nav [data-tab=create]');
+  await page.locator('#c-fg').fill('#00ff00');
+  await page.click('nav [data-tab=approach]');
+  await expect.poll(pixel, { timeout: 15000 }).toEqual([0, 255, 0]);
+  await page.locator('#ap-peers [data-act=rssi]').fill('-50');
+  await expect(page.locator('#ap-caps .cap-note')).toContainText('Hi ', { timeout: 15000 });
+  await page.uncheck('#ap-start');
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Create tab content', { timeout: 15000 });
+  await expect.poll(pixel).toEqual([0, 255, 0]);
+  await page.reload();
+  await page.click('nav [data-tab=approach]');
+  await expect(page.locator('#ap-solo-create')).toBeChecked();
+  await page.click('nav [data-tab=create]');
+  await expect(page.locator('#c-kind')).toHaveValue('solid');
+  await expect(page.locator('#c-fg')).toHaveValue('#00ff00');
+});
+
 test('approach mode (mock): two caps greet each other, peers grow the group', async ({ page }) => {
   await page.goto('/#mock');
   await page.click('nav button[data-tab=approach]');

@@ -18,7 +18,7 @@ export function tierFor(count: number): TierId {
  * span: one marquee runs across all caps of the group, left to right in group order.
  */
 export type TierMode = 'individual' | 'span';
-export interface TierConfig { mode: TierMode; text: string; fg: string; bg: string; speed: number }
+export interface TierConfig { mode: TierMode; text: string; fg: string; bg: string; speed: number; useCreate?: boolean }
 
 export type ApproachMode = 'p2p' | 'hub';
 
@@ -74,6 +74,7 @@ export function validateApproach(raw: unknown): ApproachSettings {
       fg: typeof t.fg === 'string' && HEX.test(t.fg) ? t.fg : d.fg,
       bg: typeof t.bg === 'string' && HEX.test(t.bg) ? t.bg : d.bg,
       speed: Math.round(num(t.speed, 1, 10, d.speed)),
+      ...(id === 'solo' && t.useCreate === true ? { useCreate: true } : {}),
     };
   }
   const enterDbm = num(r.enterDbm, -110, -20, DEFAULT_APPROACH.enterDbm);

@@ -81,6 +81,17 @@ describe('preset import/export', () => {
     expect(isGroupPreset(out.presets[1]!)).toBe(true);
     expect(isGroupPreset(out.presets[0]!)).toBe(false);
   });
+  it('round-trips the solo Create option and rejects invalid sources', () => {
+    const p = { id: 'create-solo', name: 'Create solo', updatedAt: 3, groups: structuredClone(DEFAULT_APPROACH.tiers) };
+    p.groups.solo.useCreate = true;
+    expect(parseImport(exportJson(DEFAULT_SETTINGS, [p])).presets).toEqual([p]);
+    const raw = JSON.parse(exportJson(DEFAULT_SETTINGS, [p]));
+    raw.presets[0].groups.solo.useCreate = 'yes';
+    expect(() => parseImport(JSON.stringify(raw))).toThrow(/useCreate/);
+    raw.presets[0].groups.solo.useCreate = true;
+    raw.presets[0].groups.pair.useCreate = true;
+    expect(() => parseImport(JSON.stringify(raw))).toThrow(/useCreate/);
+  });
   it('rejects malformed group content', () => {
     const g = JSON.parse(exportJson(DEFAULT_SETTINGS, [groupPreset]));
     const badG = (mut: (o: any) => void) => { const o = structuredClone(g); mut(o); return JSON.stringify(o); };

@@ -70,7 +70,9 @@ export function validateGroups(g: unknown): GroupContent {
     if (t.mode !== 'individual' && t.mode !== 'span') throw new Error(`invalid mode in ${id}`);
     if (typeof t.text !== 'string' || t.text.length > 120) throw new Error(`invalid text in ${id}`);
     for (const k of ['fg', 'bg'] as const) if (typeof t[k] !== 'string' || !HEX.test(t[k] as string)) throw new Error(`invalid ${k} in ${id}`);
-    out[id] = { mode: t.mode, text: t.text, fg: t.fg as string, bg: t.bg as string, speed: speedOf(t.speed) };
+    if (t.useCreate !== undefined && (id !== 'solo' || typeof t.useCreate !== 'boolean')) throw new Error(`invalid useCreate in ${id}`);
+    out[id] = { mode: t.mode, text: t.text, fg: t.fg as string, bg: t.bg as string, speed: speedOf(t.speed),
+      ...(t.useCreate === true ? { useCreate: true } : {}) };
   }
   return out;
 }

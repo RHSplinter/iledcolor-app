@@ -8,6 +8,7 @@ export interface LocalCap { key: string; bleName: string; label: string }
 export interface Member { key: string; label: string; local: boolean; sortKey: string; source: 'local' | 'peer' | 'cap' }
 
 export type Assignment =
+  | { kind: 'create' }
   | { kind: 'individual'; text: string; fg: string; bg: string; speed: number }
   | { kind: 'span'; text: string; index: number; total: number; fg: string; bg: string; speed: number };
 
@@ -64,6 +65,10 @@ export function planFor(members: Member[], localCaps: LocalCap[], s: ApproachSet
   const cfg = s.tiers[tier];
   members.forEach((m, i) => {
     if (!m.local) return;
+    if (tier === 'solo' && cfg.useCreate) {
+      perCap.set(m.key, { kind: 'create' });
+      return;
+    }
     const others = members.filter((o) => o.key !== m.key).map((o) => o.label);
     if (cfg.mode === 'span') {
       // Identical text on every cap (and phone) so the segments line up into one marquee.
@@ -76,6 +81,10 @@ export function planFor(members: Member[], localCaps: LocalCap[], s: ApproachSet
   const solo = s.tiers.solo;
   for (const c of localCaps) {
     if (perCap.has(c.key)) continue;
+    if (solo.useCreate) {
+      perCap.set(c.key, { kind: 'create' });
+      continue;
+    }
     const text = fillTemplate(solo.text, { me: c.label, others: [], count: 1, index: 1 });
     perCap.set(c.key, solo.mode === 'span'
       ? { kind: 'span', text, index: 0, total: 1, fg: solo.fg, bg: solo.bg, speed: solo.speed }

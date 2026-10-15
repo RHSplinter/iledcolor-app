@@ -20,6 +20,7 @@ export interface ApproachContext {
   logicalDims(): [number, number];
   physical(img: RgbImage): RgbImage;
   renderContent(c: Content): Promise<{ image: RgbImage; frames?: RgbImage[]; delays?: number[] }>;
+  createContent(): Content;
   marqueeDelay(speed: number): number;
   trace(dir: 'tx' | 'rx' | 'ev', label: string, data?: Uint8Array): void;
   chooseCap(): Promise<{ deviceId: string; name: string }>;
@@ -348,10 +349,14 @@ async function applyPlan(plan: Plan) {
   const jobs = caps.map(async (c) => {
     const a = plan.perCap.get(c.key);
     if (!a) return;
-    const sig = JSON.stringify(a);
-    if (sig === c.lastSig) return;
+    let sig: string;
     let r: { frames: RgbImage[]; delays: number[] } | { image: RgbImage };
-    try { r = await renderAssignment(a); } catch (e) { c.note = `render failed: ${(e as Error).message}`; return; }
+    try {
+      const content = a.kind === 'create' ? ctx.createContent() : undefined;
+      sig = JSON.stringify(content ?? a);
+      if (sig === c.lastSig) return;
+      r = await renderAssignment(a, content);
+    } catch (e) { c.note = `render failed: ${(e as Error).message}`; return; }
     c.preview = 'frames' in r ? r : { frames: [r.image], delays: [1000] };
     if (c.controller.state !== 'Ready') { c.note = 'not connected; will update after reconnect'; return; }
     try {
@@ -370,11 +375,15 @@ async function applyPlan(plan: Plan) {
   renderStatus();
 }
 
-const describe = (a: Assignment) => (a.kind === 'span' ? `span ${a.index + 1}/${a.total}: "${a.text}"` : `"${a.text}"`);
+const describe = (a: Assignment) => (a.kind === 'create' ? 'Create tab content' : a.kind === 'span' ? `span ${a.index + 1}/${a.total}: "${a.text}"` : `"${a.text}"`);
 
-async function renderAssignment(a: Assignment): Promise<{ frames: RgbImage[]; delays: number[] } | { image: RgbImage }> {
-  if (a.kind === 'individual') {
-    const r = await ctx.renderContent({ kind: 'text', text: a.text, fg: a.fg, bg: a.bg, speed: a.speed });
+async function renderAssignment(a: Assignment, content?: Content): Promise<{ frames: RgbImage[]; delays: number[] } | { image: RgbImage }> {
+  if (a.kind === 'individual' || a.kind === 'create') {
+    const selected: Content | undefined = a.kind === 'individual'
+      ? { kind: 'text', text: a.text, fg: a.fg, bg: a.bg, speed: a.speed }
+      : content;
+    if (!selected) throw new Error('Choose content on the Create tab first.');
+    const r = await ctx.renderContent(selected);
     return r.frames ? { frames: r.frames, delays: r.delays ?? r.frames.map(() => 100) } : { image: r.image };
   }
   const [w, h] = ctx.logicalDims();
@@ -498,6 +507,10 @@ export function renderApproach() {
   if (savedBtn) savedBtn.onclick = () => void onConnectSaved();
   const simBtn = document.getElementById('ap-sim-peer');
   if (simBtn) simBtn.onclick = () => { simPeers.push({ id: (crypto.getRandomValues(new Uint32Array(1))[0]! || 1) >>> 0, caps: 1, rssi: -60 }); renderApproach(); };
+  $<HTMLInputElement>('#ap-solo-create').onchange = (e) => {
+    updateSettings({ ...settings, tiers: { ...settings.tiers, solo: { ...settings.tiers.solo, useCreate: (e.target as HTMLInputElement).checked } } });
+    renderApproach();
+  };
   for (const id of TIER_IDS) {
     root.querySelectorAll<HTMLInputElement | HTMLSelectElement>(`[data-tier="${id}"]`).forEach((el) => el.addEventListener('change', () => {
       const field = el.dataset.field as 'mode' | 'text' | 'fg' | 'bg' | 'speed';
@@ -551,6 +564,10 @@ function setMode(mode: 'p2p' | 'hub') {
 
 export function getGroupContent(): GroupContent { return structuredClone(settings.tiers); }
 
+export function createContentChanged(): void {
+  if (settings.tiers.solo.useCreate) engine?.invalidate();
+}
+
 /** Loads a group preset; a running approach mode resends the new content. */
 export function applyGroupContent(groups: GroupContent): void {
   updateSettings({ ...settings, tiers: structuredClone(groups) });
@@ -569,6 +586,9 @@ function updateSettings(s: ApproachSettings) {
 function tierEditor(id: TierId): string {
   const t = settings.tiers[id];
   return `<fieldset class="tier" data-tier-box="${id}"><legend>${esc(TIER_LABELS[id])}</legend>
+    ${id === 'solo' ? `<label class="switch"><input type="checkbox" id="ap-solo-create" ${t.useCreate ? 'checked' : ''} /> Use Create tab content</label>
+    <p class="small">Use your text, color, image or animation from Create when alone, and restore it when approach mode is switched off.</p>` : ''}
+    <div ${id === 'solo' && t.useCreate ? 'hidden' : ''}>
     <div class="row">
       <select data-tier="${id}" data-field="mode" aria-label="${esc(TIER_LABELS[id])} mode">
         <option value="individual" ${t.mode === 'individual' ? 'selected' : ''}>Individual (greeting per cap)</option>
@@ -579,6 +599,7 @@ function tierEditor(id: TierId): string {
     </div>
     <input type="text" data-tier="${id}" data-field="text" maxlength="120" value="${esc(t.text)}" aria-label="${esc(TIER_LABELS[id])} text" />
     <label class="small">Speed <input type="range" min="1" max="10" data-tier="${id}" data-field="speed" value="${t.speed}" /></label>
+    </div>
   </fieldset>`;
 }
 

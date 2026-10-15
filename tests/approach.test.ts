@@ -82,6 +82,16 @@ describe('templates', () => {
 const member = (key: string, label: string, local: boolean): Member => ({ key, label, local, sortKey: key, source: local ? 'local' : 'peer' });
 
 describe('planFor', () => {
+  it('uses Create content only for solo assignments, including separated caps', () => {
+    const s = settings({ tiers: { ...DEFAULT_APPROACH.tiers, solo: { ...DEFAULT_APPROACH.tiers.solo, useCreate: true } } });
+    const locals = ['a', 'b', 'c'].map((key) => ({ key, bleName: '', label: key }));
+    expect(planFor([], locals, s).perCap.get('a')).toEqual({ kind: 'create' });
+    expect(planFor([member('a', 'A', true)], locals, s).perCap.get('a')).toEqual({ kind: 'create' });
+    const paired = planFor([member('a', 'A', true), member('b', 'B', true)], locals, s);
+    expect(paired.perCap.get('a')).toMatchObject({ kind: 'individual', text: 'Hi B!' });
+    expect(paired.perCap.get('c')).toEqual({ kind: 'create' });
+    expect(validateApproach(s).tiers.solo.useCreate).toBe(true);
+  });
   it('greets the other cap individually for a pair', () => {
     const p = planFor([member('a', 'Ann', true), member('b', 'Bob', true)], [{ key: 'a', bleName: 'x', label: 'Ann' }, { key: 'b', bleName: 'y', label: 'Bob' }], settings());
     expect(p.tier).toBe('pair');
