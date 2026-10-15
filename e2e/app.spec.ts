@@ -57,3 +57,21 @@ test('approach mode (mock): two caps greet each other, peers grow the group', as
   await expect(page.locator('#ap-status')).toContainText('4 caps', { timeout: 15_000 });
   await expect(page.locator('#ap-caps')).toContainText('span', { timeout: 15_000 });
 });
+
+test('approach switch is remembered across reloads', async ({ page }) => {
+  await page.goto('/#mock');
+  await page.click('nav button[data-tab=approach]');
+  const sw = page.getByRole('switch');
+  await expect(sw).not.toBeChecked();
+  await sw.click();
+  await expect(sw).toBeChecked();
+  await expect(page.locator('#ap-status')).toContainText('Group');
+  await page.reload();
+  await page.click('nav button[data-tab=approach]');
+  await expect(page.getByRole('switch')).toBeChecked();
+  await page.getByRole('switch').click();
+  await expect(page.locator('#ap-status')).toContainText('Stopped');
+  await page.reload();
+  await page.click('nav button[data-tab=approach]');
+  await expect(page.getByRole('switch')).not.toBeChecked();
+});

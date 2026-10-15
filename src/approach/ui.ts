@@ -90,6 +90,17 @@ export async function initApproach(c: ApproachContext): Promise<void> {
     void saveKv('phoneId', phoneId).catch(() => undefined);
   }
   engine = new ApproachEngine(phoneId, settings);
+  // The switch is remembered: resume approach mode (with the saved caps) after an app restart.
+  if ((ctx.native || ctx.mock) && (await loadKv('approachEnabled').catch(() => false)) === true) {
+    note('approach mode was on; resuming');
+    void (async () => { if (!ctx.mock) await onConnectSaved(); await start(); })();
+  }
+}
+
+/** The approach switch: starts/stops scanning, beacon and uploads and remembers the choice. */
+async function setEnabled(on: boolean) {
+  void saveKv('approachEnabled', on).catch(() => undefined);
+  if (on) await start(); else await stop();
 }
 
 const persist = () => saveKv('approach', settings).catch((e) => note(`could not save settings: ${(e as Error).message}`));
@@ -225,6 +236,7 @@ async function start() {
 }
 
 async function stop() {
+  if (!running) return;
   running = false;
   clearInterval(loopTimer);
   await ctx.stopScan();
@@ -360,8 +372,8 @@ export function renderApproach() {
       <label for="ap-name">Your name</label>
       <input id="ap-name" type="text" maxlength="16" value="${esc(userName)}" placeholder="${esc(defaultLabel(phoneId, 0))}" autocomplete="nickname" />
       <p class="small">Shown on other phones and used in their greetings (e.g. "Hi ${esc(userName || 'Anna')}!"). Your caps are labelled with it unless you rename them below.</p>
+      <label class="switch"><input type="checkbox" role="switch" id="ap-start" ${running ? 'checked' : ''} ${available ? '' : 'disabled'} /> Approach mode ${running ? 'on' : 'off'}</label>
       <div class="row">
-        <button id="ap-start" class="primary" ${available ? '' : 'disabled'}>${running ? 'Stop' : 'Start'}</button>
         <button id="ap-resync" ${running ? '' : 'disabled'}>Resend to all</button>
       </div>
       <div id="ap-status" class="small" aria-live="polite"></div>
@@ -402,7 +414,7 @@ export function renderApproach() {
       <pre id="ap-log" class="small" style="max-height:180px;overflow:auto;white-space:pre-wrap">${esc(log.join('\n'))}</pre>
     </div>`;
 
-  $('#ap-start').onclick = () => void (running ? stop() : start());
+  $<HTMLInputElement>('#ap-start').onchange = (e) => void setEnabled((e.target as HTMLInputElement).checked);
   $<HTMLInputElement>('#ap-name').addEventListener('change', (e) => {
     const el = e.target as HTMLInputElement;
     userName = fitBeaconName(el.value);
