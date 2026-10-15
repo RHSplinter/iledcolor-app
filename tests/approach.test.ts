@@ -167,6 +167,26 @@ describe('ApproachEngine', () => {
     expect(e.members(0).map((m) => m.source).sort()).toEqual(['cap', 'local', 'peer']);
   });
 
+  it('master mode: puts a cap back to alone once it is estimated beyond ~4 m, before it is out of range', () => {
+    expect(DEFAULT_APPROACH.leaveDbm).toBe(-75);
+    const e = new ApproachEngine(1, settings());
+    e.setLocalCaps([{ key: 'A', bleName: 'iledcolor-A', label: 'Ann' }, { key: 'B', bleName: 'iledcolor-B', label: 'Bob' }]);
+    for (let t = 0; t <= 3000; t += 1000) { e.onLocalRssi('A', -50, t); e.onLocalRssi('B', -55, t); }
+    expect(e.tick(3000)!.tier).toBe('pair');
+    // B walks away to about 3 m (-73 dBm): between near and away, so the group holds.
+    for (let t = 4000; t <= 9000; t += 1000) { e.onLocalRssi('A', -50, t); e.onLocalRssi('B', -73, t); }
+    expect(formatMeters(-73)).toBe('≈ 3.2 m');
+    expect(e.tick(9000)).toBeNull();
+    // B reaches about 5 m (-77 dBm), still well within BLE range: both caps fall back to alone.
+    for (let t = 10000; t <= 15000; t += 1000) { e.onLocalRssi('A', -50, t); e.onLocalRssi('B', -77, t); }
+    expect(formatMeters(-77)).toBe('≈ 4.8 m');
+    const p = e.tick(15000)!;
+    expect(p.tier).toBe('solo');
+    expect(p.members.map((m) => m.label)).toEqual(['Ann']);
+    expect(p.perCap.get('A')).toMatchObject({ text: 'Ann' });
+    expect(p.perCap.get('B')).toMatchObject({ text: 'Bob' });
+  });
+
   it('waits for the group to settle and applies a plan once', () => {
     const e = new ApproachEngine(1, settings({ settleMs: 2000 }));
     e.setLocalCaps([{ key: 'L', bleName: 'iledcolor-me', label: 'Me' }]);
