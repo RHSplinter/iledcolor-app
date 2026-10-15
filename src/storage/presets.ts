@@ -1,12 +1,18 @@
 import type { Fit } from '../render/image';
 import type { Transform } from '../render/matrix';
+import { TIER_IDS, type TierConfig, type TierId } from '../approach/tiers';
 
 export type Content =
   | { kind: 'solid'; color: string }
   | { kind: 'text'; text: string; fg: string; bg: string; speed?: number }
   | { kind: 'image'; dataUrl: string; fit: Fit; bg: string };
 
-export interface Preset { id: string; name: string; content: Content; updatedAt: number }
+export interface ContentPreset { id: string; name: string; content: Content; updatedAt: number }
+/** Approach-mode content for every group size (Approach tab → "Content per group size"). */
+export type GroupContent = Record<TierId, TierConfig>;
+export interface GroupPreset { id: string; name: string; groups: GroupContent; updatedAt: number }
+export type Preset = ContentPreset | GroupPreset;
+export const isGroupPreset = (p: Preset): p is GroupPreset => 'groups' in p;
 
 export interface Settings {
   width: number; height: number; transform: Transform; brightness: number;
@@ -54,6 +60,23 @@ export function validateContent(c: unknown): Content {
   throw new Error('unknown content kind');
 }
 
+/** Strict: every group size must be present and valid. */
+export function validateGroups(g: unknown): GroupContent {
+  if (!isObj(g)) throw new Error('groups must be an object');
+  const out = {} as GroupContent;
+  for (const id of TIER_IDS) {
+    const t = g[id];
+    if (!isObj(t)) throw new Error(`missing group ${id}`);
+    if (t.mode !== 'individual' && t.mode !== 'span') throw new Error(`invalid mode in ${id}`);
+    if (typeof t.text !== 'string' || t.text.length > 120) throw new Error(`invalid text in ${id}`);
+    for (const k of ['fg', 'bg'] as const) if (typeof t[k] !== 'string' || !HEX.test(t[k] as string)) throw new Error(`invalid ${k} in ${id}`);
+    if (t.useCreate !== undefined && (id !== 'solo' || typeof t.useCreate !== 'boolean')) throw new Error(`invalid useCreate in ${id}`);
+    out[id] = { mode: t.mode, text: t.text, fg: t.fg as string, bg: t.bg as string, speed: speedOf(t.speed),
+      ...(t.useCreate === true ? { useCreate: true } : {}) };
+  }
+  return out;
+}
+
 export function validateSettings(s: unknown): Settings {
   if (!isObj(s) || !isObj(s.transform)) throw new Error('invalid settings');
   const t = s.transform;
@@ -78,13 +101,17 @@ export function parseImport(text: string): { settings: Settings; presets: Preset
   if (raw.version !== EXPORT_VERSION) throw new Error(`Unsupported export version ${String(raw.version)}.`);
   if (!Array.isArray(raw.presets) || raw.presets.length > MAX_PRESETS) throw new Error('Invalid preset list.');
   const ids = new Set<string>();
-  const presets = raw.presets.map((p: unknown, i: number) => {
+  const presets = raw.presets.map((p: unknown, i: number): Preset => {
     try {
       if (!isObj(p)) throw new Error('not an object');
       if (typeof p.id !== 'string' || !p.id || p.id.length > 64 || ids.has(p.id)) throw new Error('invalid or duplicate id');
       ids.add(p.id);
       if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 60) throw new Error('invalid name');
       if (!isInt(p.updatedAt, 0, Number.MAX_SAFE_INTEGER)) throw new Error('invalid timestamp');
+      if ('groups' in p) {
+        if ('content' in p) throw new Error('both content and groups');
+        return { id: p.id, name: p.name, updatedAt: p.updatedAt, groups: validateGroups(p.groups) };
+      }
       return { id: p.id, name: p.name, updatedAt: p.updatedAt, content: validateContent(p.content) };
     } catch (e) {
       throw new Error(`Preset ${i + 1}: ${(e as Error).message}`);

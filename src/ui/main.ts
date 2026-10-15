@@ -7,11 +7,14 @@ import { cornerTest, drawPreview, parseHexColor, solid, transformImage } from '.
 import { encodeGif } from '../render/gif';
 import { gifToFrames, MAX_GIF_STORE_BYTES } from '../render/gifDecode';
 import { ensureFont, renderMarquee, renderText } from '../render/text';
-import { deletePreset, listPresets, loadSettings, replaceAllPresets, requestPersistence, savePreset, saveSettings } from '../storage/db';
-import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, parseImport, type Content, type Preset, type Settings } from '../storage/presets';
+import { deletePreset, listPresets, loadKv, loadSettings, replaceAllPresets, requestPersistence, saveKv, savePreset, saveSettings } from '../storage/db';
+import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, isGroupPreset, parseImport, validateContent, type Content, type Preset, type Settings } from '../storage/presets';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
+import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
+import { isNativeApp, platformName } from '../platform';
+import { applyGroupContent, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, renderApproach, type PrimaryCap } from '../approach/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -19,6 +22,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 let settings: Settings;
 let controller: DeviceController;
 let deviceName = '';
+const native = isNativeApp();
 let useMock = location.hash === '#mock'; // dev/test only: in-memory hat
 let lastImage: RgbImage | null = null; // retained across disconnects
 let lastFrames: RgbImage[] | null = null; // set when the content is a marquee
@@ -29,9 +33,9 @@ const marqueeDelay = (speed: number) => Math.round(220 / speed);
 let sendNote = '';
 let brightnessNote = '';
 let displayNote = '';
-let imageBlob: Blob | null = null;
 let imageDataUrl = '';
 let renderSeq = 0;
+let savedCreateContent: Content | undefined;
 
 function profileFor(s: Settings): TransportProfile {
   return { ...SPIKE_PROFILE, chunkSize: s.chunkSize, interWriteDelayMs: s.interWriteDelayMs };
@@ -48,12 +52,27 @@ function newController() {
   controller = new DeviceController({ profile: profileFor(settings), onTrace: trace });
   controller.subscribe(renderStatus);
 }
+/** In the app (and mock mode) the Connect tab's cap is cap 1 of approach mode: one shared connection. */
+const sharedCap = () => native || useMock;
+const watched = new WeakSet<DeviceController>();
+function onPrimaryChange(p: PrimaryCap | null) {
+  if (p) {
+    controller = p.controller;
+    deviceName = p.name;
+    if (!watched.has(controller)) { watched.add(controller); controller.subscribe(renderStatus); }
+  } else {
+    newController();
+    deviceName = '';
+  }
+  renderStatus();
+}
 
 // ---------- status & chrome ----------------------------------------------------
 
 function renderStatus() {
   const s = controller.state;
   const el = $('#status');
+  if (!el) return;
   const cls = s === 'Ready' ? 'ok' : s === 'Error' ? 'err' : s === 'Disconnected' ? 'muted' : 'busy';
   el.className = `pill ${cls}`;
   const p = controller.progress;
@@ -94,7 +113,7 @@ function banner(html: string | null) {
 // ---------- Connect view ---------------------------------------------------------
 
 function renderConnect() {
-  const sup = bluetoothSupport();
+  const sup: ReturnType<typeof bluetoothSupport> = native ? { ok: true } : bluetoothSupport();
   const root = $('#view-connect');
   root.innerHTML = `
     <div class="card">
@@ -143,7 +162,7 @@ function renderConnect() {
   $('#btn-connect').onclick = onConnect;
   $('#btn-copylog').onclick = () => navigator.clipboard?.writeText(traceLog.join('\n'));
   $('#btn-clearlog').onclick = () => { traceLog.length = 0; $('#trace').textContent = ''; };
-  $('#btn-disconnect').onclick = () => controller.disconnect();
+  $('#btn-disconnect').onclick = () => (sharedCap() ? disconnectPrimary() : controller.disconnect());
   $('#btn-test-color').onclick = () => sendImage(solid(settings.width, settings.height, [255, 0, 0]));
   $('#btn-test-corner').onclick = () => sendImage(physical(cornerTest(...logicalDims())));
   $('#btn-disp-on').onclick = () => control('display', () => controller.setDisplay(true), (n) => (displayNote = n), 'dstate', 'On');
@@ -188,10 +207,19 @@ function persistSettings() {
 }
 
 async function onConnect() {
+  if (sharedCap()) {
+    try {
+      const d = useMock ? { deviceId: `mock-${Date.now().toString(36)}`, name: 'iledcolor-MOCK' } : await chooseNativeCap();
+      await connectAsPrimary(d.deviceId, d.name);
+    } catch (e) {
+      if ((e as Error).name !== 'SelectionCancelledError') { const m = document.getElementById('conn-msg'); if (m) m.textContent = (e as Error).message; }
+    }
+    renderStatus();
+    return;
+  }
   newController();
   deviceName = '';
   await controller.connect(async () => {
-    if (useMock) { deviceName = 'mock'; return new MockTransport(); }
     const sup = bluetoothSupport();
     if (!sup.ok) throw new Error(sup.reason);
     const r = await connectWebBluetooth();
@@ -256,7 +284,7 @@ function renderCreate() {
     const f = (ev.target as HTMLInputElement).files?.[0];
     if (!f) return;
     $('#c-err').textContent = '';
-    try { imageDataUrl = f.type === 'image/gif' ? await gifDataUrl(f) : await shrinkForStorage(f); imageBlob = f; } catch (e) { imageBlob = null; imageDataUrl = ''; $('#c-err').textContent = (e as Error).message; }
+    try { imageDataUrl = f.type === 'image/gif' ? await gifDataUrl(f) : await shrinkForStorage(f); } catch (e) { imageDataUrl = ''; $('#c-err').textContent = (e as Error).message; }
     void refreshPreview();
   };
   $<HTMLInputElement>('#c-speed').addEventListener('input', (e) => { $('#c-speed-val').textContent = (e.target as HTMLInputElement).value; });
@@ -264,6 +292,10 @@ function renderCreate() {
   $('#btn-cancel').onclick = () => controller.cancelUpload();
   $('#btn-save').onclick = savePresetClick;
   syncKind();
+  if (savedCreateContent) {
+    if (savedCreateContent.kind === 'image') imageDataUrl = savedCreateContent.dataUrl;
+    setCreateFrom(savedCreateContent);
+  }
   void refreshPreview();
   updateButtons();
 }
@@ -275,6 +307,10 @@ function syncKind() {
 }
 
 function currentContent(): Content {
+  if (!document.getElementById('c-kind')) {
+    if (!savedCreateContent) throw new Error('Choose content on the Create tab first.');
+    return savedCreateContent;
+  }
   const k = $<HTMLSelectElement>('#c-kind').value;
   const fg = $<HTMLInputElement>('#c-fg').value, bg = $<HTMLInputElement>('#c-bg').value;
   if (k === 'solid') return { kind: 'solid', color: fg };
@@ -299,7 +335,7 @@ async function renderContent(c: Content): Promise<{ image: RgbImage; frames?: Rg
     if (r.unsupported.length) warnings.push(`Unsupported characters skipped: ${r.unsupported.join(' ')}`);
     return { image: physical(r.image), warnings };
   }
-  const blob = imageBlob ?? (await (await fetch(c.dataUrl)).blob());
+  const blob = await (await fetch(c.dataUrl)).blob();
   if (blob.type === 'image/gif') {
     const g = await gifToFrames(blob, w, h, c.fit, parseHexColor(c.bg));
     const frames = g.frames.map(physical);
@@ -313,8 +349,12 @@ async function refreshPreview(content?: Content) {
   const canvas = document.getElementById('preview') as HTMLCanvasElement | null;
   if (!canvas) return;
   try {
-    const { image, frames, delays, warnings } = await renderContent(content ?? currentContent());
+    const selected = content ?? currentContent();
+    const { image, frames, delays, warnings } = await renderContent(selected);
     if (seq !== renderSeq) return;
+    savedCreateContent = selected;
+    createContentChanged();
+    void saveKv('createContent', selected).catch((e) => { $('#c-err').textContent = `Could not save Create content: ${(e as Error).message}`; });
     lastImage = image;
     lastFrames = frames ?? null;
     lastDelays = delays ?? [];
@@ -396,7 +436,7 @@ async function renderPresets() {
     <div class="card">
       <h2>Presets</h2>
       ${err ? `<p class="bad">${esc(err)}</p>` : ''}
-      <ul class="list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${p.content.kind}</small></span><button data-act="load">Load</button><button data-act="del" class="danger">Delete</button></li>`).join('') || '<li class="muted">No presets yet.</li>'}</ul>
+      <ul class="list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? 'group content' : p.content.kind}</small></span><button data-act="load">Load</button><button data-act="del" class="danger">Delete</button></li>`).join('') || '<li class="muted">No presets yet.</li>'}</ul>
     </div>
     <div class="card">
       <h2>Backup</h2>
@@ -408,7 +448,7 @@ async function renderPresets() {
     const id = b.closest('li')!.dataset.id!;
     const p = presets.find((x) => x.id === id)!;
     if (b.dataset.act === 'del') { await deletePreset(id).catch((e) => ($('#p-msg').textContent = e.message)); void renderPresets(); return; }
-    imageBlob = null;
+    if (isGroupPreset(p)) { applyGroupContent(p.groups); showTab('approach'); return; }
     if (p.content.kind === 'image') imageDataUrl = p.content.dataUrl;
     try {
       const { image } = await renderContent(p.content);
@@ -457,12 +497,14 @@ function setCreateFrom(c: Content) {
 
 function showTab(name: string) {
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  for (const v of ['connect', 'create', 'presets']) $(`#view-${v}`).hidden = v !== name;
+  for (const v of ['connect', 'create', 'presets', 'approach']) $(`#view-${v}`).hidden = v !== name;
   if (name === 'presets') void renderPresets();
+  if (name === 'approach') renderApproach();
 }
 
 function setupPwa() {
   const offline = $('#offline');
+  if (native) { offline.textContent = platformName() === 'ios' ? 'iOS app' : 'Android app'; offline.className = 'pill ok'; return; }
   const updateSW = registerSW({
     onOfflineReady() { offline.textContent = 'Ready for offline use'; offline.className = 'pill ok'; },
     onNeedRefresh() {
@@ -490,10 +532,31 @@ function setupPwa() {
     setTimeout(() => { const h = document.getElementById('install-help'); if (h && !deferred) h.hidden = false; }, 1500);
 }
 
+function approachContext(): Parameters<typeof initApproach>[0] {
+  return {
+    native, mock: useMock,
+    profile: () => profileFor(settings),
+    logicalDims, physical, marqueeDelay, trace,
+    renderContent: (c) => renderContent(c),
+    createContent: currentContent,
+    chooseCap: () => chooseNativeCap(),
+    connectCap: (id) => connectNativeCap(id),
+    readRssi: (id) => readCapRssi(id),
+    startScan: (cb) => (native ? startNativeScan((r) => cb({ deviceId: r.device.deviceId, name: r.localName ?? r.device.name, rssi: r.rssi, uuids: r.uuids, localName: r.localName, manufacturerData: r.manufacturerData })) : Promise.resolve()),
+    stopScan: () => (native ? stopNativeScan() : Promise.resolve()),
+    onPrimaryChange,
+  };
+}
+
 async function main() {
   try { settings = await loadSettings(); } catch (e) { settings = DEFAULT_SETTINGS; banner(`<b>Storage unavailable:</b> ${esc((e as Error).message)}. Presets cannot be saved.`); }
   settings = { ...settings, width: DEFAULT_SETTINGS.width, height: DEFAULT_SETTINGS.height }; // fixed 32x16 panel
   newController();
+  try {
+    const saved = await loadKv('createContent');
+    if (saved !== undefined) savedCreateContent = validateContent(saved);
+  } catch (e) { banner(`<b>Could not restore Create content:</b> ${esc((e as Error).message)}`); }
+  await initApproach(approachContext());
   renderConnect();
   renderCreate();
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));
