@@ -4,7 +4,7 @@ export interface ProximityOptions {
   enterDbm: number;
   /** A near participant is released only below this (dBm); must be <= enterDbm. */
   leaveDbm: number;
-  /** Participants not heard for this long are dropped. */
+  /** Participants not heard for this long are dropped; near ones get twice as long, so short radio gaps do not split a group. */
   staleMs: number;
   /** EMA weight of each new sample, 0..1. */
   alpha: number;
@@ -28,13 +28,21 @@ export class ProximityTracker {
     this.entries.set(key, { ema, near, lastSeen: now });
   }
 
+  private ttl(e: Entry): number { return e.near ? 2 * this.opts.staleMs : this.opts.staleMs; }
+
   expire(now: number): void {
-    for (const [k, e] of this.entries) if (now - e.lastSeen > this.opts.staleMs) this.entries.delete(k);
+    for (const [k, e] of this.entries) if (now - e.lastSeen > this.ttl(e)) this.entries.delete(k);
   }
 
   isNear(key: string, now: number): boolean {
     const e = this.entries.get(key);
-    return !!e && e.near && now - e.lastSeen <= this.opts.staleMs;
+    return !!e && e.near && now - e.lastSeen <= this.ttl(e);
+  }
+
+  /** Heard recently enough not to be stale (near or not). */
+  isHeard(key: string, now: number): boolean {
+    const e = this.entries.get(key);
+    return !!e && now - e.lastSeen <= this.ttl(e);
   }
 
   rssi(key: string): number | undefined { return this.entries.get(key)?.ema; }

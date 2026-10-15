@@ -1,5 +1,6 @@
+import { formatMeters } from '../src/approach/distance';
 import { describe, expect, it } from 'vitest';
-import { capHash16, decodeBeacon, decodeBeaconName, encodeBeacon, fitBeaconName, NAME_COMPANY_ID } from '../src/approach/beaconCodec';
+import { capHash16, decodeBeacon, decodeBeaconName, encodeBeacon, fitBeaconName, maskHas, nearMaskFor, NAME_COMPANY_ID } from '../src/approach/beaconCodec';
 import { ProximityTracker } from '../src/approach/proximity';
 import { DEFAULT_APPROACH, tierFor, validateApproach, type ApproachSettings } from '../src/approach/tiers';
 import { ApproachEngine, capLabel, defaultLabel, fillTemplate, joinOthers, planFor, type Member } from '../src/approach/engine';
@@ -8,12 +9,26 @@ import { sliceSpan, spanStep, MAX_SPAN_FRAMES } from '../src/render/span';
 const settings = (over: Partial<ApproachSettings> = {}): ApproachSettings => ({ ...DEFAULT_APPROACH, settleMs: 0, ...over });
 
 describe('beacon codec', () => {
-  it('round-trips phone id, cap count and hashes', () => {
-    const b = { phoneId: 0xdeadbeef, capCount: 3, capHashes: [capHash16('iledcolor-AB12'), capHash16('iledcolor-CD34')] };
+  it('round-trips phone id, cap count, hashes and near mask', () => {
+    const b = { phoneId: 0xdeadbeef, capCount: 3, capHashes: [capHash16('iledcolor-AB12'), capHash16('iledcolor-CD34')], nearMask: 0x8421 };
     const uuid = encodeBeacon(b);
-    expect(uuid).toMatch(/^4c454448-4154-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(uuid).toMatch(/^4c454448-02[0-9a-f]{2}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(decodeBeacon(uuid)).toEqual(b);
     expect(decodeBeacon(uuid.toUpperCase())).toEqual(b);
+  });
+  it('still decodes version 1 beacons', () => {
+    expect(decodeBeacon('4c454448-4154-0102-dead-beef12340000')).toEqual({ phoneId: 0xdeadbeef, capCount: 2, capHashes: [0x1234], nearMask: 0 });
+  });
+  it('near mask lists the near phones', () => {
+    const m = nearMaskFor([0xa, 0x1234567]);
+    expect(maskHas(m, 0xa)).toBe(true);
+    expect(maskHas(m, 0x1234567)).toBe(true);
+    expect(maskHas(0, 0xa)).toBe(false);
+    expect(maskHas(undefined, 0xa)).toBe(false);
+    // Two bits per phone: a single other phone rarely matches by accident.
+    let hits = 0;
+    for (let id = 1; id <= 1000; id++) if (id !== 0xa && maskHas(nearMaskFor([0xa]), id)) hits++;
+    expect(hits).toBeLessThan(30);
   });
   it('rejects foreign UUIDs', () => {
     expect(decodeBeacon('0000a950-0000-1000-8000-00805f9b34fb')).toBeNull();
@@ -196,8 +211,11 @@ describe('P2P mode (one cap per phone)', () => {
     for (let t = 9000; t <= 12000; t += 1000) hear(-50, t); // rejoin
     expect(a.tick(12000)!.tier).toBe('pair');
     // Peer phone goes silent (switched off / out of range): stale expiry falls back to solo.
-    a.onLocalRssi('CA', -45, 21000);
-    expect(a.tick(21000)!.perCap.get('CA')).toMatchObject({ text: 'Ann' });
+    // Near peers get a 2x staleMs grace period, so short radio gaps do not split the group.
+    a.onLocalRssi('CA', -45, 20000);
+    expect(a.tick(20000)).toBeNull(); // still the same pair, nothing to resend
+    a.onLocalRssi('CA', -45, 29000);
+    expect(a.tick(29000)!.perCap.get('CA')).toMatchObject({ text: 'Ann' });
   });
 
   it('gives each phone a complementary slice of the same spanned marquee', () => {
@@ -211,13 +229,35 @@ describe('P2P mode (one cap per phone)', () => {
     expect(new Set([(sa as { index: number }).index, (sb as { index: number }).index])).toEqual(new Set([0, 1]));
   });
 
+  it('keeps both phones in sync when only one of them receives the other strongly', () => {
+    const s = settings();
+    const a = new ApproachEngine(0xa, s), b = new ApproachEngine(0xb, s);
+    a.setLocalCaps([{ key: 'CA', bleName: 'iledcolor-A', label: 'Ann' }]);
+    b.setLocalCaps([{ key: 'CB', bleName: 'iledcolor-B', label: 'Bob' }]);
+    const hear = (aHearsB: number, bHearsA: number, t: number) => {
+      a.onLocalRssi('CA', -45, t); b.onLocalRssi('CB', -45, t);
+      a.onAdvertisement({ deviceId: 'pb', rssi: aHearsB, uuids: [encodeBeacon(b.beacon(t))] }, t);
+      b.onAdvertisement({ deviceId: 'pa', rssi: bHearsA, uuids: [encodeBeacon(a.beacon(t))] }, t);
+    };
+    // A hears B strongly, B hears A only weakly (below the near threshold).
+    for (let t = 0; t <= 3000; t += 1000) hear(-50, -85, t);
+    expect(a.tick(3000)!.tier).toBe('pair');
+    expect(b.tick(3000)!.tier).toBe('pair');
+    expect(b.heardPhones(3000)[0]).toMatchObject({ near: true, mutual: true });
+    // A walks away (its reception drops too): both return to solo together.
+    for (let t = 4000; t <= 12000; t += 1000) hear(-95, -95, t);
+    expect(a.tick(12000)!.tier).toBe('solo');
+    expect(b.tick(12000)!.tier).toBe('solo');
+  });
+
   it('lists heard phones with RSSI and near state, including ones below the near threshold', () => {
     const { a, hear } = pair(settings());
     hear(-82, 0);
-    expect(a.heardPhones(0)).toEqual([{ id: '0000000b', label: defaultLabel(0xb, 0), capCount: 1, rssi: -82, near: false }]);
+    expect(a.heardPhones(0)).toEqual([{ id: '0000000b', label: defaultLabel(0xb, 0), capCount: 1, rssi: -82, near: false, mutual: false }]);
     for (let t = 1000; t <= 6000; t += 1000) hear(-50, t);
     expect(a.heardPhones(6000)[0]).toMatchObject({ near: true });
-    expect(a.heardPhones(20000)).toEqual([]);
+    expect(a.heardPhones(20000)).toHaveLength(1);
+    expect(a.heardPhones(23000)).toEqual([]);
   });
 
   it('greets with the user name a peer sends in its scan response, and keeps it when a report lacks it', () => {
@@ -277,5 +317,16 @@ describe('span marquee slicing', () => {
     const step = spanStep(400, 32, 12);
     expect(Math.ceil((400 + 32 * 12) / step)).toBeLessThanOrEqual(MAX_SPAN_FRAMES);
     expect(() => sliceSpan(strip(4), 4, 2, 2, [0, 0, 0], 1)).toThrow();
+  });
+});
+
+describe('distance estimate', () => {
+  it('maps RSSI to rough metres', () => {
+    expect(formatMeters(-50)).toBe('< 0.5 m');
+    expect(formatMeters(-62)).toBe('≈ 1.0 m');
+    expect(formatMeters(-70)).toBe('≈ 2.3 m');
+    expect(formatMeters(-85)).toBe('≈ 11 m');
+    expect(formatMeters(-110)).toBe('> 50 m');
+    expect(formatMeters(undefined)).toBe('');
   });
 });

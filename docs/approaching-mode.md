@@ -21,7 +21,7 @@ A cap accepts **one** BLE connection. We confirmed on the hardware that a cap **
 | Source | How it works | When it helps |
 |---|---|---|
 | **Hub**: caps connected to this phone | The phone reads each connected cap's RSSI once per second. Caps near the phone are near each other. | One phone drives several caps, for example a group of kids with one parent's phone. Android typically handles about 7 simultaneous connections. Use several phones for more caps. |
-| **Peer beacons**: other phones running the app | Each phone advertises a non-connectable BLE beacon and scans for others. The beacon is a 128-bit service UUID containing the magic `LEDHAT`, a version, the number of caps the phone controls, a random phone ID, and 16-bit hashes of up to two cap names. | One phone per wearer. The beacon carries the cap count, so a phone with 3 caps adds 3 to the group. This scales to large crowds (>10): each phone only listens and computes, and no connections are needed. |
+| **Peer beacons**: other phones running the app | Each phone advertises a non-connectable BLE beacon and scans for others. The beacon is a 128-bit service UUID containing the magic `LEDH`, a version (2), the number of caps the phone controls, a random phone ID, 16-bit hashes of up to two cap names, and a 16-bit *near mask* (Bloom filter of the phones it currently sees near). Version 1 beacons (`LEDHAT`) are still understood. | One phone per wearer. The beacon carries the cap count, so a phone with 3 caps adds 3 to the group. This scales to large crowds (>10): each phone only listens and computes, and no connections are needed. |
 | **Nearby caps**: caps advertising, not connected here | Scan results whose name starts with `iledcolor` | Caps that nobody has connected yet. Caps already counted through a peer beacon (name hash) are not counted twice. |
 
 The service-UUID encoding exists because iOS can advertise only service UUIDs and a local name, not manufacturer data. The same beacon therefore works on both platforms.
@@ -32,7 +32,7 @@ Both use the same Approach tab and engine; only the setup differs.
 
 - **Hub ("master")**: one phone connects several caps; their proximity is the RSSI between that phone and each cap.
 - **P2P**: every wearer runs the app on their own phone with their own cap connected and starts Approach mode.
-  Phones detect each other through the `LEDHAT` beacon; each phone only uploads to its own cap.
+  Phones detect each other through the `LEDH` beacon; each phone only uploads to its own cap.
   While another phone is near (≥ enter threshold, settled), the cap shows the group tier (greeting or its marquee slice);
   when it drops below the leave threshold or is not heard for `staleMs`, the cap falls back to the solo content.
   Hub and P2P mix freely: a phone with 3 caps meeting a phone with 1 cap forms a group of 4.
@@ -48,6 +48,8 @@ another phone takes it) returned cap A to the solo content after ~9 s; releasing
 ### Proximity and grouping
 
 - RSSI is smoothed with an exponential moving average. The app uses hysteresis with defaults: **near ≥ -70 dBm** and **away < -80 dBm**. These thresholds can be set in the app. Entries without updates expire after 8 s.
+- **Symmetric proximity**: two phones rarely receive each other equally well (antennas, pockets, a throttled scan). A peer therefore also counts as near when this phone still hears its beacon and the peer's near mask lists this phone. The mask only uses each phone's own reception, so the rule cannot latch; both phones enter and leave the group together. The "Nearby phones" list shows such peers as "near (sees you)".
+- **Keep-alive**: the beacon is re-advertised every 10 s and whenever its content changes, because some phones stop advertisers silently. The scan is restarted every 4 minutes, since some phones (for example Xiaomi, with a 5-minute `scan_timeout`) quietly downgrade long-running scans, and also after 15 s without any received advertisement. Caps and phones that are already near are kept for twice `staleMs` (16 s by default) after they were last heard, so short radio gaps (scan restarts, missed advertisements) do not split a group.
 - A changed group must stay stable for the **settle time** (2 s by default) before caps are updated. This stops flicker at the edge of the range.
 - Every phone sorts the group the same way (by phone ID, then cap index), so all phones agree on the left-to-right order of a spanning marquee and on who is "first".
 - **Mode** (Approach tab, changeable while approach mode is off): **P2P** (default) uses one cap per phone and always advertises the phone; the multi-cap controls (Add cap, saved caps, order, beacon and nearby-cap checkboxes) are hidden. **Master** lets one phone control several caps and shows those controls. Switching to P2P disconnects all caps except cap 1 (the saved list is kept).
@@ -65,6 +67,8 @@ The text is rendered once as a wide strip. Each cap gets its slice as a looping 
 ### Troubleshooting P2P
 
 Tested with two real phones (Pixel 9 Pro and Xiaomi with MIUI / Android 12), one cap each. Both formed a group of 2 within seconds and greeted each other by user name. Walking away returned each cap to its solo content after ~12 s, and coming back regrouped after ~3–6 s.
+
+The **Detection** section shows an approximate distance next to each RSSI value (log-distance model: about -62 dBm at 1 m, path-loss exponent 2.2; under 0.5 m is shown as "< 0.5 m"). Bodies, pockets and walls shift RSSI a lot, so the figure can be off by a factor of two.
 
 If one phone sees the other but not the other way round, check **Detection → Nearby phones** on the deaf phone. If the other phone is listed with a weak RSSI, lower "Near at". If no phone is listed at all, the phone's Bluetooth scanner is stuck (seen on MIUI after the app had been force-stopped several times): switch Bluetooth off and on, then restart approach mode.
 

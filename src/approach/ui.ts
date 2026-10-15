@@ -9,6 +9,7 @@ import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
 import { encodeBeacon, fitBeaconName } from './beaconCodec';
+import { formatMeters } from './distance';
 import { ApproachEngine, capLabel, defaultLabel, planFor, type Advertisement, type Assignment, type LocalCap, type Member, type Plan } from './engine';
 import { DEFAULT_APPROACH, TEMPLATE_HELP, TIER_IDS, TIER_LABELS, tierFor, validateApproach, type ApproachSettings, type TierId } from './tiers';
 
@@ -70,6 +71,19 @@ let pendingPlan: Plan | null = null;
 let lastPlan: Plan | null = null;
 let beaconNote = '';
 let scanNote = '';
+/** What is on air (uuid|name) and when it was (re)started; the loop re-advertises on change and periodically. */
+let advertisedSig = '';
+let lastAdvertise = 0;
+let beaconBusy = false;
+let lastScanStart = 0;
+let lastHeard = 0;
+let scanBusy = false;
+/** Some phones (e.g. Xiaomi: 5 min) silently downgrade long unfiltered scans; restart well before that. */
+const SCAN_RESTART_MS = 4 * 60_000;
+/** Restart the scan when nothing at all was received for this long. */
+const SCAN_SILENT_MS = 15_000;
+/** Re-advertise periodically: some stacks stop an advertiser without telling the app. */
+const BEACON_REFRESH_MS = 10_000;
 const nearby = new Map<string, { name: string; rssi: number; seen: number }>();
 const log: string[] = [];
 let previewTimers: Array<ReturnType<typeof setTimeout>> = [];
@@ -254,15 +268,56 @@ async function onConnectSaved() {
 
 // ---------- detection loop --------------------------------------------------------
 
+const beaconName = () => fitBeaconName(caps[0]?.customLabel || userName);
+const beaconSig = (now: number) => `${encodeBeacon(engine.beacon(now))}|${beaconName()}`;
+
 async function startBeacon() {
   if (!ctx.native) { beaconNote = settings.beacon ? 'Beacon needs the mobile app.' : ''; return; }
+  if (beaconBusy) { advertisedSig = ''; return; } // the loop re-advertises once the running call is done
+  beaconBusy = true;
   try {
-    if (!settings.beacon) { await ApproachBeacon.stop(); beaconNote = 'Beacon off.'; return; }
-    const name = fitBeaconName(caps[0]?.customLabel || userName);
-    await ApproachBeacon.start({ uuid: encodeBeacon(engine.beacon()), name: name || undefined });
+    if (!settings.beacon) { await ApproachBeacon.stop(); advertisedSig = ''; beaconNote = 'Beacon off.'; return; }
+    const name = beaconName();
+    const uuid = encodeBeacon(engine.beacon());
+    await ApproachBeacon.start({ uuid, name: name || undefined });
+    if (!running) { await ApproachBeacon.stop(); return; } // approach mode was switched off meanwhile
+    advertisedSig = `${uuid}|${name}`;
+    lastAdvertise = Date.now();
     beaconNote = `Beacon on${name ? ` as "${name}"` : ''} (phone ${phoneId.toString(16).padStart(8, '0')}, ${caps.length} cap${caps.length === 1 ? '' : 's'}).`;
-  } catch (e) { beaconNote = `Beacon failed: ${(e as Error).message}`; }
+  } catch (e) {
+    advertisedSig = '';
+    lastAdvertise = Date.now(); // retry after the refresh interval, not every tick
+    beaconNote = `Beacon failed: ${(e as Error).message}`;
+  } finally { beaconBusy = false; }
   renderStatusSoon();
+}
+
+async function startScanning() {
+  lastScanStart = Date.now();
+  lastHeard = lastScanStart;
+  await ctx.startScan((a) => {
+    const now = Date.now();
+    lastHeard = now;
+    engine.onAdvertisement(a, now);
+    if (a.name?.toLowerCase().startsWith('iledcolor') && a.rssi !== undefined) nearby.set(a.deviceId, { name: a.name, rssi: a.rssi, seen: now });
+  });
+}
+
+/** Keeps scan and beacon alive on phones that silently stop or throttle them. */
+async function keepRadiosAlive(now: number) {
+  if (!ctx.native || scanBusy) return;
+  if (settings.beacon && !beaconBusy && (advertisedSig !== beaconSig(now) || now - lastAdvertise > BEACON_REFRESH_MS)) void startBeacon();
+  const silent = now - lastHeard > SCAN_SILENT_MS;
+  if (now - lastScanStart < (silent ? SCAN_SILENT_MS : SCAN_RESTART_MS)) return;
+  scanBusy = true;
+  try {
+    if (silent) note('nothing heard for a while; restarting scan');
+    await ctx.stopScan();
+    if (!running) return;
+    await startScanning();
+    if (!running) { await ctx.stopScan(); return; }
+    scanNote = 'Scanning.';
+  } catch (e) { scanNote = `Scan failed: ${(e as Error).message}`; } finally { scanBusy = false; }
 }
 
 async function start() {
@@ -272,11 +327,7 @@ async function start() {
   caps.forEach((c) => (c.lastSig = undefined));
   note('approach mode started');
   try {
-    await ctx.startScan((a) => {
-      const now = Date.now();
-      engine.onAdvertisement(a, now);
-      if (a.name?.toLowerCase().startsWith('iledcolor') && a.rssi !== undefined) nearby.set(a.deviceId, { name: a.name, rssi: a.rssi, seen: now });
-    });
+    await startScanning();
     scanNote = 'Scanning.';
   } catch (e) { scanNote = `Scan failed: ${(e as Error).message}`; note(scanNote); }
   if (ctx.native) void ApproachBeacon.setKeepAwake({ on: true }).catch(() => undefined);
@@ -295,7 +346,7 @@ async function stop() {
     await ApproachBeacon.stop().catch(() => undefined);
     void ApproachBeacon.setKeepAwake({ on: false }).catch(() => undefined);
   }
-  beaconNote = ''; scanNote = '';
+  beaconNote = ''; scanNote = ''; advertisedSig = '';
   // Finish any in-flight group upload before restoring solo content, so it cannot overwrite the reset.
   await applying;
   schedule(planFor([], engine.getLocalCaps(), settings));
@@ -326,6 +377,7 @@ async function loop() {
   for (const [id, n] of nearby) if (now - n.seen > 10000) nearby.delete(id);
   const plan = engine.tick(now);
   if (plan) schedule(plan);
+  void keepRadiosAlive(now);
   renderStatusSoon();
 }
 
@@ -407,7 +459,7 @@ function liveBadges(c: CapEntry): string {
   const rssi = engine.tracker.rssi(c.key);
   const st = c.controller.state;
   return `<span class="pill ${st === 'Ready' ? 'ok' : st === 'Error' ? 'err' : 'busy'}">${esc(st === 'Uploading' && c.controller.progress ? `Uploading ${c.controller.progress.sent}/${c.controller.progress.total}` : st)}</span>
-    ${running ? `<span class="pill ${near ? 'ok' : 'muted'}">${near ? 'near' : 'away'} ${rssi !== undefined ? Math.round(rssi) + ' dBm' : ''}</span>` : ''}`;
+    ${running ? `<span class="pill ${near ? 'ok' : 'muted'}">${near ? 'near' : 'away'} ${rssi !== undefined ? `${formatMeters(rssi)} · ${Math.round(rssi)} dBm` : ''}</span>` : ''}`;
 }
 
 /** Refreshes only the live parts of the cap list so inputs keep focus. */
@@ -478,7 +530,7 @@ export function renderApproach() {
       </div>
       ${hub ? `<label><input type="checkbox" id="ap-beacon" ${settings.beacon ? 'checked' : ''}/> Advertise this phone to other phones</label>
       <label><input type="checkbox" id="ap-count" ${settings.countNearbyCaps ? 'checked' : ''}/> Count nearby caps that are not connected here</label>` : ''}
-      <p class="small">RSSI is a rough distance signal (≈ -55 dBm touching, -70 dBm about 1–2 m). Raise "Near at" to require closer contact.</p>
+      <p class="small">RSSI is a rough distance signal (≈ -55 dBm touching, -70 dBm about 1–2 m); the metres shown are estimates from it and can be off by a factor of two. Raise "Near at" to require closer contact.</p>
       <h3 class="small">Nearby phones (approach beacons)</h3>
       <ul class="list small" id="ap-phones"></ul>
       <h3 class="small">Nearby caps (advertising)</h3>
@@ -616,9 +668,9 @@ function renderStatus() {
     : '<p>Stopped.</p>';
   const nb = document.getElementById('ap-nearby');
   const ph = document.getElementById('ap-phones');
-  if (ph) ph.innerHTML = engine.heardPhones(Date.now()).map((p) => `<li><span>${esc(p.label)} · ${p.id} · ${p.capCount} cap${p.capCount === 1 ? '' : 's'}</span><span>${p.rssi} dBm ${p.near ? 'near' : 'far'}</span></li>`).join('')
+  if (ph) ph.innerHTML = engine.heardPhones(Date.now()).map((p) => `<li><span>${esc(p.label)} · ${p.id} · ${p.capCount} cap${p.capCount === 1 ? '' : 's'}</span><span>${formatMeters(p.rssi)} · ${p.rssi} dBm · ${p.mutual ? 'near (sees you)' : p.near ? 'near' : 'far'}</span></li>`).join('')
     || `<li class="muted">${running ? 'No other phone heard.' : 'Start approach mode to listen.'}</li>`;
-  if (nb) nb.innerHTML = [...nearby.values()].sort((a, b) => b.rssi - a.rssi).map((n) => `<li><span>${esc(n.name)}</span><span>${n.rssi} dBm</span></li>`).join('') || '<li class="muted">None seen (connected caps often stop advertising).</li>';
+  if (nb) nb.innerHTML = [...nearby.values()].sort((a, b) => b.rssi - a.rssi).map((n) => `<li><span>${esc(n.name)}</span><span>${formatMeters(n.rssi)} · ${n.rssi} dBm</span></li>`).join('') || '<li class="muted">None seen (connected caps often stop advertising).</li>';
 }
 
 function renderCaps() {

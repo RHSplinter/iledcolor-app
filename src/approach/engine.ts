@@ -1,4 +1,4 @@
-import { capHash16, decodeBeacon, decodeBeaconName, type BeaconInfo } from './beaconCodec';
+import { capHash16, decodeBeacon, decodeBeaconName, maskHas, nearMaskFor, type BeaconInfo } from './beaconCodec';
 import { ProximityTracker } from './proximity';
 import { tierFor, type ApproachSettings, type TierId } from './tiers';
 
@@ -156,7 +156,7 @@ export class ApproachEngine {
     });
     const peerHashes = new Set<number>();
     for (const [key, b] of this.peers) {
-      if (!this.tracker.isNear(key, now)) { if (!this.tracker.keys().includes(key)) { this.peers.delete(key); this.peerNames.delete(key); } continue; }
+      if (!this.peerNear(key, b, now)) { if (!this.tracker.keys().includes(key)) { this.peers.delete(key); this.peerNames.delete(key); } continue; }
       b.capHashes.forEach((h) => peerHashes.add(h));
       const id = key.slice(5);
       for (let j = 0; j < b.capCount; j++)
@@ -185,19 +185,30 @@ export class ApproachEngine {
   }
 
   /** Other phones currently heard (near or not), with smoothed RSSI, for display and threshold tuning. */
-  heardPhones(now: number): { id: string; label: string; capCount: number; rssi: number; near: boolean }[] {
+  heardPhones(now: number): { id: string; label: string; capCount: number; rssi: number; near: boolean; mutual: boolean }[] {
     this.tracker.expire(now);
     const out = [];
     for (const [key, b] of this.peers) {
       const rssi = this.tracker.rssi(key);
       if (rssi === undefined) continue;
-      out.push({ id: key.slice(5), label: capLabel(b.phoneId, 0, this.peerNames.get(key)), capCount: b.capCount, rssi: Math.round(rssi), near: this.tracker.isNear(key, now) });
+      out.push({ id: key.slice(5), label: capLabel(b.phoneId, 0, this.peerNames.get(key)), capCount: b.capCount, rssi: Math.round(rssi), near: this.peerNear(key, b, now), mutual: !this.tracker.isNear(key, now) && this.peerNear(key, b, now) });
     }
     return out.sort((a, b) => b.rssi - a.rssi);
   }
 
-  /** Beacon describing this phone's caps for other phones. */
-  beacon(): BeaconInfo {
-    return { phoneId: this.phoneId, capCount: this.localCaps.length, capHashes: this.localCaps.slice(0, 2).map((c) => capHash16(c.bleName)) };
+  /**
+   * A peer is near when our own reception says so, or when we still hear it and its beacon
+   * lists us as near. The second rule keeps both phones in sync when one receives the other
+   * more weakly (different antennas, body shadowing, a throttled scan).
+   */
+  private peerNear(key: string, b: BeaconInfo, now: number): boolean {
+    return this.tracker.isNear(key, now) || (this.tracker.isHeard(key, now) && maskHas(b.nearMask, this.phoneId));
+  }
+
+  /** Beacon describing this phone's caps, plus the peers it sees near by its own reception. */
+  beacon(now = Date.now()): BeaconInfo {
+    const near: number[] = [];
+    for (const [key, b] of this.peers) if (this.tracker.isNear(key, now)) near.push(b.phoneId);
+    return { phoneId: this.phoneId, capCount: this.localCaps.length, capHashes: this.localCaps.slice(0, 2).map((c) => capHash16(c.bleName)), nearMask: nearMaskFor(near) };
   }
 }
