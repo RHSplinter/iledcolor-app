@@ -57,6 +57,12 @@ another phone takes it) returned cap A to the solo content after ~9 s; releasing
 
 The text is rendered once as a wide strip. Each cap gets its slice as a looping animation with the same frame count and timing, at most 120 frames to stay within the cap's 64 KB transfer limit. Uploads to caps on the same phone run in parallel. Across phones, the start is aligned only by the shared settle time, so the marquee is close but not frame-accurate.
 
+### Troubleshooting P2P
+
+Tested with two real phones (Pixel 9 Pro and Xiaomi with MIUI / Android 12), one cap each. Both formed a group of 2 within seconds and greeted each other by user name. Walking away returned each cap to its solo content after ~12 s, and coming back regrouped after ~3–6 s.
+
+If one phone sees the other but not the other way round, check **Detection → Nearby phones** on the deaf phone. If the other phone is listed with a weak RSSI, lower "Near at". If no phone is listed at all, the phone's Bluetooth scanner is stuck (seen on MIUI after the app had been force-stopped several times): switch Bluetooth off and on, then restart approach mode.
+
 ### Limits and options for later
 
 - RSSI is a rough distance proxy. Bodies, pockets, and orientation can shift it by 10–20 dB. Tune the thresholds on site.
