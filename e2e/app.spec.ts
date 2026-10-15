@@ -41,6 +41,38 @@ test('rejects a corrupt preset import visibly', async ({ page }) => {
   await expect(page.locator('#p-msg')).toContainText('Import failed');
 });
 
+test('group content presets: save, export, load', async ({ page }) => {
+  await page.goto('/#mock');
+  await page.click('nav button[data-tab=approach]');
+  const pairText = page.locator('[data-tier=pair][data-field=text]');
+  await pairText.fill('Servus {other}!');
+  await pairText.dispatchEvent('change');
+  await page.fill('#ap-preset-name', 'Bavarian');
+  await page.click('#ap-preset-save');
+  await expect(page.locator('#ap-preset-msg')).toHaveText('Saved "Bavarian".');
+  await pairText.fill('Something else');
+  await pairText.dispatchEvent('change');
+
+  await page.click('nav [data-tab=presets]');
+  const item = page.locator('ul.list li', { hasText: 'Bavarian' });
+  await expect(item).toContainText('group content');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
+  const json = JSON.parse(await (await import('node:fs/promises')).readFile((await download.path())!, 'utf-8'));
+  expect(json.presets.find((p: { name: string }) => p.name === 'Bavarian').groups.pair.text).toBe('Servus {other}!');
+
+  await item.locator('[data-act=load]').click();
+  await expect(page.locator('#view-approach')).toBeVisible();
+  await expect(pairText).toHaveValue('Servus {other}!');
+
+  // Import restores group presets too.
+  await page.click('nav [data-tab=presets]');
+  await item.locator('[data-act=del]').click();
+  await expect(page.locator('ul.list li', { hasText: 'Bavarian' })).toHaveCount(0);
+  await page.setInputFiles('#p-import', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
+  await expect(page.locator('#p-msg')).toContainText('Imported');
+  await expect(page.locator('ul.list li', { hasText: 'Bavarian' })).toContainText('group content');
+});
+
 test('approach mode (mock): two caps greet each other, peers grow the group', async ({ page }) => {
   await page.goto('/#mock');
   await page.click('nav button[data-tab=approach]');

@@ -3,8 +3,8 @@ import type { RgbImage } from '../protocol/framing';
 import { encodeGif } from '../render/gif';
 import { drawPreview, parseHexColor } from '../render/matrix';
 import { ensureFont, renderSpanMarquee } from '../render/text';
-import { loadKv, saveKv } from '../storage/db';
-import type { Content } from '../storage/presets';
+import { loadKv, savePreset, saveKv } from '../storage/db';
+import type { Content, GroupContent } from '../storage/presets';
 import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
@@ -457,6 +457,8 @@ export function renderApproach() {
       <h2>Content per group size</h2>
       <p class="small">${esc(TEMPLATE_HELP)}</p>
       ${TIER_IDS.map(tierEditor).join('')}
+      <div class="row"><input id="ap-preset-name" type="text" placeholder="Preset name" maxlength="60" style="flex:1" /><button id="ap-preset-save">Save as preset</button></div>
+      <p id="ap-preset-msg" class="small">Saved group presets appear on the Presets tab and are included in export/import.</p>
     </div>
     <div class="card">
       <h2>Detection</h2>
@@ -506,6 +508,16 @@ export function renderApproach() {
       updateSettings({ ...settings, tiers: { ...settings.tiers, [id]: t } });
     }));
   }
+  $('#ap-preset-save').onclick = async () => {
+    const name = $<HTMLInputElement>('#ap-preset-name').value.trim();
+    const msg = $('#ap-preset-msg');
+    if (!name) { msg.textContent = 'Enter a preset name.'; return; }
+    try {
+      await savePreset({ id: crypto.randomUUID(), name, groups: getGroupContent(), updatedAt: Date.now() });
+      $<HTMLInputElement>('#ap-preset-name').value = '';
+      msg.textContent = `Saved "${name}".`;
+    } catch (e) { msg.textContent = (e as Error).message; }
+  };
   const num = (id: string, d: number) => { const v = Number($<HTMLInputElement>(id).value); return Number.isFinite(v) ? v : d; };
   root.querySelectorAll('#ap-enter,#ap-leave,#ap-settle,#ap-beacon,#ap-count').forEach((el) => el.addEventListener('change', () => {
     updateSettings({
@@ -534,6 +546,16 @@ function setMode(mode: 'p2p' | 'hub') {
     void saveKv('approachCaps', saved).catch(() => undefined);
   }
   note(mode === 'p2p' ? 'mode: P2P (one cap per phone)' : 'mode: Master (several caps)');
+  renderApproach();
+}
+
+export function getGroupContent(): GroupContent { return structuredClone(settings.tiers); }
+
+/** Loads a group preset; a running approach mode resends the new content. */
+export function applyGroupContent(groups: GroupContent): void {
+  updateSettings({ ...settings, tiers: structuredClone(groups) });
+  engine.invalidate();
+  note('group content loaded from preset');
   renderApproach();
 }
 

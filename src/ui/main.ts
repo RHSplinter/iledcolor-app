@@ -8,13 +8,13 @@ import { encodeGif } from '../render/gif';
 import { gifToFrames, MAX_GIF_STORE_BYTES } from '../render/gifDecode';
 import { ensureFont, renderMarquee, renderText } from '../render/text';
 import { deletePreset, listPresets, loadSettings, replaceAllPresets, requestPersistence, savePreset, saveSettings } from '../storage/db';
-import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, parseImport, type Content, type Preset, type Settings } from '../storage/presets';
+import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, isGroupPreset, parseImport, type Content, type Preset, type Settings } from '../storage/presets';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
-import { connectAsPrimary, disconnectPrimary, initApproach, renderApproach, type PrimaryCap } from '../approach/ui';
+import { applyGroupContent, connectAsPrimary, disconnectPrimary, initApproach, renderApproach, type PrimaryCap } from '../approach/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -424,7 +424,7 @@ async function renderPresets() {
     <div class="card">
       <h2>Presets</h2>
       ${err ? `<p class="bad">${esc(err)}</p>` : ''}
-      <ul class="list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${p.content.kind}</small></span><button data-act="load">Load</button><button data-act="del" class="danger">Delete</button></li>`).join('') || '<li class="muted">No presets yet.</li>'}</ul>
+      <ul class="list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? 'group content' : p.content.kind}</small></span><button data-act="load">Load</button><button data-act="del" class="danger">Delete</button></li>`).join('') || '<li class="muted">No presets yet.</li>'}</ul>
     </div>
     <div class="card">
       <h2>Backup</h2>
@@ -436,6 +436,7 @@ async function renderPresets() {
     const id = b.closest('li')!.dataset.id!;
     const p = presets.find((x) => x.id === id)!;
     if (b.dataset.act === 'del') { await deletePreset(id).catch((e) => ($('#p-msg').textContent = e.message)); void renderPresets(); return; }
+    if (isGroupPreset(p)) { applyGroupContent(p.groups); showTab('approach'); return; }
     imageBlob = null;
     if (p.content.kind === 'image') imageDataUrl = p.content.dataUrl;
     try {
