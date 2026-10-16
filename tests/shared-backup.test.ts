@@ -42,9 +42,20 @@ describe('selected backup categories', () => {
     expect(mergeSharedPresets([localCreation, localGroup], data)).toEqual([localGroup]);
   });
 
+  it('shares QR profiles only when scan settings are selected', () => {
+    const profiles = { selectedId: null, profiles: [] };
+    const withScan = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, all, profiles));
+    expect(withScan.qrProfiles).toEqual(profiles);
+    const withoutScan = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, { ...all, scan: false }, profiles));
+    expect(withoutScan.qrProfiles).toBeUndefined();
+    expect(() => parseSharedBackup(JSON.stringify({
+      app: 'iledcolor-app', version: 2, creations: [], qrProfiles: profiles,
+    }))).toThrow(/with scan settings/);
+  });
+
   it('keeps legacy full backups importable with original replacement behavior', () => {
     const data = parseSharedBackup(exportJson(DEFAULT_SETTINGS, [creation, group]));
-    expect(data).toEqual({ version: 1, settings: DEFAULT_SETTINGS, presets: [creation, group] });
+    expect(data).toEqual({ version: 1, settings: DEFAULT_SETTINGS, presets: [creation, group], qrProfiles: { selectedId: null, profiles: [] } });
     expect(mergeSharedPresets([localCreation, localGroup], data)).toEqual([creation, group]);
   });
 

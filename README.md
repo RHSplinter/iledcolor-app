@@ -10,10 +10,73 @@ uses manual local cap order and deterministic phone-ID order across phones.
 
 In **Presets → Backup**, choose what to include before tapping **Share presets**:
 **Creations** (saved text, colors, images and GIFs), **Approach settings** (saved group presets
-and current group content), and **Scan settings** (proximity thresholds and timing).
+and current group content), and **Scan settings** (proximity thresholds, timing and QR greeting profiles).
 The system share sheet sends a JSON file. Import replaces only the included categories,
 keeping excluded presets, phone identity, cap connections and device settings unchanged.
 Older full JSON backups remain importable with their original full-replacement behavior.
+
+## QR badge greetings
+
+The **Scan** tab scans QR codes locally using the camera (Android/iOS app or an HTTPS
+browser with camera permission). Only the primary cap connected to the scanning phone
+is interrupted; other connected caps continue unchanged. The camera stops after one
+successful scan, on Stop, on changing tabs, or when the app is hidden.
+
+Configure a greeting such as `Hi {name}!`, its scroll speed, and the repetition count
+(**3 by default**). A name is extracted automatically from plain text, JSON name fields,
+or a vCard. Save up to **three QR profiles** locally, each with a regex, greeting template,
+and note; **None** selects the general plain-text/JSON/vCard parser. For other badge formats,
+enter a JavaScript regex **without `/` delimiters**. Its first three capture groups map to
+`{name}`/`{firstname}`, `{lastname}`, and `{company}`; named groups
+`(?<name>...)`/`(?<firstname>...)`, `(?<lastname>...)`, and `(?<company>...)` are also supported.
+For example, the MS AI Tour badge format
+`^[^^]*\^(?<firstname>[^^]+)\^(?<lastname>[^^]+)\^(?<company>[^^]+)\^` extracts the
+three fields. `Hello {firstname} {lastname} from {company}!` uses them in a greeting.
+Without capture groups, a named `name` group or the whole match supplies `{name}`.
+Matches are not URL-decoded.
+Unmatched/invalid patterns show an error without changing the cap. Regex extraction
+runs in a worker with a timeout so a pathological pattern cannot block the UI.
+Manual QR-data entry is available when a camera cannot be used.
+
+Send content to the cap once before scanning: the protocol cannot read back content
+that was installed by another app or before the current connection. The app retains the
+last successfully sent image or GIF, including content sent by Approach mode. The greeting
+always scrolls, even when it would fit as static text. It uses a finite-loop GIF and the
+GIF's actual frame timings to restore the previous content after the requested count.
+Approach updates for the primary cap wait during the greeting; afterwards the current
+approach plan resumes (with span timing resynchronized). Other caps are not paused.
+**End greeting** restores content early. Connection loss is reported instead of claiming
+restoration; reconnect and send the desired content again.
+If this connection explicitly switched the display off, the greeting briefly switches it
+on and restores the off state. Brightness is left unchanged.
+
+Keep the app open through playback and restoration: phones can suspend JavaScript in the
+background, delaying restoration, and a closed app cannot restore a disconnected cap.
+Finite GIF-loop handling and precise physical playback timing still need verification on
+the actual cap firmware; BLE acknowledgements confirm transfer, not displayed frame counts.
+Scanner configuration stays in local storage; QR payloads are not persisted unless you
+enable **Save all scanned data to a local file** in the Scan tab (off by default).
+While enabled, every camera scan or submitted manual entry is appended before extraction,
+including entries whose greeting fails. The local `qr-scan-log.jsonl` file contains one JSON
+object per line with a UTC timestamp, source (`camera`/`manual`), the complete unmodified
+payload (`raw`), and the selected profile's ID/note (or `null`). JSON escaping preserves
+embedded line breaks. Logging stays enabled across restarts until switched off; disabling
+it keeps the existing log. Logs may contain personal data: obtain appropriate consent and
+share only with trusted recipients.
+**Share scan log** opens the native share sheet, or shares/downloads the file in supported
+browsers. Native logs live in the app's private data directory; a share snapshot is written
+to cache. Browser logs use local IndexedDB via Capacitor Filesystem and may be evicted by
+the browser. Uninstalling the app or clearing its data removes logs; share them for safekeeping.
+The app does not upload scans to a server. Logs are excluded from preset backups.
+The QR profiles are included in the existing JSON preset
+backup/import. The resulting greeting is sent to the cap over BLE.
+
+Credits: inspired by **Rob Bos / Xebia's [badge-scanner](https://github.com/xebia/badge-scanner)**.
+No code was copied from that repository, which had no declared license when inspected.
+The independent scanner bundles **ZXing Browser (MIT)** and **ZXing JS (Apache-2.0)**;
+credits and full licenses are shipped in `public/licenses/` and linked in the Scan tab.
+The decoder is bundled locally, not loaded from a CDN, and is cached for offline use.
+No native scanner plugin or Android minimum-SDK increase is required.
 
 ## Download Android and iOS releases
 
@@ -69,11 +132,11 @@ GitHub Actions must be enabled, and repository/organization policy must allow th
 
 ### Versioning and publishing
 
-`package.json` is the version source (initially **0.1.0**), with `package-lock.json` kept in sync.
+`package.json` is the version source (currently **0.2.0**), with `package-lock.json` kept in sync.
 The npm `version` hook updates Android's `versionName` and iOS's `MARKETING_VERSION`, plus both
 native build numbers. Only stable `MAJOR.MINOR.PATCH` versions are supported (no prerelease/build
-suffixes). The build number is `MAJOR * 1000000 + MINOR * 1000 + PATCH + 1`: `0.1.0` becomes
-`1001`. Minor and patch are limited to 999 and the build number to 2100000000. Always increase
+suffixes). The build number is `MAJOR * 1000000 + MINOR * 1000 + PATCH + 1`: `0.2.0` becomes
+`2001`. Minor and patch are limited to 999 and the build number to 2100000000. Always increase
 the version; reusing a tag/build number is not a new release.
 
 For example, prepare the next patch from the repository root on Windows:
@@ -83,13 +146,13 @@ npm version patch --no-git-tag-version
 npm run version:check
 npm run test:release
 git add package.json package-lock.json android\app\build.gradle ios\App\App.xcodeproj\project.pbxproj
-git commit -m "chore: release 0.1.1"
-git tag v0.1.1
+git commit -m "chore: release 0.2.1"
+git tag v0.2.1
 git push origin HEAD
-git push origin v0.1.1
+git push origin v0.2.1
 ```
 
-The example assumes the current version is `0.1.0`; use the resulting version for the commit/tag.
+The example assumes the current version is `0.2.0`; use the resulting version for the commit/tag.
 Use `minor` or `major` instead of `patch` for larger changes. To publish the initial `0.1.0`,
 commit the workflows and synchronized version files first, then tag that commit `v0.1.0`.
 If versions were edited manually, run `npm run version` to synchronize native metadata.
@@ -107,7 +170,18 @@ publishing jobs share a per-tag concurrency lock to avoid races when creating th
 The existing GitHub Pages workflow is unchanged.
 
 You can also start **Actions > Build Android release / Build iOS release > Run workflow** with
-an existing version tag, for example after correcting signing secrets. Use **Re-run failed jobs**
+an existing version tag, for example after correcting signing secrets. Enter the full tag
+(for example `v0.1.0`, not `0.1.0`); the workflow does not create it. For the initial release,
+create and push `v0.1.0` from the prepared release commit first:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Pushing the tag starts the Android build automatically; a manual run is only needed to rebuild it.
+Selecting a branch in **Run workflow** does not replace the required tag.
+Use **Re-run failed jobs**
 for transient failures. Retrying a workflow replaces only its own platform's package and checksum
 file, leaving the other platform's downloads intact. New app versions must still use a new version
 and tag. A newly created draft is published after that platform's upload succeeds; the other

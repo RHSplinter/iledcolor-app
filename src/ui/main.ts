@@ -19,6 +19,7 @@ import { applyGroupContent, applyImportedApproachSettings, getApproachSettings, 
 import { listenForShares, withShareLink } from '../approach/contentExchange';
 import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
 import { shareTextFile } from './shareFile';
+import { GreetingUi } from '../scanner/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -40,6 +41,7 @@ let displayNote = '';
 let imageDataUrl = '';
 let renderSeq = 0;
 let savedCreateContent: Content | undefined;
+let scanner: GreetingUi | undefined;
 
 function profileFor(s: Settings): TransportProfile {
   return { ...SPIKE_PROFILE, chunkSize: s.chunkSize, interWriteDelayMs: s.interWriteDelayMs };
@@ -60,6 +62,7 @@ function newController() {
 const sharedCap = () => native || useMock;
 const watched = new WeakSet<DeviceController>();
 function onPrimaryChange(p: PrimaryCap | null) {
+  scanner?.stopCamera();
   if (p) {
     controller = p.controller;
     deviceName = p.name;
@@ -87,14 +90,15 @@ function renderStatus() {
   const prog = document.querySelector<HTMLProgressElement>('#progress');
   if (prog && p) { prog.max = p.total; prog.value = p.sent; }
   updateButtons();
+  scanner?.updateStatus();
 }
 
 function updateButtons() {
   const s = controller.state;
-  const ready = s === 'Ready';
+  const ready = s === 'Ready' && !controller.temporaryActive;
   const busy = s === 'Selecting' || s === 'Connecting' || s === 'Handshaking' || s === 'Uploading';
   const set = (id: string, v: boolean) => { const b = document.getElementById(id) as HTMLButtonElement | null; if (b) b.disabled = v; };
-  set('btn-connect', busy || ready);
+  set('btn-connect', busy || ready || controller.temporaryActive);
   set('btn-disconnect', s === 'Disconnected');
   set('btn-send', !ready || !lastImage);
   set('btn-test-color', !ready); set('btn-test-corner', !ready);
@@ -451,7 +455,7 @@ async function renderPresets(message = '') {
         <legend>Include in shared file</legend>
         <label><input type="checkbox" id="p-include-creations" ${backupSelection.creations ? 'checked' : ''} /> <span>Creations <small>Saved text, colors, images and GIFs (${presets.filter((p) => !isGroupPreset(p)).length})</small></span></label>
         <label><input type="checkbox" id="p-include-approach" ${backupSelection.approach ? 'checked' : ''} /> <span>Approach settings <small>Saved group presets (${presets.filter(isGroupPreset).length}) and current group content</small></span></label>
-        <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Near/away thresholds, confirmation, settling and stale timing</small></span></label>
+        <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Proximity thresholds, timing and QR greeting profiles</small></span></label>
       </fieldset>
       <p class="small">Choose at least one category. Importing replaces only the included categories; everything else stays unchanged.</p>
       <div class="row"><button id="btn-export">Share presets</button><label class="row"><span>Import</span><input id="p-import" type="file" accept="application/json,.json" /></label></div>
@@ -493,7 +497,7 @@ async function renderPresets(message = '') {
     updateSelection();
     try {
       const all = await listPresets();
-      const json = exportSelectedJson(all, getApproachSettings(), backupSelection);
+      const json = exportSelectedJson(all, getApproachSettings(), backupSelection, scanner?.exportProfiles());
       const shared = await shareTextFile('led-hat-presets.json', json, 'application/json', 'LED hat presets');
       $('#p-msg').textContent = shared ? 'Selected categories shared.' : '';
     } catch (e) { $('#p-msg').textContent = `Share failed: ${(e as Error).message}`; }
@@ -513,9 +517,10 @@ async function renderPresets(message = '') {
       await restoreBackup(merged, data.version === 1 ? data.settings : undefined, nextApproach);
       if (data.version === 1) settings = data.settings;
       if (nextApproach) applyImportedApproachSettings(nextApproach);
+      if (data.qrProfiles) await scanner?.importProfiles(data.qrProfiles);
       await renderPresets(data.version === 1
-        ? `Imported ${data.presets.length} presets. Restart the connection to apply transport settings.`
-        : 'Imported shared categories. Other presets and settings were kept.');
+        ? `Imported ${data.presets.length} presets and ${data.qrProfiles.profiles.length} QR profiles. Restart the connection to apply transport settings.`
+        : `Imported shared categories.${data.qrProfiles ? ` Imported ${data.qrProfiles.profiles.length} QR profiles.` : ''} Other presets and settings were kept.`);
     } catch (e) { $('#p-msg').textContent = `Import failed: ${(e as Error).message}`; }
   };
   const persisted = await navigator.storage?.persisted?.().catch(() => false);
@@ -667,7 +672,8 @@ function setCreateFrom(c: Content) {
 
 function showTab(name: string) {
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  for (const v of ['connect', 'create', 'presets', 'approach']) $(`#view-${v}`).hidden = v !== name;
+  for (const v of ['connect', 'create', 'presets', 'approach', 'scan']) $(`#view-${v}`).hidden = v !== name;
+  if (name !== 'scan') scanner?.stopCamera();
   if (name === 'presets') void renderPresets();
   if (name === 'approach') renderApproach();
 }
@@ -679,9 +685,9 @@ function setupPwa() {
     onOfflineReady() { offline.textContent = 'Ready for offline use'; offline.className = 'pill ok'; },
     onNeedRefresh() {
       const show = () => {
-        if (controller.state === 'Uploading') { setTimeout(show, 2000); return; } // never reload mid-transfer
+        if (controller.state === 'Uploading' || controller.temporaryActive) { setTimeout(show, 2000); return; } // never reload mid-transfer
         banner('A new version is available. <button id="btn-update" class="primary">Update</button>');
-        $('#btn-update').onclick = () => { if (controller.state !== 'Uploading') void updateSW(true); };
+        $('#btn-update').onclick = () => { if (controller.state !== 'Uploading' && !controller.temporaryActive) void updateSW(true); };
       };
       show();
     },
@@ -730,6 +736,8 @@ async function main() {
   initShareReceiver();
   renderConnect();
   renderCreate();
+  scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
+  await scanner.init();
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));
   setupPwa();
   void requestPersistence();

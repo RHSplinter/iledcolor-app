@@ -72,3 +72,34 @@ test('CLI checks the tag, lockfile and native metadata and synchronizes a versio
   assert.equal(run().status, 0);
   assert.equal(run('--check', '--tag', 'v1.2.3').status, 0);
 });
+
+test('Android manual releases validate the tag before checkout', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8');
+  const validation = workflow.match(/      - name: Validate manual release tag\n([\s\S]*?)      - uses: actions\/checkout@v4/);
+  assert.ok(validation, 'manual tag validation must run before checkout');
+  assert.ok(validation[1].includes("if: github.event_name == 'workflow_dispatch'"));
+  assert.ok(validation[1].includes('RELEASE_TAG: ${{ inputs.tag }}'));
+  assert.ok(validation[1].includes('GH_TOKEN: ${{ github.token }}'));
+  const script = validation[1].split('        run: |\n')[1].replace(/^          /gm, '');
+  const run = (tag, exists) => spawnSync('bash', ['-c', `
+    gh() {
+      printf 'API request: %s\\n' "$*"
+      [[ "$*" == "api --silent repos/example/app/git/ref/tags/$RELEASE_TAG" ]] || exit 99
+      return "$TAG_STATUS"
+    }
+    ${script}
+  `], {
+    encoding: 'utf8',
+    env: { ...process.env, RELEASE_TAG: tag, GITHUB_REPOSITORY: 'example/app', TAG_STATUS: exists ? '0' : '1' },
+  });
+  assert.equal(run('v0.1.0', true).status, 0);
+  const missing = run('v0.1.0', false);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stdout, /Create and push it from the release commit/);
+  for (const tag of ['0.1.0', '', 'main', 'v01.2.3', 'v1.2.3-beta.1', 'v1.2.3; exit 0']) {
+    const invalid = run(tag, true);
+    assert.equal(invalid.status, 1, tag);
+    assert.match(invalid.stdout, /Tag must use vMAJOR.MINOR.PATCH/);
+    assert.ok(!invalid.stdout.includes('API request:'), 'invalid tags must not reach the API');
+  }
+});

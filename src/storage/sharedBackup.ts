@@ -1,4 +1,5 @@
 import type { ApproachSettings } from '../approach/tiers';
+import { validateGreetingProfiles, type GreetingProfileState } from '../scanner/greeting';
 import {
   DEFAULT_SETTINGS, MAX_IMPORT_BYTES, MAX_PRESETS, isGroupPreset, parseImport, validateGroups,
   type ContentPreset, type GroupContent, type GroupPreset, type Preset, type Settings,
@@ -12,10 +13,11 @@ export interface SharedBackup {
   creations?: ContentPreset[];
   approach?: { groups: GroupContent; presets: GroupPreset[] };
   scan?: ScanSettings;
+  qrProfiles?: GreetingProfileState;
 }
-export type ImportedBackup = SharedBackup | { version: 1; settings: Settings; presets: Preset[] };
+export type ImportedBackup = SharedBackup | { version: 1; settings: Settings; presets: Preset[]; qrProfiles: GreetingProfileState };
 
-export function exportSelectedJson(presets: Preset[], approach: ApproachSettings, selection: ShareSelection): string {
+export function exportSelectedJson(presets: Preset[], approach: ApproachSettings, selection: ShareSelection, qrProfiles?: GreetingProfileState): string {
   if (!selection.creations && !selection.approach && !selection.scan) throw new Error('Choose at least one category to share.');
   const file: SharedBackup = {
     app: 'iledcolor-app', version: 2,
@@ -25,6 +27,7 @@ export function exportSelectedJson(presets: Preset[], approach: ApproachSettings
       enterDbm: approach.enterDbm, leaveDbm: approach.leaveDbm, settleMs: approach.settleMs,
       confirmMs: approach.confirmMs, staleMs: approach.staleMs,
     } } : {}),
+    ...(selection.scan && qrProfiles ? { qrProfiles: validateGreetingProfiles(qrProfiles) } : {}),
   };
   if ((file.creations?.length ?? 0) + (file.approach?.presets.length ?? 0) > MAX_PRESETS) {
     throw new Error(`Share at most ${MAX_PRESETS} presets at a time. Choose fewer categories.`);
@@ -61,6 +64,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
   if (raw.version === 1) return { version: 1, ...parseImport(text) };
   if (raw.version !== 2) throw new Error(`Unsupported export version ${String(raw.version)}.`);
   if (!('creations' in raw) && !('approach' in raw) && !('scan' in raw)) throw new Error('No shared categories in this file.');
+  if ('qrProfiles' in raw && !('scan' in raw)) throw new Error('QR profiles must be included with scan settings.');
   // Reuse the strict preset validator, including the combined count and duplicate-ID checks.
   if ('creations' in raw && !Array.isArray(raw.creations)) throw new Error('Invalid creations list.');
   if ('approach' in raw && (!isObj(raw.approach) || !Array.isArray(raw.approach.presets))) throw new Error('Invalid approach settings.');
@@ -79,6 +83,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
     ...('creations' in raw ? { creations: contentPresets.filter((p): p is ContentPreset => !isGroupPreset(p)) } : {}),
     ...(groups ? { approach: { groups, presets: savedGroups.filter(isGroupPreset) } } : {}),
     ...('scan' in raw ? { scan: validateScan(raw.scan) } : {}),
+    ...('qrProfiles' in raw ? { qrProfiles: validateGreetingProfiles(raw.qrProfiles) } : {}),
   };
 }
 

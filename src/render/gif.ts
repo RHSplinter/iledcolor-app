@@ -48,12 +48,14 @@ function subBlocks(data: number[]): number[] {
  * Encode frames as a looping GIF89a with one global palette built from the exact colors used.
  * Throws if frames differ in size or use more than 256 colors (text marquees use two).
  */
-export function encodeGif(frames: RgbImage[], delayMs: number | number[], opts: { nonce?: Uint8Array } = {}): Uint8Array {
+export function encodeGif(frames: RgbImage[], delayMs: number | number[], opts: { nonce?: Uint8Array; plays?: number } = {}): Uint8Array {
+  if (opts.plays !== undefined && (!Number.isInteger(opts.plays) || opts.plays < 1 || opts.plays > 65536))
+    throw new RangeError('GIF plays must be between 1 and 65536');
   try {
-    return encodeExact(frames, delayMs, opts.nonce);
+    return encodeExact(frames, delayMs, opts.nonce, opts.plays);
   } catch (e) {
     if (!(e instanceof RangeError) || !/256 colors/.test(e.message)) throw e;
-    return encodeExact(frames.map(quantize), delayMs, opts.nonce);
+    return encodeExact(frames.map(quantize), delayMs, opts.nonce, opts.plays);
   }
 }
 
@@ -66,6 +68,15 @@ export function gifNonce(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(6));
 }
 
+/** Change the upload CRC without changing pixels, frame timing, or loop metadata. */
+export function renewGif(gif: Uint8Array): Uint8Array {
+  const nonce = gifNonce();
+  const result = new Uint8Array(gif.length + nonce.length + 4);
+  result.set(gif.subarray(0, -1));
+  result.set([0x21, 0xfe, nonce.length, ...nonce, 0, 0x3b], gif.length - 1);
+  return result;
+}
+
 /** Snap to a fixed 6x7x6 colour cube (252 colours) so photographic frames fit a GIF palette. */
 function quantize(f: RgbImage): RgbImage {
   const px = new Uint8Array(f.pixels.length);
@@ -74,7 +85,7 @@ function quantize(f: RgbImage): RgbImage {
   return { ...f, pixels: px };
 }
 
-function encodeExact(frames: RgbImage[], delayMs: number | number[], nonce?: Uint8Array): Uint8Array {
+function encodeExact(frames: RgbImage[], delayMs: number | number[], nonce?: Uint8Array, plays?: number): Uint8Array {
   if (!frames.length) throw new RangeError('no frames');
   const { width, height } = frames[0]!;
   const palette = new Map<number, number>();
@@ -102,7 +113,10 @@ function encodeExact(frames: RgbImage[], delayMs: number | number[], nonce?: Uin
   if (nonce) table.set(nonce.subarray(0, table.length - palette.size * 3), palette.size * 3); // unused entries only
   for (const [c, p] of palette) table.set([(c >> 16) & 255, (c >> 8) & 255, c & 255], p * 3);
   bytes.push(...table);
-  bytes.push(0x21, 0xff, 11, ...[...'NETSCAPE2.0'].map((c) => c.charCodeAt(0)), 3, 1, 0, 0, 0); // loop forever
+  if (plays !== 1) {
+    const repeats = plays === undefined ? 0 : plays - 1;
+    bytes.push(0x21, 0xff, 11, ...[...'NETSCAPE2.0'].map((c) => c.charCodeAt(0)), 3, 1, repeats & 255, repeats >> 8, 0);
+  }
   for (const [fi, idx] of indexed.entries()) {
     const ms = Array.isArray(delayMs) ? delayMs[fi] ?? 100 : delayMs;
     const delay = Math.min(0xffff, Math.max(2, Math.round(ms / 10))); // centiseconds
