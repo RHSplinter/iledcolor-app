@@ -1,6 +1,6 @@
 import { DeviceController, DeviceError } from '../controller/deviceController';
 import type { RgbImage } from '../protocol/framing';
-import { encodeGif } from '../render/gif';
+import { encodeGif, gifNonce } from '../render/gif';
 import { drawPreview, parseHexColor } from '../render/matrix';
 import { ensureFont, renderSpanMarquee } from '../render/text';
 import { loadKv, savePreset, saveKv } from '../storage/db';
@@ -432,7 +432,7 @@ async function applyPlan(plan: Plan) {
     if (c.controller.state !== 'Ready') { c.note = 'not connected; will update after reconnect'; return; }
     try {
       c.note = 'updating…'; renderCapsSoon();
-      if ('frames' in r) await c.controller.uploadGif(encodeGif(r.frames, r.delays), r.frames[0]!.width, r.frames[0]!.height);
+      if ('frames' in r) await c.controller.uploadGif(encodeGif(r.frames, r.delays, { nonce: gifNonce() }), r.frames[0]!.width, r.frames[0]!.height, r.frames[0]);
       else await c.controller.upload(r.image);
       c.lastSig = sig;
       c.note = describe(a);

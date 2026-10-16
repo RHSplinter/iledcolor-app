@@ -4,7 +4,7 @@ import { DeviceController, DeviceError } from '../controller/deviceController';
 import type { RgbImage } from '../protocol/framing';
 import { imageToMatrix, shrinkForStorage, type Fit } from '../render/image';
 import { cornerTest, drawPreview, parseHexColor, solid, transformImage } from '../render/matrix';
-import { encodeGif } from '../render/gif';
+import { encodeGif, gifNonce } from '../render/gif';
 import { gifToFrames, MAX_GIF_STORE_BYTES } from '../render/gifDecode';
 import { ensureFont, renderMarquee, renderText } from '../render/text';
 import { deletePreset, listPresets, loadKv, loadSettings, replaceAllPresets, requestPersistence, saveKv, savePreset, saveSettings } from '../storage/db';
@@ -397,8 +397,8 @@ async function sendMarquee(frames: RgbImage[], delays: number[]) {
   sendNote = 'Sending animation…';
   setNote();
   try {
-    const gif = encodeGif(frames, delays);
-    const r = await controller.uploadGif(gif, settings.width, settings.height);
+    const gif = encodeGif(frames, delays, { nonce: gifNonce() });
+    const r = await controller.uploadGif(gif, settings.width, settings.height, frames[0]);
     sendNote = r === 'confirmed' ? 'Animation upload confirmed.' : 'Sent, not confirmed.';
   } catch (e) {
     sendNote = e instanceof DeviceError && e.kind === 'cancelled' ? 'Upload cancelled.' : `Upload failed: ${(e as Error).message}`;
