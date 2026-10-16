@@ -8,6 +8,106 @@ Approach mode uses phone accelerometer/gyroscope data to support RSSI filtering,
 when sensors are unavailable. These sensors cannot locate other caps, so physical marquee ordering still
 uses manual local cap order and deterministic phone-ID order across phones.
 
+## Download Android and iOS releases
+
+Download published builds from [GitHub Releases](https://github.com/harrybin/iledcolor-app-native-added/releases):
+
+| Asset | Installation |
+| --- | --- |
+| `led-hat-vX.Y.Z-android.apk` | Signed release APK. Download on Android and allow installation from that download source. Updates require the same signing key. |
+| `led-hat-vX.Y.Z-ios.ipa` (currently disabled) | Signed **Ad Hoc** IPA, added only by a manual iOS workflow run with all iOS signing secrets configured. Install with Apple Configurator on macOS or Xcode's Devices and Simulators window. Only iPhones/iPads whose UDIDs are registered in the embedded provisioning profile can install it. |
+| `SHA256SUMS-android.txt` / `SHA256SUMS-ios.txt` | SHA-256 checksums, uploaded independently for each platform. |
+
+An IPA downloaded from GitHub is **not** unrestricted iOS distribution: an active Apple Developer
+Program membership, a valid distribution certificate, and an Ad Hoc profile for
+`com.harrybin.ledhat` with the target devices are required. Adding devices requires a new profile
+and a new release. Certificate/profile expiry also limits installation/use. App Store and
+TestFlight distribution are not part of this workflow. BLE needs a physical device.
+The IPA embeds the provisioning profile, including registered device UDIDs; anyone with download
+access can inspect it. Account for this before publishing Ad Hoc builds in a public repository.
+
+### One-time signing setup
+
+In **Settings > Secrets and variables > Actions**, add the four Android repository secrets before
+the first Android release. The three iOS secrets are optional: until all three are present, the
+iOS workflow skips its native build and publication, with an explicit notice in its summary.
+The independent Android workflow needs no Apple credentials.
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Base64 of the release JKS/keystore containing the private signing key. Reuse an existing app's key for updates. |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password. |
+| `ANDROID_KEY_ALIAS` | Signing-key alias. |
+| `ANDROID_KEY_PASSWORD` | Private-key password. |
+| `IOS_CERTIFICATE_BASE64` | Base64 of a password-protected `.p12` export containing one valid **Apple Distribution** certificate and its private key. |
+| `IOS_CERTIFICATE_PASSWORD` | Password of the `.p12` export (must not be empty). |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64 of an **Ad Hoc distribution** `.mobileprovision` for this app, matching the certificate and containing the intended device UDIDs. |
+
+Use standard Base64 (not Base64URL). Encode the complete binary files locally; never commit keys,
+profiles, passwords, or Base64 values. Keep a secure backup of the Android key: replacing it
+prevents upgrades over existing installations. The iOS team and profile UUID are read from the
+profile automatically. Signing material is installed temporarily on the runner and removed after
+the build, including on failure. Missing Android secrets or invalid signing material fail the build;
+there is no debug-signed or unsigned fallback. Once all iOS secrets are present, a (manual) iOS
+run builds iOS. A failed build/signing step blocks only that platform's upload, never the other
+platform's build or publication.
+
+> **iOS is currently disabled for automatic releases.** The iOS workflow does not run on pushed
+> tags, so tag pushes build and publish only Android. It can still be started manually via
+> **Run workflow**. To re-enable it, add the three iOS secrets and restore the
+> `push: tags: ['v*']` trigger in [release-ios.yml](.github/workflows/release-ios.yml).
+
+GitHub Actions must be enabled, and repository/organization policy must allow the publishing job's
+`contents: write` permission for `GITHUB_TOKEN`. No personal access token is needed.
+
+### Versioning and publishing
+
+`package.json` is the version source (initially **0.1.0**), with `package-lock.json` kept in sync.
+The npm `version` hook updates Android's `versionName` and iOS's `MARKETING_VERSION`, plus both
+native build numbers. Only stable `MAJOR.MINOR.PATCH` versions are supported (no prerelease/build
+suffixes). The build number is `MAJOR * 1000000 + MINOR * 1000 + PATCH + 1`: `0.1.0` becomes
+`1001`. Minor and patch are limited to 999 and the build number to 2100000000. Always increase
+the version; reusing a tag/build number is not a new release.
+
+For example, prepare the next patch from the repository root on Windows:
+
+```powershell
+npm version patch --no-git-tag-version
+npm run version:check
+npm run test:release
+git add package.json package-lock.json android\app\build.gradle ios\App\App.xcodeproj\project.pbxproj
+git commit -m "chore: release 0.1.1"
+git tag v0.1.1
+git push origin HEAD
+git push origin v0.1.1
+```
+
+The example assumes the current version is `0.1.0`; use the resulting version for the commit/tag.
+Use `minor` or `major` instead of `patch` for larger changes. To publish the initial `0.1.0`,
+commit the workflows and synchronized version files first, then tag that commit `v0.1.0`.
+If versions were edited manually, run `npm run version` to synchronize native metadata.
+
+[Build Android release](.github/workflows/release-android.yml) and
+[Build iOS release](.github/workflows/release-ios.yml) are separate workflows. The Android workflow
+is triggered by pushed `v*` tags; the iOS workflow is currently manual-only (see above). Each checks that the tag, npm manifests, and native metadata agree, runs the tests,
+builds its own copy of the shared web app, and builds its signed native package (Linux/JDK 21 for
+Android, macOS/Xcode 26 for iOS). Builds run independently and can run in parallel.
+
+Each successful workflow creates or extends the **same GitHub Release** for that tag with its own
+package and checksum file. Android is published immediately after its own build succeeds, even
+when iOS is disabled, skipped, still running, or failing; iOS can add its download later. Only the short
+publishing jobs share a per-tag concurrency lock to avoid races when creating the release.
+The existing GitHub Pages workflow is unchanged.
+
+You can also start **Actions > Build Android release / Build iOS release > Run workflow** with
+an existing version tag, for example after correcting signing secrets. Use **Re-run failed jobs**
+for transient failures. Retrying a workflow replaces only its own platform's package and checksum
+file, leaving the other platform's downloads intact. New app versions must still use a new version
+and tag. A newly created draft is published after that platform's upload succeeds; the other
+platform does not need to finish first.
+Build artifacts remain available in Actions for seven days; the GitHub Release assets are the
+persistent downloads. Neither workflow generates version-bump commits or pushes tags itself.
+
 ## Project Description
 
 Build a local-first webapp that installs on an Android home screen and controls the hat's LED display directly over Bluetooth Low Energy (BLE). Text, colors, images, and saved presets stay on the phone. No account, vendor app, backend, or internet connection is required during normal use.

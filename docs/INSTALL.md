@@ -26,22 +26,30 @@ The same web code is wrapped with [Capacitor](https://capacitorjs.com) (`android
 native apps use native BLE (`@capacitor-community/bluetooth-le`) and add **Approach mode**
 (see `docs/approaching-mode.md`).
 
-Requirements: Node 20+, JDK 21, Android SDK (platform 36, build-tools 35). Set `JAVA_HOME` and
+For ready-built signed APK/IPA downloads, see [GitHub Releases](https://github.com/harrybin/iledcolor-app-native-added/releases)
+and the [release/signing guide in the README](../README.md#download-android-and-ios-releases).
+Android releases do not require iOS signing credentials. The optional iOS download is included
+when all Apple signing secrets are configured; it is Ad Hoc and only supports devices registered
+in its provisioning profile.
+
+Requirements: Node 22+, JDK 21, Android SDK (platform 36, build-tools 35). Set `JAVA_HOME` and
 `ANDROID_HOME` (or put `sdk.dir=...` in `android/local.properties`).
 
 ```powershell
 npm run android:apk       # debug APK: android\app\build\outputs\apk\debug\app-debug.apk
-npm run android:release   # release APK: android\app\build\outputs\apk\release\app-release.apk
+npm run android:release   # signed APK (with signing configured): android\app\build\outputs\apk\release\app-release.apk
 adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 ```
 
-The release APK is signed only if `android/keystore.properties` exists (gitignored) with
-`storeFile`, `storePassword`, `keyAlias`, and `keyPassword`. To install an APK manually, copy it to
+For local release signing, create `android/keystore.properties` (gitignored) with
+`storeFile`, `storePassword`, `keyAlias`, and `keyPassword`. The CI workflow supplies credentials
+through environment variables instead. Without signing configuration, local builds produce
+`app-release-unsigned.apk`, which is not installable until signed. To install a signed APK manually, copy it to
 the phone and allow "install unknown apps" for the file manager. On first use, Android asks for
 **Nearby devices** and **Location** permission (needed for BLE scanning).
 
-**iOS** needs macOS with Xcode: `npm run ios:open`, select a team under *Signing & Capabilities*,
-and run it on a device (Bluetooth does not work in the simulator). Use Product → Archive for an IPA
+**iOS** needs macOS with Xcode 26+: `npm run ios:open`, select a team under *Signing & Capabilities*,
+and run it on a device (Bluetooth does not work in the simulator). Use Product > Archive for an IPA
 or TestFlight build.
 
 ## First use on the hat
