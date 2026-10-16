@@ -8,6 +8,13 @@ Approach mode uses phone accelerometer/gyroscope data to support RSSI filtering,
 when sensors are unavailable. These sensors cannot locate other caps, so physical marquee ordering still
 uses manual local cap order and deterministic phone-ID order across phones.
 
+In **Presets → Backup**, choose what to include before tapping **Share presets**:
+**Creations** (saved text, colors, images and GIFs), **Approach settings** (saved group presets
+and current group content), and **Scan settings** (proximity thresholds and timing).
+The system share sheet sends a JSON file. Import replaces only the included categories,
+keeping excluded presets, phone identity, cap connections and device settings unchanged.
+Older full JSON backups remain importable with their original full-replacement behavior.
+
 ## Download Android and iOS releases
 
 Download published builds from [GitHub Releases](https://github.com/harrybin/iledcolor-app-native-added/releases):

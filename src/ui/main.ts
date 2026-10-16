@@ -7,14 +7,15 @@ import { cornerTest, drawPreview, parseHexColor, solid, transformImage } from '.
 import { encodeGif, gifNonce } from '../render/gif';
 import { gifToFrames, MAX_GIF_STORE_BYTES } from '../render/gifDecode';
 import { ensureFont, renderMarquee, renderText } from '../render/text';
-import { deletePreset, listPresets, loadKv, loadSettings, replaceAllPresets, requestPersistence, saveKv, savePreset, saveSettings } from '../storage/db';
-import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, isGroupPreset, parseImport, validateContent, type Content, type Preset, type Settings } from '../storage/presets';
+import { deletePreset, listPresets, loadKv, loadSettings, restoreBackup, requestPersistence, saveKv, savePreset, saveSettings } from '../storage/db';
+import { DEFAULT_SETTINGS, DEFAULT_SPEED, isGroupPreset, validateContent, type Content, type Preset, type Settings } from '../storage/presets';
+import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSelection } from '../storage/sharedBackup';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
-import { applyGroupContent, approachRunning, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, renderApproach, sharePeers, shareIdentity, type PrimaryCap } from '../approach/ui';
+import { applyGroupContent, applyImportedApproachSettings, getApproachSettings, approachRunning, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, renderApproach, sharePeers, shareIdentity, type PrimaryCap } from '../approach/ui';
 import { listenForShares, withShareLink } from '../approach/contentExchange';
 import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
 import { shareTextFile } from './shareFile';
@@ -430,7 +431,9 @@ async function savePresetClick() {
 
 // ---------- Presets view ---------------------------------------------------------
 
-async function renderPresets() {
+const backupSelection: ShareSelection = { creations: true, approach: true, scan: true };
+
+async function renderPresets(message = '') {
   const root = $('#view-presets');
   let presets: Preset[] = [];
   let err = '';
@@ -444,8 +447,15 @@ async function renderPresets() {
     </div>
     <div class="card">
       <h2>Backup</h2>
+      <fieldset class="share-options">
+        <legend>Include in shared file</legend>
+        <label><input type="checkbox" id="p-include-creations" ${backupSelection.creations ? 'checked' : ''} /> <span>Creations <small>Saved text, colors, images and GIFs (${presets.filter((p) => !isGroupPreset(p)).length})</small></span></label>
+        <label><input type="checkbox" id="p-include-approach" ${backupSelection.approach ? 'checked' : ''} /> <span>Approach settings <small>Saved group presets (${presets.filter(isGroupPreset).length}) and current group content</small></span></label>
+        <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Near/away thresholds, confirmation, settling and stale timing</small></span></label>
+      </fieldset>
+      <p class="small">Choose at least one category. Importing replaces only the included categories; everything else stays unchanged.</p>
       <div class="row"><button id="btn-export">Share presets</button><label class="row"><span>Import</span><input id="p-import" type="file" accept="application/json,.json" /></label></div>
-      <p id="p-msg" class="small"></p>
+      <p id="p-msg" class="small" role="status">${esc(message)}</p>
       <p id="p-persist" class="small"></p>
     </div>`;
   renderShare();
@@ -464,24 +474,48 @@ async function renderPresets() {
       await refreshPreview(p.content);
     } catch (e) { $('#p-msg').textContent = (e as Error).message; }
   });
-  $('#btn-export').onclick = async () => {
+  const exportButton = $<HTMLButtonElement>('#btn-export');
+  const shareOptions = $<HTMLFieldSetElement>('.share-options', root);
+  let sharingBackup = false;
+  const updateSelection = () => {
+    for (const key of ['creations', 'approach', 'scan'] as const) {
+      backupSelection[key] = $<HTMLInputElement>(`#p-include-${key}`).checked;
+    }
+    exportButton.disabled = sharingBackup || !Object.values(backupSelection).some(Boolean);
+  };
+  for (const key of ['creations', 'approach', 'scan'] as const) {
+    $<HTMLInputElement>(`#p-include-${key}`).onchange = updateSelection;
+  }
+  updateSelection();
+  exportButton.onclick = async () => {
+    sharingBackup = true;
+    shareOptions.disabled = true;
+    updateSelection();
     try {
       const all = await listPresets();
-      const shared = await shareTextFile('led-hat-presets.json', exportJson(settings, all), 'application/json', 'LED hat presets');
-      $('#p-msg').textContent = shared ? `Shared ${all.length} presets.` : '';
+      const json = exportSelectedJson(all, getApproachSettings(), backupSelection);
+      const shared = await shareTextFile('led-hat-presets.json', json, 'application/json', 'LED hat presets');
+      $('#p-msg').textContent = shared ? 'Selected categories shared.' : '';
     } catch (e) { $('#p-msg').textContent = `Share failed: ${(e as Error).message}`; }
+    finally { sharingBackup = false; shareOptions.disabled = false; updateSelection(); }
   };
   $<HTMLInputElement>('#p-import').onchange = async (ev) => {
     const f = (ev.target as HTMLInputElement).files?.[0];
     if (!f) return;
     try {
       if (f.size > 4 * 1024 * 1024) throw new Error('Import file is too large.');
-      const data = parseImport(await f.text()); // all-or-nothing validation
-      await replaceAllPresets(data.presets);
-      settings = data.settings;
-      await saveSettings(settings);
-      $('#p-msg').textContent = `Imported ${data.presets.length} presets. Restart the connection to apply transport settings.`;
-      void renderPresets();
+      const data = parseSharedBackup(await f.text());
+      const merged = mergeSharedPresets(await listPresets(), data);
+      const currentApproach = getApproachSettings();
+      const nextApproach = data.version === 2 && (data.approach || data.scan) ? {
+        ...currentApproach, ...data.scan, tiers: data.approach?.groups ?? currentApproach.tiers,
+      } : undefined;
+      await restoreBackup(merged, data.version === 1 ? data.settings : undefined, nextApproach);
+      if (data.version === 1) settings = data.settings;
+      if (nextApproach) applyImportedApproachSettings(nextApproach);
+      await renderPresets(data.version === 1
+        ? `Imported ${data.presets.length} presets. Restart the connection to apply transport settings.`
+        : 'Imported shared categories. Other presets and settings were kept.');
     } catch (e) { $('#p-msg').textContent = `Import failed: ${(e as Error).message}`; }
   };
   const persisted = await navigator.storage?.persisted?.().catch(() => false);

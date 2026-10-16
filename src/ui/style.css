@@ -41,6 +41,12 @@ ul.list li span { flex:1; overflow:hidden; text-overflow:ellipsis; }
 
 fieldset.tier { border:1px solid #333; border-radius:8px; margin:0 0 12px; padding:8px 12px; }
 fieldset.tier legend { padding:0 6px; font-weight:600; }
+.share-options { border:1px solid #333; border-radius:8px; margin:12px 0; padding:8px 12px; }
+.share-options legend { padding:0 6px; font-size:14px; }
+.share-options label { display:flex; align-items:center; gap:10px; min-height:44px; margin:4px 0; color:var(--fg); cursor:pointer; }
+.share-options input { flex:none; width:20px; height:20px; accent-color:var(--accent); }
+.share-options input:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.share-options small { display:block; color:#aaa; font-size:13px; }
 .pill.muted { opacity:.6; }
 .cap-texts li { align-items:flex-start; flex-wrap:wrap; }
 .cap-text-detail { flex:1 1 220px; min-width:0; }

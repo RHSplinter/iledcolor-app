@@ -756,6 +756,15 @@ function setMode(mode: 'p2p' | 'hub') {
 
 export function getGroupContent(): GroupContent { return structuredClone(settings.tiers); }
 
+export function getApproachSettings(): ApproachSettings { return structuredClone(settings); }
+
+/** Refresh runtime state after an imported configuration was saved successfully. */
+export function applyImportedApproachSettings(s: ApproachSettings): void {
+  updateSettings(s, false);
+  engine.invalidate();
+  renderApproach();
+}
+
 export function createContentChanged(): void {
   if (settings.tiers.solo.useCreate) engine?.invalidate();
 }
@@ -768,11 +777,11 @@ export function applyGroupContent(groups: GroupContent): void {
   renderApproach();
 }
 
-function updateSettings(s: ApproachSettings) {
+function updateSettings(s: ApproachSettings, save = true) {
   settings = validateApproach(s);
   engine.setSettings(settings);
   caps.forEach((c) => (c.lastSig = undefined));
-  void persist();
+  if (save) void persist();
   if (running) void startBeacon();
   renderGroupTexts();
 }

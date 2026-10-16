@@ -58,7 +58,8 @@ test('group content presets: save, export, load', async ({ page }) => {
   await expect(item).toContainText('group content');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const json = JSON.parse(await (await import('node:fs/promises')).readFile((await download.path())!, 'utf-8'));
-  expect(json.presets.find((p: { name: string }) => p.name === 'Bavarian').groups.pair.text).toBe('Servus {other}!');
+  expect(json.approach.presets.find((p: { name: string }) => p.name === 'Bavarian').groups.pair.text).toBe('Servus {other}!');
+  expect(json.approach.groups.pair.text).toBe('Something else');
 
   await item.locator('[data-act=load]').click();
   await expect(page.locator('#view-approach')).toBeVisible();
@@ -71,6 +72,43 @@ test('group content presets: save, export, load', async ({ page }) => {
   await page.setInputFiles('#p-import', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
   await expect(page.locator('#p-msg')).toContainText('Imported');
   await expect(page.locator('ul.list li', { hasText: 'Bavarian' })).toContainText('group content');
+});
+
+test('share categories: scan-only file excludes creations and approach content, import preserves them', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/#mock');
+  await page.click('nav [data-tab=create]');
+  await page.fill('#c-name', 'Keep this creation');
+  await page.click('#btn-save');
+  await page.click('nav [data-tab=approach]');
+  await page.locator('[data-tier=pair][data-field=text]').fill('Keep my greeting');
+  await page.locator('[data-tier=pair][data-field=text]').dispatchEvent('change');
+  await page.fill('#ap-enter', '-65');
+  await page.locator('#ap-enter').dispatchEvent('change');
+  await page.fill('#ap-preset-name', 'Keep this group');
+  await page.click('#ap-preset-save');
+  await page.click('nav [data-tab=presets]');
+  await page.getByLabel('Creations', { exact: false }).uncheck();
+  await page.getByLabel('Approach settings', { exact: false }).uncheck();
+  await page.getByLabel('Scan settings', { exact: false }).uncheck();
+  await expect(page.getByRole('button', { name: 'Share presets' })).toBeDisabled();
+  await page.getByLabel('Scan settings', { exact: false }).check();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
+  const json = JSON.parse(await (await import('node:fs/promises')).readFile((await download.path())!, 'utf-8'));
+  expect(Object.keys(json).sort()).toEqual(['app', 'scan', 'version']);
+  expect(json.scan.enterDbm).toBe(-65);
+  json.scan.enterDbm = -60;
+  await page.setInputFiles('#p-import', { name: 'scan.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
+  await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
+  await expect(page.locator('ul.list li', { hasText: 'Keep this creation' })).toHaveCount(1);
+  await expect(page.locator('ul.list li', { hasText: 'Keep this group' })).toHaveCount(1);
+  await page.click('nav [data-tab=approach]');
+  await expect(page.locator('#ap-enter')).toHaveValue('-60');
+  await expect(page.locator('[data-tier=pair][data-field=text]')).toHaveValue('Keep my greeting');
+  await page.reload();
+  await page.click('nav [data-tab=approach]');
+  await expect(page.locator('#ap-enter')).toHaveValue('-60');
+  await expect(page.locator('[data-tier=pair][data-field=text]')).toHaveValue('Keep my greeting');
 });
 
 test('solo uses Create content, restores it after approaching, and remembers the choice', async ({ page }) => {
