@@ -76,6 +76,7 @@ let loopTimer: ReturnType<typeof setInterval> | undefined;
 let applying: Promise<void> | null = null;
 let pendingPlan: Plan | null = null;
 let lastPlan: Plan | null = null;
+const greetingDeferred = new Set<DeviceController>();
 let beaconNote = '';
 let scanNote = '';
 let motionNote = '';
@@ -199,7 +200,22 @@ function notifyPrimary() {
 
 function makeController(): DeviceController {
   const ctl = new DeviceController({ profile: ctx.profile(), onTrace: ctx.trace });
-  ctl.subscribe(() => renderCapsSoon());
+  let temporary = false;
+  ctl.subscribe(() => {
+    if (temporary && !ctl.temporaryActive) {
+      engine.invalidate();
+      if (running) {
+        const cap = caps.find((c) => c.controller === ctl);
+        if (cap) cap.lastSig = undefined;
+      }
+      if (greetingDeferred.delete(ctl) && !running && lastPlan) {
+        const key = caps.find((c) => c.controller === ctl)?.key;
+        if (key) schedule({ ...lastPlan, perCap: new Map([...lastPlan.perCap].filter(([k]) => k === key)) });
+      }
+    }
+    temporary = ctl.temporaryActive;
+    renderCapsSoon();
+  });
   return ctl;
 }
 
@@ -487,6 +503,7 @@ async function applyPlan(plan: Plan) {
   const jobs = caps.map(async (c) => {
     const a = plan.perCap.get(c.key);
     if (!a) return;
+    if (c.controller.temporaryActive) { greetingDeferred.add(c.controller); engine.invalidate(); return; }
     let sig: string;
     let r: { frames: RgbImage[]; delays: number[]; periodMs?: number } | { image: RgbImage };
     try {
@@ -496,6 +513,7 @@ async function applyPlan(plan: Plan) {
       r = await renderAssignment(a, content);
     } catch (e) { c.note = `render failed: ${(e as Error).message}`; return; }
     c.preview = 'frames' in r ? r : { frames: [r.image], delays: [1000] };
+    if (c.controller.temporaryActive) { greetingDeferred.add(c.controller); engine.invalidate(); return; }
     if (c.controller.state !== 'Ready') { c.note = 'not connected; will update after reconnect'; return; }
     try {
       c.note = 'updating…'; renderCapsSoon();

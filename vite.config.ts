@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'prompt', // never reload mid-transfer; the UI offers the update when idle
-      includeAssets: ['icon.svg'],
+      includeAssets: ['icon.svg', 'licenses/*.txt'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff,woff2,webmanifest}'],
         navigateFallback: 'index.html',

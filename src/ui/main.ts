@@ -15,6 +15,7 @@ import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
 import { applyGroupContent, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, renderApproach, type PrimaryCap } from '../approach/ui';
+import { GreetingUi } from '../scanner/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -36,6 +37,7 @@ let displayNote = '';
 let imageDataUrl = '';
 let renderSeq = 0;
 let savedCreateContent: Content | undefined;
+let scanner: GreetingUi | undefined;
 
 function profileFor(s: Settings): TransportProfile {
   return { ...SPIKE_PROFILE, chunkSize: s.chunkSize, interWriteDelayMs: s.interWriteDelayMs };
@@ -56,6 +58,7 @@ function newController() {
 const sharedCap = () => native || useMock;
 const watched = new WeakSet<DeviceController>();
 function onPrimaryChange(p: PrimaryCap | null) {
+  scanner?.stopCamera();
   if (p) {
     controller = p.controller;
     deviceName = p.name;
@@ -83,14 +86,15 @@ function renderStatus() {
   const prog = document.querySelector<HTMLProgressElement>('#progress');
   if (prog && p) { prog.max = p.total; prog.value = p.sent; }
   updateButtons();
+  scanner?.updateStatus();
 }
 
 function updateButtons() {
   const s = controller.state;
-  const ready = s === 'Ready';
+  const ready = s === 'Ready' && !controller.temporaryActive;
   const busy = s === 'Selecting' || s === 'Connecting' || s === 'Handshaking' || s === 'Uploading';
   const set = (id: string, v: boolean) => { const b = document.getElementById(id) as HTMLButtonElement | null; if (b) b.disabled = v; };
-  set('btn-connect', busy || ready);
+  set('btn-connect', busy || ready || controller.temporaryActive);
   set('btn-disconnect', s === 'Disconnected');
   set('btn-send', !ready || !lastImage);
   set('btn-test-color', !ready); set('btn-test-corner', !ready);
@@ -460,7 +464,7 @@ async function renderPresets() {
   });
   $('#btn-export').onclick = async () => {
     try {
-      const blob = new Blob([exportJson(settings, await listPresets())], { type: 'application/json' });
+      const blob = new Blob([exportJson(settings, await listPresets(), scanner?.exportProfiles() ?? { selectedId: null, profiles: [] })], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'led-hat-presets.json';
@@ -477,8 +481,9 @@ async function renderPresets() {
       await replaceAllPresets(data.presets);
       settings = data.settings;
       await saveSettings(settings);
-      $('#p-msg').textContent = `Imported ${data.presets.length} presets. Restart the connection to apply transport settings.`;
-      void renderPresets();
+      await scanner?.importProfiles(data.qrProfiles);
+      await renderPresets();
+      $('#p-msg').textContent = `Imported ${data.presets.length} presets and ${data.qrProfiles.profiles.length} QR profiles. Restart the connection to apply transport settings.`;
     } catch (e) { $('#p-msg').textContent = `Import failed: ${(e as Error).message}`; }
   };
   const persisted = await navigator.storage?.persisted?.().catch(() => false);
@@ -497,7 +502,8 @@ function setCreateFrom(c: Content) {
 
 function showTab(name: string) {
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  for (const v of ['connect', 'create', 'presets', 'approach']) $(`#view-${v}`).hidden = v !== name;
+  for (const v of ['connect', 'create', 'presets', 'approach', 'scan']) $(`#view-${v}`).hidden = v !== name;
+  if (name !== 'scan') scanner?.stopCamera();
   if (name === 'presets') void renderPresets();
   if (name === 'approach') renderApproach();
 }
@@ -509,9 +515,9 @@ function setupPwa() {
     onOfflineReady() { offline.textContent = 'Ready for offline use'; offline.className = 'pill ok'; },
     onNeedRefresh() {
       const show = () => {
-        if (controller.state === 'Uploading') { setTimeout(show, 2000); return; } // never reload mid-transfer
+        if (controller.state === 'Uploading' || controller.temporaryActive) { setTimeout(show, 2000); return; } // never reload mid-transfer
         banner('A new version is available. <button id="btn-update" class="primary">Update</button>');
-        $('#btn-update').onclick = () => { if (controller.state !== 'Uploading') void updateSW(true); };
+        $('#btn-update').onclick = () => { if (controller.state !== 'Uploading' && !controller.temporaryActive) void updateSW(true); };
       };
       show();
     },
@@ -559,6 +565,8 @@ async function main() {
   await initApproach(approachContext());
   renderConnect();
   renderCreate();
+  scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
+  await scanner.init();
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));
   setupPwa();
   void requestPersistence();
