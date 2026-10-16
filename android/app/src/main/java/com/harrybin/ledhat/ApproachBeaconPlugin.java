@@ -58,6 +58,10 @@ public class ApproachBeaconPlugin extends Plugin implements SensorEventListener 
     private BluetoothLeAdvertiser advertiser;
     private AdvertiseCallback callback;
     private static final UUID CONTENT_SERVICE = UUID.fromString("4c454448-1000-4000-8000-000000000001");
+    /** Preset sharing (presetShare.ts): nearby phones write offers/data to the inbox and read the status. */
+    private static final UUID SHARE_INBOX = UUID.fromString("4c454448-1000-4000-8000-000000000020");
+    private static final UUID SHARE_STATUS = UUID.fromString("4c454448-1000-4000-8000-000000000021");
+    private volatile byte[] shareStatus = new byte[0];
     private volatile BluetoothGattServer contentServer;
     private boolean contentServiceReady;
     private PluginCall contentCall;
@@ -123,17 +127,38 @@ public class ApproachBeaconPlugin extends Plugin implements SensorEventListener 
                 @Override public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
                     BluetoothGattServer server = contentServer;
                     if (epoch != contentEpoch || server == null) return;
-                    byte[] value = contentValues.get(characteristic.getUuid());
+                    byte[] value = SHARE_STATUS.equals(characteristic.getUuid()) ? shareStatus : contentValues.get(characteristic.getUuid());
                     if (value == null) { server.sendResponse(device, requestId, BluetoothGatt.GATT_READ_NOT_PERMITTED, offset, null); return; }
                     if (offset < 0 || offset > value.length) { server.sendResponse(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset, null); return; }
                     int end = Math.min(value.length, offset + peerMtus.getOrDefault(device.getAddress(), 23) - 1);
                     server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, Arrays.copyOfRange(value, offset, end));
+                }
+                @Override public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic,
+                                                                   boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+                    BluetoothGattServer server = contentServer;
+                    if (epoch != contentEpoch || server == null) return;
+                    // Senders keep every packet within one ATT write, so prepared (long) writes are not needed.
+                    boolean ok = SHARE_INBOX.equals(characteristic.getUuid()) && !preparedWrite && offset == 0 && value != null && value.length <= 512;
+                    if (ok) {
+                        JSObject write = new JSObject();
+                        write.put("value", Base64.encodeToString(value, Base64.NO_WRAP));
+                        notifyListeners("shareWrite", write);
+                    }
+                    if (responseNeeded) server.sendResponse(device, requestId,
+                        ok ? BluetoothGatt.GATT_SUCCESS : BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED, offset, null);
+                }
+                @Override public void onExecuteWrite(BluetoothDevice device, int requestId, boolean execute) {
+                    BluetoothGattServer server = contentServer;
+                    if (epoch == contentEpoch && server != null)
+                        server.sendResponse(device, requestId, BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED, 0, null);
                 }
             });
             if (contentServer == null) { contentCall = null; call.reject("GATT server unavailable"); return; }
             BluetoothGattService service = new BluetoothGattService(CONTENT_SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY);
             for (UUID uuid : next.keySet())
                 service.addCharacteristic(new BluetoothGattCharacteristic(uuid, BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ));
+            service.addCharacteristic(new BluetoothGattCharacteristic(SHARE_STATUS, BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ));
+            service.addCharacteristic(new BluetoothGattCharacteristic(SHARE_INBOX, BluetoothGattCharacteristic.PROPERTY_WRITE, BluetoothGattCharacteristic.PERMISSION_WRITE));
             if (!contentServer.addService(service)) {
                 contentCall = null;
                 closeContentServer();
@@ -152,6 +177,20 @@ public class ApproachBeaconPlugin extends Plugin implements SensorEventListener 
             contentCall = null;
             closeContentServer();
             call.reject("Could not publish shared texts", e);
+        }
+    }
+
+    @PluginMethod
+    public void setShareStatus(PluginCall call) {
+        String value = call.getString("value");
+        if (value == null) { call.reject("value required"); return; }
+        try {
+            byte[] bytes = Base64.decode(value, Base64.DEFAULT);
+            if (bytes.length > 512) { call.reject("Status too long"); return; }
+            shareStatus = bytes;
+            call.resolve();
+        } catch (IllegalArgumentException e) {
+            call.reject("Invalid status", e);
         }
     }
 

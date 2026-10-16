@@ -10,7 +10,7 @@ import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
 import { MotionSupport } from './motionSupport';
-import { readPeerContent } from './contentExchange';
+import { peerBusy, readPeerContent } from './contentExchange';
 import { CONTENT_REFRESH_MS, contentSnapshot, encodeTierContent } from './sharedContent';
 import { encodeBeacon, fitBeaconName } from './beaconCodec';
 import { dbmForMeters, formatMeters } from './distance';
@@ -443,6 +443,7 @@ function refreshPeerContent(now: number, tier: TierId) {
   const peers = engine.contentPeers(now);
   for (const id of contentAttempts.keys()) if (!peers.some((p) => p.phoneId === id)) contentAttempts.delete(id);
   const peer = peers.filter((p) => {
+    if (peerBusy(p.deviceId)) return false; // a preset transfer is using this phone's connection
     const last = contentAttempts.get(p.phoneId);
     return !last || last.tier !== tier || now - last.at >= (last.failed ? 30000 : CONTENT_REFRESH_MS);
   }).sort((a, b) => (contentAttempts.get(a.phoneId)?.at ?? 0) - (contentAttempts.get(b.phoneId)?.at ?? 0))[0];
@@ -1069,3 +1070,11 @@ function animate(cv: HTMLCanvasElement, frames: RgbImage[], delays: number[]) {
 /** True while approach mode owns caps; the Connect tab warns instead of fighting over them. */
 export const approachOwnsCaps = () => caps.length > 0;
 export const approachCapIds = () => caps.map((c) => c.deviceId);
+
+/** Nearby phones (with approach mode on) that can receive a shared preset; empty while approach mode is off. */
+export function sharePeers(): { phoneId: number; deviceId: string; label: string; rssi: number; near: boolean }[] {
+  return running && ctx.native && !ctx.mock ? engine.sharePeers(Date.now()) : [];
+}
+export const approachRunning = () => running;
+/** Identity sent with a preset offer. */
+export const shareIdentity = () => ({ phoneId, name: beaconName() || defaultLabel(phoneId, 0) });

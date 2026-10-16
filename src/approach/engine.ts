@@ -319,6 +319,19 @@ export class ApproachEngine {
     }));
   }
 
+  /** Other phones running the app that can receive a shared preset (heard recently, near or not). */
+  sharePeers(now: number): { phoneId: number; deviceId: string; label: string; rssi: number; near: boolean }[] {
+    this.tracker.expire(now);
+    const out = [];
+    for (const [key, b] of this.peers) {
+      const rssi = this.tracker.rssi(key);
+      const deviceId = this.peerDevices.get(b.phoneId);
+      if (rssi === undefined || !deviceId) continue;
+      out.push({ phoneId: b.phoneId, deviceId, label: capLabel(b.phoneId, 0, this.peerNames.get(key)), rssi: Math.round(rssi), near: this.peerNear(key, b, now) });
+    }
+    return out.sort((a, b) => b.rssi - a.rssi);
+  }
+
   /** Other phones currently heard (near or not), with smoothed RSSI, for display and threshold tuning. */
   heardPhones(now: number): { id: string; label: string; capCount: number; rssi: number; near: boolean; mutual: boolean }[] {
     this.tracker.expire(now);

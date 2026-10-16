@@ -2,7 +2,10 @@ import type { PluginListenerHandle } from '@capacitor/core';
 import type { ApproachBeaconPlugin } from './beacon';
 import type { MotionSample } from './motion';
 
-type MotionSource = Pick<ApproachBeaconPlugin, 'startMotion' | 'stopMotion' | 'addListener'>;
+type MotionSource = Pick<ApproachBeaconPlugin, 'startMotion' | 'stopMotion'> & {
+  addListener(event: 'motion', listener: (sample: MotionSample) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'motionError', listener: (error: { message: string }) => void): Promise<PluginListenerHandle>;
+};
 
 /** Serialize native setup/teardown, including a stop requested while setup is pending. */
 export class MotionSupport {
