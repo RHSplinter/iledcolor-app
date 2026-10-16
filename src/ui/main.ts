@@ -17,6 +17,7 @@ import { isNativeApp, platformName } from '../platform';
 import { applyGroupContent, approachRunning, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, renderApproach, sharePeers, shareIdentity, type PrimaryCap } from '../approach/ui';
 import { listenForShares, withShareLink } from '../approach/contentExchange';
 import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
+import { shareTextFile } from './shareFile';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -443,7 +444,7 @@ async function renderPresets() {
     </div>
     <div class="card">
       <h2>Backup</h2>
-      <div class="row"><button id="btn-export">Export JSON</button><label class="row"><span>Import</span><input id="p-import" type="file" accept="application/json,.json" /></label></div>
+      <div class="row"><button id="btn-export">Share presets</button><label class="row"><span>Import</span><input id="p-import" type="file" accept="application/json,.json" /></label></div>
       <p id="p-msg" class="small"></p>
       <p id="p-persist" class="small"></p>
     </div>`;
@@ -465,13 +466,10 @@ async function renderPresets() {
   });
   $('#btn-export').onclick = async () => {
     try {
-      const blob = new Blob([exportJson(settings, await listPresets())], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'led-hat-presets.json';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    } catch (e) { $('#p-msg').textContent = (e as Error).message; }
+      const all = await listPresets();
+      const shared = await shareTextFile('led-hat-presets.json', exportJson(settings, all), 'application/json', 'LED hat presets');
+      $('#p-msg').textContent = shared ? `Shared ${all.length} presets.` : '';
+    } catch (e) { $('#p-msg').textContent = `Share failed: ${(e as Error).message}`; }
   };
   $<HTMLInputElement>('#p-import').onchange = async (ev) => {
     const f = (ev.target as HTMLInputElement).files?.[0];
@@ -487,7 +485,7 @@ async function renderPresets() {
     } catch (e) { $('#p-msg').textContent = `Import failed: ${(e as Error).message}`; }
   };
   const persisted = await navigator.storage?.persisted?.().catch(() => false);
-  $('#p-persist').textContent = persisted ? 'Storage is marked persistent.' : 'Storage may be cleared by the browser. Export a backup regularly.';
+  $('#p-persist').textContent = persisted ? 'Storage is marked persistent.' : 'Storage may be cleared by the browser. Share a backup regularly.';
 }
 
 // ---------- preset sharing with nearby phones ---------------------------------------
