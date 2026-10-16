@@ -2,11 +2,18 @@
 
 ## Native apps and approach mode
 
-Besides the PWA, the project builds **Android** and **iOS** apps (Capacitor, `android/` and `ios/`) with the same features plus **Approach mode**: when caps come close, they show greetings for each other or one marquee spanning all caps, configurable for 1, 2, up to 4, up to 8, and more than 8 caps. See [docs/approaching-mode.md](docs/approaching-mode.md) for the detection design and [docs/INSTALL.md](docs/INSTALL.md) for building the APK.
+Besides the PWA, the project builds **Android** and **iOS** apps (Capacitor, `android/` and `ios/`) with the same features plus **Approach mode**: when caps come close, they show greetings for each other or one marquee spanning all caps, configurable for 1, 2, up to 4, up to 8, and more than 8 caps. While approach mode runs, presets can also be shared with a nearby phone; the receiver must accept the preset before it is transferred. See [docs/approaching-mode.md](docs/approaching-mode.md) for the detection design and [docs/INSTALL.md](docs/INSTALL.md) for building the APK.
 
 Approach mode uses phone accelerometer/gyroscope data to support RSSI filtering, with RSSI-only fallback
 when sensors are unavailable. These sensors cannot locate other caps, so physical marquee ordering still
 uses manual local cap order and deterministic phone-ID order across phones.
+
+In **Presets → Backup**, choose what to include before tapping **Share presets**:
+**Creations** (saved text, colors, images and GIFs), **Approach settings** (saved group presets
+and current group content), and **Scan settings** (proximity thresholds, timing and QR greeting profiles).
+The system share sheet sends a JSON file. Import replaces only the included categories,
+keeping excluded presets, phone identity, cap connections and device settings unchanged.
+Older full JSON backups remain importable with their original full-replacement behavior.
 
 ## QR badge greetings
 

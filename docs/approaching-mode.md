@@ -127,6 +127,19 @@ RSSI depends on both phones' antennas, cases and carrying positions, so fixed th
 
 **Replay with current settings** feeds the walk into a fresh detection engine, ticking once per second like the app, once with the recorded settings and once with the current ones. It reports the number of group changes (and per minute), short flips (a change undone within 10 s), the delay from each "Together" mark until a group was shown and from each "Apart" mark until the caps were alone again, and the total time the caps showed a group while marked apart or were alone while marked together. This makes threshold, confirm and settle changes comparable on the same walk instead of re-walking it. The replay runs on the phone only; nothing is uploaded to caps.
 
+### Sharing presets with nearby phones
+
+In **Presets**, **Share** sends one preset (text, image, GIF, or group set) to another phone running the app. **Approach mode must be on for both phones.** The sharing service is the approach-mode GATT server, and the share list shows phones whose beacon this phone currently hears.
+
+The receiver must accept the preset before anything is transferred:
+
+1. The sender connects and writes a small offer to the share inbox characteristic (`…0020`). The offer includes the sender's name, the preset name and kind, the size, and a CRC-32C.
+2. The receiver sees an **Accept / Decline** prompt. If nobody answers within 60 s, the offer is declined. Only one offer is open at a time, and further senders are told the receiver is busy.
+3. The sender polls the status characteristic (`…0021`). It writes the preset data in single-write chunks only after the status shows **accepted**. The receiver ignores data for any transfer it has not accepted.
+4. The receiver checks the size and CRC, validates the preset like a JSON import, and saves it as a new preset. Then it reports **received**.
+
+Either side can cancel. Text presets transfer in a moment, while large GIF presets can take a few minutes over BLE. Keep the phones close until the transfer finishes.
+
 ### Limits and options for later
 
 - RSSI is a rough distance proxy. Bodies, pockets, and orientation can shift it by 10–20 dB. Calibrate on site and compare settings with a recorded walk.

@@ -14,6 +14,7 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "publishContent", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setShareStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setKeepAwake", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startMotion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopMotion", returnType: CAPPluginReturnPromise),
@@ -25,6 +26,10 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
     private var pendingCall: CAPPluginCall?
     private let contentService = CBUUID(string: "4c454448-1000-4000-8000-000000000001")
     private var contentValues: [CBUUID: Data] = [:]
+    /// Preset sharing (presetShare.ts): nearby phones write offers/data to the inbox and read the status.
+    private let shareInbox = CBUUID(string: "4c454448-1000-4000-8000-000000000020")
+    private let shareStatusUuid = CBUUID(string: "4c454448-1000-4000-8000-000000000021")
+    private var shareStatus = Data()
     private var contentCall: CAPPluginCall?
     private var contentReady = false
     private var contentAdding = false
@@ -132,7 +137,10 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
         let service = CBMutableService(type: contentService, primary: true)
         service.characteristics = contentValues.keys.map {
             CBMutableCharacteristic(type: $0, properties: [.read], value: nil, permissions: [.readable])
-        }
+        } + [
+            CBMutableCharacteristic(type: shareStatusUuid, properties: [.read], value: nil, permissions: [.readable]),
+            CBMutableCharacteristic(type: shareInbox, properties: [.write], value: nil, permissions: [.writeable]),
+        ]
         contentAdding = true
         publishedService = service
         peripheral.add(service)
@@ -146,8 +154,31 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
         contentCall = nil
     }
 
+    @objc func setShareStatus(_ call: CAPPluginCall) {
+        guard let raw = call.getString("value"), let data = Data(base64Encoded: raw), data.count <= 512 else {
+            call.reject("Invalid status"); return
+        }
+        DispatchQueue.main.async {
+            self.shareStatus = data
+            call.resolve()
+        }
+    }
+
+    public func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
+        guard let first = requests.first else { return }
+        // Senders keep every packet within one ATT write; an offset means an unsupported long write.
+        guard requests.allSatisfy({ $0.characteristic.uuid == shareInbox && $0.offset == 0 && ($0.value?.count ?? 0) <= 512 }) else {
+            peripheral.respond(to: first, withResult: .requestNotSupported); return
+        }
+        for request in requests {
+            if let value = request.value { notifyListeners("shareWrite", data: ["value": value.base64EncodedString()]) }
+        }
+        peripheral.respond(to: first, withResult: .success)
+    }
+
     public func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
-        guard let value = contentValues[request.characteristic.uuid] else {
+        let uuid = request.characteristic.uuid
+        guard let value = uuid == shareStatusUuid ? shareStatus : contentValues[uuid] else {
             peripheral.respond(to: request, withResult: .readNotPermitted); return
         }
         guard request.offset <= value.count else {

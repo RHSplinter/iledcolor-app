@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, validateSettings, type Preset, type Settings } from './presets';
+import type { ApproachSettings } from '../approach/tiers';
 
 const DB_NAME = 'iledcolor';
 const DB_VERSION = 1;
@@ -43,6 +44,29 @@ export const deletePreset = (id: string) => tx('presets', 'readwrite', (s) => { 
 
 export async function replaceAllPresets(presets: Preset[]): Promise<void> {
   await tx('presets', 'readwrite', (s) => { s.clear(); presets.forEach((p) => s.put(p)); });
+}
+
+/** Commit a validated import together so a storage failure cannot apply only part of it. */
+export async function restoreBackup(presets: Preset[], settings?: Settings, approach?: ApproachSettings): Promise<void> {
+  const db = await open();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const t = db.transaction(['presets', 'kv'], 'readwrite');
+      t.oncomplete = () => resolve();
+      t.onabort = () => reject(new Error(`Import could not be saved: ${t.error?.message ?? 'storage transaction aborted'}`));
+      t.onerror = () => reject(new Error(`Import could not be saved: ${t.error?.message ?? 'storage error'}`));
+      try {
+        const store = t.objectStore('presets');
+        store.clear();
+        presets.forEach((p) => store.put(p));
+        if (settings) t.objectStore('kv').put(settings, 'settings');
+        if (approach) t.objectStore('kv').put(approach, 'approach');
+      } catch (e) {
+        t.abort();
+        reject(new Error(`Import could not be saved: ${(e as Error).message}`));
+      }
+    });
+  } finally { db.close(); }
 }
 
 export async function loadSettings(): Promise<Settings> {

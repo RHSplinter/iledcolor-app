@@ -7,14 +7,18 @@ import { cornerTest, drawPreview, parseHexColor, solid, transformImage } from '.
 import { encodeGif, gifNonce } from '../render/gif';
 import { gifToFrames, MAX_GIF_STORE_BYTES } from '../render/gifDecode';
 import { ensureFont, renderMarquee, renderText } from '../render/text';
-import { deletePreset, listPresets, loadKv, loadSettings, replaceAllPresets, requestPersistence, saveKv, savePreset, saveSettings } from '../storage/db';
-import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, isGroupPreset, parseImport, validateContent, type Content, type Preset, type Settings } from '../storage/presets';
+import { deletePreset, listPresets, loadKv, loadSettings, restoreBackup, requestPersistence, saveKv, savePreset, saveSettings } from '../storage/db';
+import { DEFAULT_SETTINGS, DEFAULT_SPEED, isGroupPreset, validateContent, type Content, type Preset, type Settings } from '../storage/presets';
+import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSelection } from '../storage/sharedBackup';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
-import { applyGroupContent, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, renderApproach, type PrimaryCap } from '../approach/ui';
+import { applyGroupContent, applyImportedApproachSettings, getApproachSettings, approachRunning, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, renderApproach, sharePeers, shareIdentity, type PrimaryCap } from '../approach/ui';
+import { listenForShares, withShareLink } from '../approach/contentExchange';
+import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
+import { shareTextFile } from './shareFile';
 import { GreetingUi } from '../scanner/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
@@ -431,26 +435,38 @@ async function savePresetClick() {
 
 // ---------- Presets view ---------------------------------------------------------
 
-async function renderPresets() {
+const backupSelection: ShareSelection = { creations: true, approach: true, scan: true };
+
+async function renderPresets(message = '') {
   const root = $('#view-presets');
   let presets: Preset[] = [];
   let err = '';
   try { presets = await listPresets(); } catch (e) { err = (e as Error).message; }
   root.innerHTML = `
+    <div id="p-share" class="card" hidden></div>
     <div class="card">
       <h2>Presets</h2>
       ${err ? `<p class="bad">${esc(err)}</p>` : ''}
-      <ul class="list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? 'group content' : p.content.kind}</small></span><button data-act="load">Load</button><button data-act="del" class="danger">Delete</button></li>`).join('') || '<li class="muted">No presets yet.</li>'}</ul>
+      <ul class="list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? 'group content' : p.content.kind}</small></span><button data-act="load">Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || '<li class="muted">No presets yet.</li>'}</ul>
     </div>
     <div class="card">
       <h2>Backup</h2>
-      <div class="row"><button id="btn-export">Export JSON</button><label class="row"><span>Import</span><input id="p-import" type="file" accept="application/json,.json" /></label></div>
-      <p id="p-msg" class="small"></p>
+      <fieldset class="share-options">
+        <legend>Include in shared file</legend>
+        <label><input type="checkbox" id="p-include-creations" ${backupSelection.creations ? 'checked' : ''} /> <span>Creations <small>Saved text, colors, images and GIFs (${presets.filter((p) => !isGroupPreset(p)).length})</small></span></label>
+        <label><input type="checkbox" id="p-include-approach" ${backupSelection.approach ? 'checked' : ''} /> <span>Approach settings <small>Saved group presets (${presets.filter(isGroupPreset).length}) and current group content</small></span></label>
+        <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Proximity thresholds, timing and QR greeting profiles</small></span></label>
+      </fieldset>
+      <p class="small">Choose at least one category. Importing replaces only the included categories; everything else stays unchanged.</p>
+      <div class="row"><button id="btn-export">Share presets</button><label class="row"><span>Import</span><input id="p-import" type="file" accept="application/json,.json" /></label></div>
+      <p id="p-msg" class="small" role="status">${esc(message)}</p>
       <p id="p-persist" class="small"></p>
     </div>`;
+  renderShare();
   root.querySelectorAll<HTMLButtonElement>('li button').forEach((b) => b.onclick = async () => {
     const id = b.closest('li')!.dataset.id!;
     const p = presets.find((x) => x.id === id)!;
+    if (b.dataset.act === 'share') { openShare(p); return; }
     if (b.dataset.act === 'del') { await deletePreset(id).catch((e) => ($('#p-msg').textContent = e.message)); void renderPresets(); return; }
     if (isGroupPreset(p)) { applyGroupContent(p.groups); showTab('approach'); return; }
     if (p.content.kind === 'image') imageDataUrl = p.content.dataUrl;
@@ -462,32 +478,186 @@ async function renderPresets() {
       await refreshPreview(p.content);
     } catch (e) { $('#p-msg').textContent = (e as Error).message; }
   });
-  $('#btn-export').onclick = async () => {
+  const exportButton = $<HTMLButtonElement>('#btn-export');
+  const shareOptions = $<HTMLFieldSetElement>('.share-options', root);
+  let sharingBackup = false;
+  const updateSelection = () => {
+    for (const key of ['creations', 'approach', 'scan'] as const) {
+      backupSelection[key] = $<HTMLInputElement>(`#p-include-${key}`).checked;
+    }
+    exportButton.disabled = sharingBackup || !Object.values(backupSelection).some(Boolean);
+  };
+  for (const key of ['creations', 'approach', 'scan'] as const) {
+    $<HTMLInputElement>(`#p-include-${key}`).onchange = updateSelection;
+  }
+  updateSelection();
+  exportButton.onclick = async () => {
+    sharingBackup = true;
+    shareOptions.disabled = true;
+    updateSelection();
     try {
-      const blob = new Blob([exportJson(settings, await listPresets(), scanner?.exportProfiles() ?? { selectedId: null, profiles: [] })], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'led-hat-presets.json';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    } catch (e) { $('#p-msg').textContent = (e as Error).message; }
+      const all = await listPresets();
+      const json = exportSelectedJson(all, getApproachSettings(), backupSelection, scanner?.exportProfiles());
+      const shared = await shareTextFile('led-hat-presets.json', json, 'application/json', 'LED hat presets');
+      $('#p-msg').textContent = shared ? 'Selected categories shared.' : '';
+    } catch (e) { $('#p-msg').textContent = `Share failed: ${(e as Error).message}`; }
+    finally { sharingBackup = false; shareOptions.disabled = false; updateSelection(); }
   };
   $<HTMLInputElement>('#p-import').onchange = async (ev) => {
     const f = (ev.target as HTMLInputElement).files?.[0];
     if (!f) return;
     try {
       if (f.size > 4 * 1024 * 1024) throw new Error('Import file is too large.');
-      const data = parseImport(await f.text()); // all-or-nothing validation
-      await replaceAllPresets(data.presets);
-      settings = data.settings;
-      await saveSettings(settings);
-      await scanner?.importProfiles(data.qrProfiles);
-      await renderPresets();
-      $('#p-msg').textContent = `Imported ${data.presets.length} presets and ${data.qrProfiles.profiles.length} QR profiles. Restart the connection to apply transport settings.`;
+      const data = parseSharedBackup(await f.text());
+      const merged = mergeSharedPresets(await listPresets(), data);
+      const currentApproach = getApproachSettings();
+      const nextApproach = data.version === 2 && (data.approach || data.scan) ? {
+        ...currentApproach, ...data.scan, tiers: data.approach?.groups ?? currentApproach.tiers,
+      } : undefined;
+      await restoreBackup(merged, data.version === 1 ? data.settings : undefined, nextApproach);
+      if (data.version === 1) settings = data.settings;
+      if (nextApproach) applyImportedApproachSettings(nextApproach);
+      if (data.qrProfiles) await scanner?.importProfiles(data.qrProfiles);
+      await renderPresets(data.version === 1
+        ? `Imported ${data.presets.length} presets and ${data.qrProfiles.profiles.length} QR profiles. Restart the connection to apply transport settings.`
+        : `Imported shared categories.${data.qrProfiles ? ` Imported ${data.qrProfiles.profiles.length} QR profiles.` : ''} Other presets and settings were kept.`);
     } catch (e) { $('#p-msg').textContent = `Import failed: ${(e as Error).message}`; }
   };
   const persisted = await navigator.storage?.persisted?.().catch(() => false);
-  $('#p-persist').textContent = persisted ? 'Storage is marked persistent.' : 'Storage may be cleared by the browser. Export a backup regularly.';
+  $('#p-persist').textContent = persisted ? 'Storage is marked persistent.' : 'Storage may be cleared by the browser. Share a backup regularly.';
+}
+
+// ---------- preset sharing with nearby phones ---------------------------------------
+
+const kindLabel = (k: ShareKind) => (k === 'group' ? 'group content' : k);
+const sizeLabel = (n: number) => (n < 1024 ? `${n} B` : `${Math.round(n / 1024)} KB`);
+
+let share: { preset: Preset; status: string; busy: boolean; sig?: string; abort?: AbortController; timer?: ReturnType<typeof setInterval> } | undefined;
+
+function openShare(p: Preset) {
+  if (share?.busy) { setShareStatus('Finish or cancel the current share first.'); return; }
+  closeShare();
+  share = { preset: p, status: '', busy: false };
+  share.timer = setInterval(() => renderShare(), 2000); // the list of nearby phones changes
+  renderShare();
+  document.getElementById('p-share')?.scrollIntoView({ block: 'nearest' });
+}
+
+function closeShare() {
+  if (!share) return;
+  clearInterval(share.timer);
+  share.abort?.abort();
+  share = undefined;
+  renderShare();
+}
+
+function setShareStatus(msg: string) {
+  if (!share) return;
+  share.status = msg;
+  const el = document.getElementById('p-share-status');
+  if (el) el.textContent = msg;
+}
+
+function renderShare() {
+  const el = document.getElementById('p-share');
+  if (!el) return;
+  if (!share) { el.hidden = true; el.innerHTML = ''; return; }
+  const s = share;
+  const peers = s.busy ? [] : sharePeers();
+  const running = approachRunning();
+  const sig = JSON.stringify([s.busy, running, s.status, peers.map((p) => [p.deviceId, p.label, p.near, Math.round(p.rssi / 5)])]);
+  if (sig === s.sig && !el.hidden) return; // keep buttons stable while the list is unchanged
+  s.sig = sig;
+  el.hidden = false;
+  el.innerHTML = `
+    <h2>Share "${esc(s.preset.name)}"</h2>
+    ${s.busy ? '' : !running
+      ? '<p class="small warn">Turn on approach mode (Approach tab) on both phones to find each other. Keep the app open on the other phone.</p>'
+      : `<p class="small">Choose a nearby phone. Its user must accept before the preset is transferred.</p>
+         <ul class="list">${peers.map((p) => `<li data-device="${esc(p.deviceId)}" data-label="${esc(p.label)}"><span>${esc(p.label)} <small class="muted">${p.near ? 'near' : 'in range'}, ${p.rssi} dBm</small></span><button data-act="send" class="primary">Send</button></li>`).join('') || '<li class="muted">Looking for nearby phones…</li>'}</ul>`}
+    <p id="p-share-status" class="small" aria-live="polite">${esc(s.status)}</p>
+    <div class="row"><button id="p-share-close">${s.busy ? 'Cancel' : 'Close'}</button></div>`;
+  el.querySelectorAll<HTMLButtonElement>('button[data-act=send]').forEach((b) => b.onclick = () => {
+    const li = b.closest('li')!;
+    void sendShare(li.dataset.device!, li.dataset.label!);
+  });
+  $('#p-share-close', el).onclick = () => { if (s.busy) s.abort?.abort(); else closeShare(); };
+}
+
+async function sendShare(deviceId: string, label: string) {
+  const s = share;
+  if (!s || s.busy) return;
+  s.busy = true;
+  s.abort = new AbortController();
+  s.status = `Connecting to ${label}…`;
+  renderShare();
+  const me = shareIdentity();
+  try {
+    const result = await withShareLink(deviceId, (link) => sendPreset(link, {
+      preset: s.preset, fromPhoneId: me.phoneId, fromName: me.name, signal: s.abort!.signal,
+      onPhase: (phase, sent = 0, total = 1) => setShareStatus(
+        phase === 'connecting' ? `Connecting to ${label}…`
+        : phase === 'waiting' ? `Waiting for ${label} to accept…`
+        : phase === 'sending' ? `Sending… ${Math.floor((sent / total) * 100)}%`
+        : 'Waiting for confirmation…'),
+    }));
+    s.status = result === 'received' ? `${label} received "${s.preset.name}".`
+      : result === 'declined' ? `${label} declined the preset.`
+      : `${label} is answering another share; try again shortly.`;
+  } catch (e) {
+    s.status = s.abort.signal.aborted ? 'Share cancelled.' : `Share failed: ${(e as Error).message}`;
+  } finally {
+    s.busy = false;
+    s.abort = undefined;
+    renderShare();
+  }
+}
+
+let receiver: ShareReceiver | undefined;
+let incomingNote = '';
+
+function renderSharePrompt() {
+  const el = $('#share-prompt');
+  const cur = receiver?.current;
+  if (!cur && !incomingNote) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  if (!cur) {
+    el.innerHTML = `<p>${esc(incomingNote)}</p><div class="row"><button id="sp-ok">OK</button></div>`;
+    $('#sp-ok', el).onclick = () => { incomingNote = ''; renderSharePrompt(); };
+    return;
+  }
+  const o = cur.offer;
+  const from = o.fromName || `Phone ${o.fromPhoneId.toString(16).padStart(8, '0')}`;
+  if (cur.state === ShareState.Pending) {
+    el.innerHTML = `
+      <p><b>${esc(from)}</b> wants to send you the preset <b>"${esc(o.name)}"</b> (${esc(kindLabel(o.kind))}, ${sizeLabel(o.size)}).</p>
+      <div class="row"><button id="sp-accept" class="primary">Accept</button><button id="sp-decline">Decline</button></div>`;
+    $('#sp-accept', el).onclick = () => { receiver?.accept(o.transferId); renderSharePrompt(); };
+    $('#sp-decline', el).onclick = () => { receiver?.decline(o.transferId); renderSharePrompt(); };
+  } else {
+    el.innerHTML = `<p>Receiving "${esc(o.name)}" from ${esc(from)}…</p><progress id="sp-progress" max="${o.size}" value="${cur.received}"></progress>`;
+  }
+}
+
+function initShareReceiver() {
+  if (!native || useMock) return;
+  listenForShares({
+    onOffer: (o) => { incomingNote = ''; renderSharePrompt(); navigator.vibrate?.(200); },
+    onProgress: (_o, received) => {
+      const p = document.getElementById('sp-progress') as HTMLProgressElement | null;
+      if (p) p.value = received; else renderSharePrompt();
+    },
+    onReceived: async (o, p) => {
+      const base = { id: crypto.randomUUID(), name: p.name, updatedAt: Date.now() };
+      await savePreset('groups' in p ? { ...base, groups: p.groups } : { ...base, content: p.content });
+      incomingNote = `Saved preset "${p.name}"${o.fromName ? ` from ${o.fromName}` : ''}.`;
+      setTimeout(() => {
+        renderSharePrompt();
+        if (!$('#view-presets').hidden) void renderPresets();
+      }, 0);
+    },
+    onClosed: (o, _state, message) => { incomingNote = `Preset "${o.name}" not received: ${message}`; renderSharePrompt(); },
+  }).then((r) => { receiver = r; }, (e) => console.warn('Preset sharing unavailable', e));
 }
 
 function setCreateFrom(c: Content) {
@@ -563,6 +733,7 @@ async function main() {
     if (saved !== undefined) savedCreateContent = validateContent(saved);
   } catch (e) { banner(`<b>Could not restore Create content:</b> ${esc((e as Error).message)}`); }
   await initApproach(approachContext());
+  initShareReceiver();
   renderConnect();
   renderCreate();
   scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });

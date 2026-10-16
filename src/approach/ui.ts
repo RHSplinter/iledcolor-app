@@ -10,7 +10,7 @@ import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
 import { MotionSupport } from './motionSupport';
-import { readPeerContent } from './contentExchange';
+import { peerBusy, readPeerContent } from './contentExchange';
 import { CONTENT_REFRESH_MS, contentSnapshot, encodeTierContent } from './sharedContent';
 import { encodeBeacon, fitBeaconName } from './beaconCodec';
 import { dbmForMeters, formatMeters } from './distance';
@@ -459,6 +459,7 @@ function refreshPeerContent(now: number, tier: TierId) {
   const peers = engine.contentPeers(now);
   for (const id of contentAttempts.keys()) if (!peers.some((p) => p.phoneId === id)) contentAttempts.delete(id);
   const peer = peers.filter((p) => {
+    if (peerBusy(p.deviceId)) return false; // a preset transfer is using this phone's connection
     const last = contentAttempts.get(p.phoneId);
     return !last || last.tier !== tier || now - last.at >= (last.failed ? 30000 : CONTENT_REFRESH_MS);
   }).sort((a, b) => (contentAttempts.get(a.phoneId)?.at ?? 0) - (contentAttempts.get(b.phoneId)?.at ?? 0))[0];
@@ -773,6 +774,15 @@ function setMode(mode: 'p2p' | 'hub') {
 
 export function getGroupContent(): GroupContent { return structuredClone(settings.tiers); }
 
+export function getApproachSettings(): ApproachSettings { return structuredClone(settings); }
+
+/** Refresh runtime state after an imported configuration was saved successfully. */
+export function applyImportedApproachSettings(s: ApproachSettings): void {
+  updateSettings(s, false);
+  engine.invalidate();
+  renderApproach();
+}
+
 export function createContentChanged(): void {
   if (settings.tiers.solo.useCreate) engine?.invalidate();
 }
@@ -785,11 +795,11 @@ export function applyGroupContent(groups: GroupContent): void {
   renderApproach();
 }
 
-function updateSettings(s: ApproachSettings) {
+function updateSettings(s: ApproachSettings, save = true) {
   settings = validateApproach(s);
   engine.setSettings(settings);
   caps.forEach((c) => (c.lastSig = undefined));
-  void persist();
+  if (save) void persist();
   if (running) void startBeacon();
   renderGroupTexts();
 }
@@ -1087,3 +1097,11 @@ function animate(cv: HTMLCanvasElement, frames: RgbImage[], delays: number[]) {
 /** True while approach mode owns caps; the Connect tab warns instead of fighting over them. */
 export const approachOwnsCaps = () => caps.length > 0;
 export const approachCapIds = () => caps.map((c) => c.deviceId);
+
+/** Nearby phones (with approach mode on) that can receive a shared preset; empty while approach mode is off. */
+export function sharePeers(): { phoneId: number; deviceId: string; label: string; rssi: number; near: boolean }[] {
+  return running && ctx.native && !ctx.mock ? engine.sharePeers(Date.now()) : [];
+}
+export const approachRunning = () => running;
+/** Identity sent with a preset offer. */
+export const shareIdentity = () => ({ phoneId, name: beaconName() || defaultLabel(phoneId, 0) });
