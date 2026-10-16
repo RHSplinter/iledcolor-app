@@ -82,6 +82,7 @@ describe('group content integration', () => {
     const settings = texts.map((text): ApproachSettings => {
       const s = structuredClone(DEFAULT_APPROACH);
       s.settleMs = 0;
+      s.confirmMs = 0;
       s.tiers[tier] = config(text);
       return s;
     });

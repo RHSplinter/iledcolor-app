@@ -140,6 +140,31 @@ test('approach mode (mock): two caps greet each other, peers grow the group', as
   await expect(page.locator('#ap-caps')).not.toContainText('span');
 });
 
+test('approach calibration and walk record/replay (mock)', async ({ page }) => {
+  await page.goto('/#mock');
+  await page.click('nav button[data-tab=approach]');
+  await page.click('#ap-add');
+  await page.click('#ap-sim-peer');
+  await page.click('#ap-start');
+  await expect(page.locator('#ap-cal-src')).toContainText('(phone)', { timeout: 15_000 });
+  await page.click('#ap-rec');
+  await page.click('#ap-mark-together');
+  await page.click('#ap-cal-together');
+  await expect(page.locator('#ap-cal-msg')).toContainText('Together: median', { timeout: 10_000 });
+  await page.click('#ap-mark-apart');
+  await page.locator('#ap-peers [data-act=rssi]').fill('-90');
+  await page.click('#ap-cal-away');
+  await expect(page.locator('#ap-cal-msg')).toContainText('Suggested: near at', { timeout: 10_000 });
+  await page.click('#ap-cal-apply');
+  await expect(page.locator('#ap-enter')).not.toHaveValue('-70');
+  await expect(page.locator('#ap-log')).toContainText('calibrated');
+  await page.click('#ap-rec');
+  await expect(page.locator('#ap-trace-msg')).toContainText('Recorded');
+  await page.click('#ap-replay');
+  await expect(page.locator('#ap-replay-out')).toContainText('Current settings');
+  await expect(page.locator('#ap-replay-out')).toContainText('join after "Together"');
+});
+
 test('the Connect tab cap is cap 1 of approach mode', async ({ page }) => {
   await page.goto('/#mock');
   await page.click('#btn-connect');

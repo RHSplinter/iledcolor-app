@@ -30,6 +30,8 @@ export interface ApproachSettings {
   leaveDbm: number;
   /** A changed group must stay unchanged this long before caps are updated. */
   settleMs: number;
+  /** A participant becomes near/away only after repeated reports on the new side spanning this long. */
+  confirmMs: number;
   staleMs: number;
   /** Advertise this phone so other phones running the app can count our caps. */
   beacon: boolean;
@@ -51,6 +53,7 @@ export const DEFAULT_APPROACH: ApproachSettings = {
   enterDbm: -70,
   leaveDbm: -75, // ≈ 4 m: caps count as away before they are really out of range
   settleMs: 2000,
+  confirmMs: 1000,
   staleMs: 8000,
   beacon: true,
   countNearbyCaps: true,
@@ -87,6 +90,7 @@ export function validateApproach(raw: unknown): ApproachSettings {
     enterDbm,
     leaveDbm: Math.min(enterDbm, num(leave, -120, -20, DEFAULT_APPROACH.leaveDbm)),
     settleMs: num(r.settleMs, 0, 30000, DEFAULT_APPROACH.settleMs),
+    confirmMs: num(r.confirmMs, 0, 10000, DEFAULT_APPROACH.confirmMs),
     staleMs: num(r.staleMs, 2000, 60000, DEFAULT_APPROACH.staleMs),
     // P2P only works when phones advertise themselves.
     beacon: mode === 'p2p' || (typeof r.beacon === 'boolean' ? r.beacon : DEFAULT_APPROACH.beacon),
