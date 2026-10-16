@@ -48,13 +48,22 @@ function subBlocks(data: number[]): number[] {
  * Encode frames as a looping GIF89a with one global palette built from the exact colors used.
  * Throws if frames differ in size or use more than 256 colors (text marquees use two).
  */
-export function encodeGif(frames: RgbImage[], delayMs: number | number[]): Uint8Array {
+export function encodeGif(frames: RgbImage[], delayMs: number | number[], opts: { nonce?: Uint8Array } = {}): Uint8Array {
   try {
-    return encodeExact(frames, delayMs);
+    return encodeExact(frames, delayMs, opts.nonce);
   } catch (e) {
     if (!(e instanceof RangeError) || !/256 colors/.test(e.message)) throw e;
-    return encodeExact(frames.map(quantize), delayMs);
+    return encodeExact(frames.map(quantize), delayMs, opts.nonce);
   }
+}
+
+/**
+ * Random bytes for `encodeGif`'s nonce. The hat replays a re-uploaded identical GIF (same CRC)
+ * faster than normal, so every upload must differ; the nonce goes into unused palette entries
+ * and never changes a pixel.
+ */
+export function gifNonce(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(6));
 }
 
 /** Snap to a fixed 6x7x6 colour cube (252 colours) so photographic frames fit a GIF palette. */
@@ -65,7 +74,7 @@ function quantize(f: RgbImage): RgbImage {
   return { ...f, pixels: px };
 }
 
-function encodeExact(frames: RgbImage[], delayMs: number | number[]): Uint8Array {
+function encodeExact(frames: RgbImage[], delayMs: number | number[], nonce?: Uint8Array): Uint8Array {
   if (!frames.length) throw new RangeError('no frames');
   const { width, height } = frames[0]!;
   const palette = new Map<number, number>();
@@ -85,10 +94,12 @@ function encodeExact(frames: RgbImage[], delayMs: number | number[]): Uint8Array
   });
   let n = 1;
   while ((1 << n) < palette.size) n++;
+  if (nonce?.length) while (n < 8 && ((1 << n) - palette.size) * 3 < nonce.length) n++; // room for the nonce
   const minCode = Math.max(2, n);
   const bytes: number[] = [...'GIF89a'].map((c) => c.charCodeAt(0));
   bytes.push(width & 255, width >> 8, height & 255, height >> 8, 0x80 | ((n - 1) << 4) | (n - 1), 0, 0);
   const table = new Uint8Array(3 << n);
+  if (nonce) table.set(nonce.subarray(0, table.length - palette.size * 3), palette.size * 3); // unused entries only
   for (const [c, p] of palette) table.set([(c >> 16) & 255, (c >> 8) & 255, c & 255], p * 3);
   bytes.push(...table);
   bytes.push(0x21, 0xff, 11, ...[...'NETSCAPE2.0'].map((c) => c.charCodeAt(0)), 3, 1, 0, 0, 0); // loop forever

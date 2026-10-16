@@ -106,6 +106,7 @@ describe('preset import/export', () => {
 
 import { encodeGif } from '../src/render/gif';
 import { buildGifStream } from '../src/protocol/framing';
+import { crc32c } from '../src/protocol/crc32c';
 
 describe('gif marquee', () => {
   const frame = (on: number) => {
@@ -124,6 +125,24 @@ describe('gif marquee', () => {
 });
 
 describe('gif encoder extras', () => {
+  it('nonce changes the bytes only in unused palette entries', () => {
+    const f = (on: number) => {
+      const pixels = new Uint8Array(32 * 16 * 3);
+      pixels.set([255, 208, 0], on * 3);
+      return { width: 32, height: 16, pixels };
+    };
+    const frames = [f(0), f(7)];
+    const a = encodeGif(frames, 40, { nonce: Uint8Array.of(1, 2, 3, 4, 5, 6) });
+    const b = encodeGif(frames, 40, { nonce: Uint8Array.of(9, 8, 7, 6, 5, 4) });
+    expect(a.length).toBe(b.length);
+    const diff = [...a.keys()].filter((i) => a[i] !== b[i]);
+    // Header(13) + 2 used colours (6 bytes): the nonce lives at bytes 19..24 of the 4-entry table.
+    expect(a[10]! & 7).toBe(1);
+    expect(Math.min(...diff)).toBeGreaterThanOrEqual(19);
+    expect(Math.max(...diff)).toBeLessThan(25);
+    expect([...a.subarray(13, 19)]).toEqual([255, 208, 0, 0, 0, 0]);
+    expect(crc32c(a)).not.toBe(crc32c(b));
+  });
   it('quantizes frames with more than 256 colours and accepts per-frame delays', () => {
     const pixels = new Uint8Array(32 * 16 * 3);
     for (let i = 0; i < pixels.length; i++) pixels[i] = (i * 37) & 255;
