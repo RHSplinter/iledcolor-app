@@ -58,6 +58,7 @@ describe('preset import/export', () => {
     const out = parseImport(exportJson(DEFAULT_SETTINGS, [preset]));
     expect(out.presets).toEqual([preset]);
     expect(out.settings).toEqual(DEFAULT_SETTINGS);
+    expect(out.qrProfiles).toEqual({ selectedId: null, profiles: [] });
   });
   const good = JSON.parse(exportJson(DEFAULT_SETTINGS, [preset]));
   const bad = (mut: (o: any) => void) => { const o = structuredClone(good); mut(o); return JSON.stringify(o); };
@@ -73,6 +74,23 @@ describe('preset import/export', () => {
     expect(() => parseImport(bad((o) => { o.presets[0] = { ...o.presets[0], content: { kind: 'image', dataUrl: 'http://x/y.png', fit: 'cover', bg: '#000000' } }; }))).toThrow();
   });
   it('rejects oversized input', () => expect(() => parseImport('x'.repeat(5 * 1024 * 1024))).toThrow(/too large/));
+  it('round-trips QR profiles in the app backup and accepts older backups without them', () => {
+    const qrProfiles = {
+      selectedId: '1',
+      profiles: [{
+        id: '1', note: 'MS AI Tour',
+        pattern: String.raw`^[^^]*\^(?<firstname>[^^]+)\^(?<lastname>[^^]+)\^(?<company>[^^]+)\^`,
+        template: 'Hello {firstname} {lastname} from {company}!',
+      }],
+    };
+    expect(parseImport(exportJson(DEFAULT_SETTINGS, [preset], qrProfiles)).qrProfiles).toEqual(qrProfiles);
+    const legacy = JSON.parse(exportJson(DEFAULT_SETTINGS, [preset]));
+    delete legacy.qrProfiles;
+    expect(parseImport(JSON.stringify(legacy)).qrProfiles).toEqual({ selectedId: null, profiles: [] });
+    const malformed = JSON.parse(exportJson(DEFAULT_SETTINGS, [preset], qrProfiles));
+    malformed.qrProfiles.profiles.push(qrProfiles.profiles[0]);
+    expect(() => parseImport(JSON.stringify(malformed))).toThrow(/slots must be unique/);
+  });
 
   const groupPreset: Preset = { id: 'g1', name: 'Party', updatedAt: 2, groups: structuredClone(DEFAULT_APPROACH.tiers) };
   it('round-trips group content presets next to content presets', () => {

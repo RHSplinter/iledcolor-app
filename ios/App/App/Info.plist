@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>LED Hat uses the camera to scan badge QR codes and greet the scanned person on your cap.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>LED Hat uses phone motion to help filter Bluetooth signal changes when detecting approaching and departing caps.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
