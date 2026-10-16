@@ -9,6 +9,11 @@ export type DeviceState =
 
 export type UploadResult = 'confirmed' | 'sent-unconfirmed';
 
+export interface UploadOptions {
+  /** Awaited after the last chunk, right before EndStream (which starts playback), e.g. to align caps. */
+  beforeEnd?: () => Promise<void>;
+}
+
 export interface Timeouts { handshakeMs: number; startMs: number; chunkMs: number; endMs: number; controlMs: number }
 export const DEFAULT_TIMEOUTS: Timeouts = { handshakeMs: 2000, startMs: 2000, chunkMs: 500, endMs: 1000, controlMs: 500 };
 
@@ -155,11 +160,11 @@ export class DeviceController {
   }
 
   /** Looping GIF (e.g. a scrolling marquee) played by the hat itself. */
-  async uploadGif(gif: Uint8Array, width: number, height: number): Promise<UploadResult> {
-    return this.uploadStream(buildGifStream(gif, width, height, this.profile.maxStreamBytes));
+  async uploadGif(gif: Uint8Array, width: number, height: number, opts: UploadOptions = {}): Promise<UploadResult> {
+    return this.uploadStream(buildGifStream(gif, width, height, this.profile.maxStreamBytes), opts);
   }
 
-  private async uploadStream({ bytes, crc }: { bytes: Uint8Array; crc: number }): Promise<UploadResult> {
+  private async uploadStream({ bytes, crc }: { bytes: Uint8Array; crc: number }, opts: UploadOptions = {}): Promise<UploadResult> {
     // Validate everything before any BLE write.
     const frames = buildContinueFrames(bytes, this.profile.chunkSize);
     const start = buildStartStream(crc, bytes.length);
@@ -198,6 +203,10 @@ export class DeviceController {
           this.listeners.forEach((cb) => cb());
         }
         this.checkCancel(epoch);
+        if (opts.beforeEnd) {
+          await opts.beforeEnd();
+          this.checkCancel(epoch);
+        }
         await this.request(end, 'data', Cmd.END_STREAM, this.timeouts.endMs);
       } catch (e) {
         this.trace('ev', 'upload failed: ' + errMsg(e));

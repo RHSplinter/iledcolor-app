@@ -4,7 +4,7 @@ import { capHash16, decodeBeacon, decodeBeaconName, encodeBeacon, fitBeaconName,
 import { ProximityTracker } from '../src/approach/proximity';
 import { DEFAULT_APPROACH, tierFor, validateApproach, type ApproachSettings } from '../src/approach/tiers';
 import { ApproachEngine, capLabel, defaultLabel, fillTemplate, joinOthers, planFor, type Member } from '../src/approach/engine';
-import { sliceSpan, spanStep, MAX_SPAN_FRAMES } from '../src/render/span';
+import { gifDelayMs, msUntilLoopStart, sliceSpan, spanStep, MAX_SPAN_FRAMES } from '../src/render/span';
 
 const settings = (over: Partial<ApproachSettings> = {}): ApproachSettings => ({ ...DEFAULT_APPROACH, settleMs: 0, ...over });
 
@@ -337,6 +337,18 @@ describe('span marquee slicing', () => {
     const step = spanStep(400, 32, 12);
     expect(Math.ceil((400 + 32 * 12) / step)).toBeLessThanOrEqual(MAX_SPAN_FRAMES);
     expect(() => sliceSpan(strip(4), 4, 2, 2, [0, 0, 0], 1)).toThrow();
+  });
+  it('starts two caps on the same loop boundary even when their uploads finish at different times', () => {
+    const period = 72 * gifDelayMs(44); // 72 frames, 44 ms rounds to the GIF's 40 ms
+    expect(gifDelayMs(44)).toBe(40);
+    expect(gifDelayMs(3)).toBe(20);
+    const capA = 1_700_000_000_123, capB = capA + 2_345; // e.g. different phones / upload sizes
+    const startA = capA + msUntilLoopStart(capA, period);
+    const startB = capB + msUntilLoopStart(capB, period);
+    expect(startA % period).toBe(0);
+    expect(startB % period).toBe(0);
+    expect(msUntilLoopStart(period * 5, period)).toBe(0);
+    expect(msUntilLoopStart(123, 0)).toBe(0);
   });
 });
 

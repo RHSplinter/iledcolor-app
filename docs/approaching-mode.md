@@ -38,7 +38,7 @@ Both use the same Approach tab and engine; only the setup differs.
   Hub and P2P mix freely: a phone with 3 caps meeting a phone with 1 cap forms a group of 4.
 
 For a P2P spanned marquee all phones must use the same tier text/colours/speed, because each phone renders its
-own slice locally. Slice order follows phone IDs (not physical left/right) and start times are only roughly aligned.
+own slice locally. Slice order follows phone IDs (not physical left/right); start times are aligned to the phones' clocks (see Span mode).
 
 Hardware check (Pixel 9 Pro, release APK, one cap per phone): with only cap A connected, the phone grouped the
 still-unconnected cap B (2 caps → greeting uploaded to cap A). Connecting cap B elsewhere (it stops advertising, as when
@@ -64,7 +64,7 @@ another phone takes it) returned cap A to the solo content after ~9 s; releasing
 
 ### Span mode
 
-The text is rendered once as a wide strip. Each cap gets its slice as a looping animation with the same frame count and timing, at most 120 frames to stay within the cap's 64 KB transfer limit. Uploads to caps on the same phone run in parallel. Across phones, the start is aligned only by the shared settle time, so the marquee is close but not frame-accurate.
+The text is rendered once as a wide strip. Each cap gets its slice as a looping animation with the same frame count and timing, at most 120 frames to stay within the cap's 64 KB transfer limit. Uploads to caps on the same phone run in parallel. Playback of a cap starts when its upload ends, and uploads finish at different times (different phones, settle moments and GIF sizes). Unaligned slices look like a separate marquee on every cap, so the app sends the final EndStream only on a shared wall-clock boundary (a multiple of the loop period, with whole-centisecond frame delays). All caps of the group, on this and other phones, therefore start the loop together; across phones the accuracy follows the phones' clock sync (usually well under a second). This adds up to one loop period of waiting before a new marquee starts.
 
 **Physical direction cannot be inferred from these sensors.** Accelerometers and gyroscopes measure the
 phone's own motion, not the bearing or position of another phone/cap. Integrating their readings into

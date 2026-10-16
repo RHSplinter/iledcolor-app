@@ -82,6 +82,16 @@ describe('upload', () => {
     expect(t.maxInFlight).toBe(1);
     expect(c.state).toBe('Ready');
   });
+  it('awaits beforeEnd after the last chunk and before EndStream (synchronised marquee start)', async () => {
+    const { t, c } = setup();
+    await c.connect(async () => t);
+    let writesAtHook = -1;
+    const gif = new Uint8Array(100).fill(7);
+    expect(await c.uploadGif(gif, 4, 2, { beforeEnd: async () => { writesAtHook = t.writes.length; } })).toBe('confirmed');
+    expect(writesAtHook).toBe(t.writes.length - 1);
+    expect(t.writes[writesAtHook - 1]!.frame[1]).toBe(0x00);
+    expect(t.writes[t.writes.length - 1]!.frame[1]).toBe(0x01);
+  });
   it('rejects invalid input before any write', async () => {
     const { t, c } = setup();
     await c.connect(async () => t);

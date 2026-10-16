@@ -3,6 +3,7 @@ import type { RgbImage } from '../protocol/framing';
 import { encodeGif } from '../render/gif';
 import { drawPreview, parseHexColor } from '../render/matrix';
 import { ensureFont, renderSpanMarquee } from '../render/text';
+import { gifDelayMs, msUntilLoopStart } from '../render/span';
 import { loadKv, savePreset, saveKv } from '../storage/db';
 import type { Content, GroupContent } from '../storage/presets';
 import { MockTransport } from '../transport/mock';
@@ -421,7 +422,7 @@ async function applyPlan(plan: Plan) {
     const a = plan.perCap.get(c.key);
     if (!a) return;
     let sig: string;
-    let r: { frames: RgbImage[]; delays: number[] } | { image: RgbImage };
+    let r: { frames: RgbImage[]; delays: number[]; periodMs?: number } | { image: RgbImage };
     try {
       const content = a.kind === 'create' ? ctx.createContent() : undefined;
       sig = JSON.stringify(content ?? a);
@@ -432,8 +433,12 @@ async function applyPlan(plan: Plan) {
     if (c.controller.state !== 'Ready') { c.note = 'not connected; will update after reconnect'; return; }
     try {
       c.note = 'updating…'; renderCapsSoon();
-      if ('frames' in r) await c.controller.uploadGif(encodeGif(r.frames, r.delays), r.frames[0]!.width, r.frames[0]!.height);
-      else await c.controller.upload(r.image);
+      if ('frames' in r) {
+        // A slice only reads as one marquee when all caps loop in phase: start playback on a shared clock boundary.
+        const period = r.periodMs;
+        const beforeEnd = period ? () => new Promise<void>((res) => setTimeout(res, msUntilLoopStart(Date.now(), period))) : undefined;
+        await c.controller.uploadGif(encodeGif(r.frames, r.delays), r.frames[0]!.width, r.frames[0]!.height, { beforeEnd });
+      } else await c.controller.upload(r.image);
       c.lastSig = sig;
       c.note = describe(a);
     } catch (e) {
@@ -448,7 +453,7 @@ async function applyPlan(plan: Plan) {
 
 const describe = (a: Assignment) => (a.kind === 'create' ? 'Create tab content' : a.kind === 'span' ? `span ${a.index + 1}/${a.total}: "${a.text}"` : `"${a.text}"`);
 
-async function renderAssignment(a: Assignment, content?: Content): Promise<{ frames: RgbImage[]; delays: number[] } | { image: RgbImage }> {
+async function renderAssignment(a: Assignment, content?: Content): Promise<{ frames: RgbImage[]; delays: number[]; periodMs?: number } | { image: RgbImage }> {
   if (a.kind === 'individual' || a.kind === 'create') {
     const selected: Content | undefined = a.kind === 'individual'
       ? { kind: 'text', text: a.text, fg: a.fg, bg: a.bg, speed: a.speed }
@@ -460,9 +465,9 @@ async function renderAssignment(a: Assignment, content?: Content): Promise<{ fra
   const [w, h] = ctx.logicalDims();
   const m = renderSpanMarquee(a.text, w, h, a.total, a.index, parseHexColor(a.fg), parseHexColor(a.bg));
   const frames = m.frames.map((f) => ctx.physical(f));
-  // Keep the visual speed of a normal marquee (2 px per frame) despite larger steps.
-  const delay = Math.round((ctx.marqueeDelay(a.speed) * m.step) / 2);
-  return { frames, delays: frames.map(() => delay) };
+  // Keep the visual speed of a normal marquee (2 px per frame) despite larger steps; whole centiseconds keep the period exact.
+  const delay = gifDelayMs((ctx.marqueeDelay(a.speed) * m.step) / 2);
+  return { frames, delays: frames.map(() => delay), periodMs: a.total > 1 ? frames.length * delay : undefined };
 }
 
 // ---------- rendering ------------------------------------------------------------
