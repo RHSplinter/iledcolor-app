@@ -15,6 +15,9 @@ import { CONTENT_REFRESH_MS, contentSnapshot, encodeTierContent } from './shared
 import { encodeBeacon, fitBeaconName } from './beaconCodec';
 import { dbmForMeters, formatMeters } from './distance';
 import { ApproachEngine, capLabel, defaultLabel, planFor, type Advertisement, type Assignment, type LocalCap, type Member, type Plan } from './engine';
+import { calibrate, CALIBRATION_MIN_SAMPLES } from './calibration';
+import { median } from './proximity';
+import { parseTrace, replayTrace, TraceRecorder, type ReplayMetrics, type Trace } from './trace';
 import { DEFAULT_APPROACH, TEMPLATE_HELP, TIER_IDS, TIER_LABELS, tierFor, validateApproach, type ApproachSettings, type TierId } from './tiers';
 
 /** What the approach tab needs from the rest of the app. */
@@ -96,6 +99,16 @@ const BEACON_REFRESH_MS = 10_000;
 const nearby = new Map<string, { name: string; rssi: number; seen: number }>();
 const log: string[] = [];
 let previewTimers: Array<ReturnType<typeof setTimeout>> = [];
+/** Calibration: raw RSSI of one source, measured together and at the "away" distance. */
+const CALIBRATION_MS = 5000;
+let calKey = '';
+let calSamples: { together: number[]; away: number[] } = { together: [], away: [] };
+let calStep: { step: 'together' | 'away'; until: number } | undefined;
+let calMsg = '';
+/** Trace recording (engine inputs + ground-truth marks) and replay. */
+let recorder: TraceRecorder | undefined;
+let trace: Trace | undefined;
+let traceMsg = '';
 
 function note(msg: string) {
   log.push(`${new Date().toLocaleTimeString()} ${msg}`);
@@ -119,6 +132,10 @@ export async function initApproach(c: ApproachContext): Promise<void> {
     void saveKv('phoneId', phoneId).catch(() => undefined);
   }
   engine = new ApproachEngine(phoneId, settings);
+  engine.onSample = (key, rssi, now) => {
+    if (!calStep || key !== calKey) return;
+    if (now <= calStep.until) calSamples[calStep.step].push(rssi);
+  };
   if (ctx.native && !ctx.mock) {
     motionSupport = new MotionSupport(ApproachBeacon,
       (sample) => { if (running) engine.onMotion(sample, Date.now()); },
@@ -607,7 +624,9 @@ export function renderApproach() {
         <div><label for="ap-enter">Near at ≥ dBm</label><input id="ap-enter" type="number" min="-110" max="-20" value="${settings.enterDbm}" /><span class="small" id="ap-enter-m">${formatMeters(settings.enterDbm)}</span></div>
         <div><label for="ap-leave">Away below dBm</label><input id="ap-leave" type="number" min="-120" max="-20" value="${settings.leaveDbm}" /><span class="small" id="ap-leave-m">${formatMeters(settings.leaveDbm)}</span></div>
         <div><label for="ap-settle">Settle s</label><input id="ap-settle" type="number" min="0" max="30" step="0.5" value="${settings.settleMs / 1000}" /></div>
+        <div><label for="ap-confirm">Confirm s</label><input id="ap-confirm" type="number" min="0" max="10" step="0.5" value="${settings.confirmMs / 1000}" /></div>
       </div>
+      <p class="small">"Confirm": a cap or phone counts as near (or away) only after repeated reports over this time, so a single strong or weak report does not change the group. "Settle": the group must then stay unchanged this long before the caps are updated.</p>
       <div class="row small"><span>Away beyond</span>${[3, 4, 5].map((m) => `<button type="button" data-away-m="${m}" class="${dbmForMeters(m) === settings.leaveDbm ? 'primary' : ''}">${m} m</button>`).join('')}</div>
       ${hub ? `<label><input type="checkbox" id="ap-beacon" ${settings.beacon ? 'checked' : ''}/> Advertise this phone to other phones</label>
       <label><input type="checkbox" id="ap-count" ${settings.countNearbyCaps ? 'checked' : ''}/> Count nearby caps that are not connected here</label>` : ''}
@@ -616,6 +635,34 @@ export function renderApproach() {
       <ul class="list small" id="ap-phones"></ul>
       <h3 class="small">Nearby caps (advertising)</h3>
       <ul class="list small" id="ap-nearby"></ul>
+    </div>
+    <div class="card">
+      <h2>Calibrate</h2>
+      <p class="small">Sets "Near at" and "Away below" for this phone, its cap and the other phone's antenna. Pick ${hub ? 'a cap or phone' : 'the other phone (or a cap)'}, measure ${CALIBRATION_MS / 1000} s standing together, then ${CALIBRATION_MS / 1000} s at the distance that should count as away.</p>
+      <label for="ap-cal-src">Signal</label>
+      <select id="ap-cal-src" ${running ? '' : 'disabled'}></select>
+      <div class="row">
+        <button type="button" id="ap-cal-together" ${running ? '' : 'disabled'}>Measure together</button>
+        <button type="button" id="ap-cal-away" ${running ? '' : 'disabled'}>Measure away</button>
+        <button type="button" id="ap-cal-apply" class="primary" disabled>Apply</button>
+      </div>
+      <p class="small" id="ap-cal-msg" role="status"></p>
+    </div>
+    <div class="card">
+      <h2>Record and replay</h2>
+      <p class="small">Records what this phone receives during a walk. Tap "Together"/"Apart" when you meet or part, then replay the walk with the current detection settings to compare: how often the group changed, short flips, and how long the caps took to react.</p>
+      <div class="row">
+        <button type="button" id="ap-rec" ${running || recorder ? '' : 'disabled'}>${recorder ? 'Stop recording' : 'Start recording'}</button>
+        <button type="button" id="ap-mark-together" ${recorder ? '' : 'disabled'}>Together</button>
+        <button type="button" id="ap-mark-apart" ${recorder ? '' : 'disabled'}>Apart</button>
+      </div>
+      <div class="row">
+        <button type="button" id="ap-trace-export" ${trace ? '' : 'disabled'}>Export</button>
+        <label class="row"><span>Load</span><input id="ap-trace-file" type="file" accept="application/json,.json" /></label>
+        <button type="button" id="ap-replay" ${trace ? '' : 'disabled'}>Replay with current settings</button>
+      </div>
+      <p class="small" id="ap-trace-msg" role="status"></p>
+      <pre id="ap-replay-out" class="small" style="white-space:pre-wrap"></pre>
     </div>
     <div class="card">
       <h2>Approach log</h2>
@@ -674,12 +721,14 @@ export function renderApproach() {
     note(`caps count as away beyond about ${b.dataset.awayM} m (${leaveDbm} dBm)`);
     renderApproach();
   }));
-  root.querySelectorAll('#ap-enter,#ap-leave,#ap-settle,#ap-beacon,#ap-count').forEach((el) => el.addEventListener('change', () => {
+  bindTools();
+  root.querySelectorAll('#ap-enter,#ap-leave,#ap-settle,#ap-confirm,#ap-beacon,#ap-count').forEach((el) => el.addEventListener('change', () => {
     updateSettings({
       ...settings,
       enterDbm: num('#ap-enter', settings.enterDbm),
       leaveDbm: num('#ap-leave', settings.leaveDbm),
       settleMs: num('#ap-settle', settings.settleMs / 1000) * 1000,
+      confirmMs: num('#ap-confirm', settings.confirmMs / 1000) * 1000,
       beacon: document.querySelector<HTMLInputElement>('#ap-beacon')?.checked ?? settings.beacon,
       countNearbyCaps: document.querySelector<HTMLInputElement>('#ap-count')?.checked ?? settings.countNearbyCaps,
     });
@@ -755,7 +804,7 @@ function renderStatus() {
   const count = Math.max(1, members.length);
   el.innerHTML = running
     ? `<p><b>Group: ${members.length}</b> cap${members.length === 1 ? '' : 's'} near → <b>${esc(TIER_LABELS[tierFor(count)])}</b></p>
-       <p>${members.map((m) => `<span class="pill ${m.local ? 'ok' : 'busy'}">${esc(m.label)}${m.source === 'peer' ? ' (phone)' : m.source === 'cap' ? ' (cap)' : ''}</span>`).join(' ') || 'No cap is near yet.'}</p>
+       <p>${members.map((m) => `<span class="pill ${m.local ? 'ok' : 'busy'}">${esc(m.label)}${m.source === 'peer' ? (m.indirect ? ' (via group)' : ' (phone)') : m.source === 'cap' ? ' (cap)' : ''}</span>`).join(' ') || 'No cap is near yet.'}</p>
        <p>${esc(scanNote)} ${esc(beaconNote)}</p>${lastPlan ? `<p>Last applied: ${lastPlan.count} → ${esc(TIER_LABELS[lastPlan.tier])}</p>` : ''}`
     : '<p>Stopped.</p>';
   if (running && motionSupport) {
@@ -773,6 +822,129 @@ function renderStatus() {
     || `<li class="muted">${running ? 'No other phone heard.' : 'Start approach mode to listen.'}</li>`;
   if (nb) nb.innerHTML = [...nearby.values()].sort((a, b) => b.rssi - a.rssi).map((n) => `<li><span>${esc(n.name)}</span><span>${formatMeters(n.rssi)} · ${n.rssi} dBm</span></li>`).join('') || '<li class="muted">None seen (connected caps often stop advertising).</li>';
   renderGroupTexts();
+  renderTools();
+}
+
+// ---------- calibration and trace replay ------------------------------------------
+
+/** Signals that can be calibrated: in P2P the own cap is worn by this user, so its distance never changes. */
+function calSources(now: number) {
+  return engine.sources(now).filter((src) => settings.mode === 'hub' || src.kind !== 'local');
+}
+
+function renderTools() {
+  const sel = document.getElementById('ap-cal-src') as HTMLSelectElement | null;
+  if (sel) {
+    const sources = running ? calSources(Date.now()) : [];
+    if (!calKey && sources[0]) calKey = sources[0].key;
+    const markup = sources.map((src) => `<option value="${esc(src.key)}" ${src.key === calKey ? 'selected' : ''}>${esc(src.label)} (${src.kind === 'peer' ? 'phone' : src.kind === 'local' ? 'your cap' : 'cap'}) · ${Math.round(src.rssi)} dBm</option>`).join('')
+      || '<option value="">Nothing heard yet</option>';
+    if (sel.dataset.markup !== markup && document.activeElement !== sel) { sel.dataset.markup = markup; sel.innerHTML = markup; }
+  }
+  const now = Date.now();
+  if (calStep && now > calStep.until) finishCalibrationStep();
+  const msg = document.getElementById('ap-cal-msg');
+  if (msg) msg.textContent = calStep ? `Measuring ${calStep.step}… ${Math.max(0, Math.ceil((calStep.until - now) / 1000))} s, ${calSamples[calStep.step].length} reports` : calMsg;
+  const busy = !!calStep || !running;
+  for (const id of ['#ap-cal-together', '#ap-cal-away']) { const b = document.querySelector<HTMLButtonElement>(id); if (b) b.disabled = busy || !calKey; }
+  const apply = document.querySelector<HTMLButtonElement>('#ap-cal-apply');
+  if (apply) apply.disabled = busy || !('enterDbm' in calibrate(calSamples.together, calSamples.away));
+  const tm = document.getElementById('ap-trace-msg');
+  if (tm) tm.textContent = recorder ? `Recording: ${recorder.events.length} events${recorder.truncated ? ' (full, later events dropped)' : ''}.` : traceMsg;
+}
+
+function finishCalibrationStep() {
+  if (!calStep) return;
+  const { step } = calStep;
+  calStep = undefined;
+  const n = calSamples[step].length;
+  if (n < CALIBRATION_MIN_SAMPLES) { calMsg = `Only ${n} reports while measuring ${step}; stay in range and measure again.`; return; }
+  calMsg = `${step === 'together' ? 'Together' : 'Away'}: median ${Math.round(median(calSamples[step]))} dBm from ${n} reports.`;
+  const r = calibrate(calSamples.together, calSamples.away);
+  if ('error' in r) { if (calSamples.together.length && calSamples.away.length) calMsg += ` ${r.error}`; }
+  else calMsg += ` Suggested: near at ≥ ${r.enterDbm} dBm (${formatMeters(r.enterDbm)}), away below ${r.leaveDbm} dBm (${formatMeters(r.leaveDbm)}).`;
+}
+
+function describeReplay(label: string, m: ReplayMetrics): string {
+  const s = (ms: number | null) => (ms === null ? 'never' : `${(ms / 1000).toFixed(1)} s`);
+  const lines = [`${label}: ${m.groupChanges} group change${m.groupChanges === 1 ? '' : 's'} in ${(m.durationMs / 60000).toFixed(1)} min (${m.changesPerMinute.toFixed(1)}/min), ${m.flaps} short flip${m.flaps === 1 ? '' : 's'}`,
+    `  sizes: ${m.applied.map((a) => a.count).join(' → ') || '–'}`];
+  if (m.marks) {
+    lines.push(`  join after "Together": ${m.marks.entryMs.map(s).join(', ') || '–'}`);
+    lines.push(`  leave after "Apart": ${m.marks.exitMs.map(s).join(', ') || '–'}`);
+    lines.push(`  grouped while apart: ${s(m.marks.falseGroupMs)}, alone while together: ${s(m.marks.missedGroupMs)}`);
+  }
+  return lines.join('\n');
+}
+
+function bindTools() {
+  const sel = document.getElementById('ap-cal-src') as HTMLSelectElement | null;
+  if (sel) sel.onchange = () => { calKey = sel.value; calSamples = { together: [], away: [] }; calMsg = 'Signal changed; measure both steps again.'; renderTools(); };
+  const measure = (step: 'together' | 'away') => () => {
+    if (!calKey) return;
+    calSamples[step] = [];
+    calStep = { step, until: Date.now() + CALIBRATION_MS };
+    renderTools();
+    setTimeout(() => { if (calStep?.step === step) { finishCalibrationStep(); renderTools(); } }, CALIBRATION_MS + 50);
+  };
+  $('#ap-cal-together').onclick = measure('together');
+  $('#ap-cal-away').onclick = measure('away');
+  $('#ap-cal-apply').onclick = () => {
+    const r = calibrate(calSamples.together, calSamples.away);
+    if ('error' in r) { calMsg = r.error; renderTools(); return; }
+    updateSettings({ ...settings, enterDbm: r.enterDbm, leaveDbm: r.leaveDbm });
+    note(`calibrated: near at ≥ ${r.enterDbm} dBm, away below ${r.leaveDbm} dBm (together ${r.togetherDbm}, away ${r.awayDbm} dBm)`);
+    calMsg = 'Applied.';
+    renderApproach();
+  };
+  $('#ap-rec').onclick = () => {
+    if (recorder) {
+      trace = recorder.toTrace();
+      recorder = undefined;
+      engine.recorder = undefined;
+      traceMsg = `Recorded ${trace.events.length} events over ${(((trace.events.at(-1)?.t ?? trace.startedAt) - trace.startedAt) / 60000).toFixed(1)} min.`;
+      note('trace recording stopped');
+    } else {
+      const now = Date.now();
+      recorder = new TraceRecorder(phoneId, structuredClone(settings), now);
+      recorder.push({ t: now, k: 'caps', caps: engine.getLocalCaps().map((c) => ({ key: c.key, bleName: c.bleName, label: c.label })) });
+      engine.recorder = recorder;
+      note('trace recording started');
+    }
+    renderApproach();
+  };
+  const mark = (together: boolean) => () => {
+    if (!recorder) return;
+    recorder.push({ t: Date.now(), k: 'mark', together });
+    note(`marked: ${together ? 'together' : 'apart'}`);
+    renderTools();
+  };
+  $('#ap-mark-together').onclick = mark(true);
+  $('#ap-mark-apart').onclick = mark(false);
+  $('#ap-trace-export').onclick = () => {
+    if (!trace) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(trace)], { type: 'application/json' }));
+    a.download = `approach-trace-${new Date(trace.startedAt).toISOString().replace(/[:.]/g, '-')}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  $<HTMLInputElement>('#ap-trace-file').onchange = async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      trace = parseTrace(JSON.parse(await file.text()));
+      traceMsg = `Loaded ${file.name}: ${trace.events.length} events.`;
+    } catch (err) { traceMsg = `Could not load trace: ${(err as Error).message}`; }
+    renderApproach();
+  };
+  $('#ap-replay').onclick = () => {
+    const out = $('#ap-replay-out');
+    if (!trace) return;
+    try {
+      out.textContent = `${describeReplay('Recorded settings', replayTrace(trace))}\n${describeReplay('Current settings', replayTrace(trace, settings))}`;
+    } catch (err) { out.textContent = (err as Error).message; }
+  };
 }
 
 function renderGroupTexts() {

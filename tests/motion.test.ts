@@ -40,7 +40,7 @@ describe('phone motion classification', () => {
   });
 });
 
-const tracker = () => new ProximityTracker({ enterDbm: -70, leaveDbm: -75, staleMs: 8000, alpha: 0.3 });
+const tracker = (confirmMs = 0) => new ProximityTracker({ enterDbm: -70, leaveDbm: -75, staleMs: 8000, alpha: 0.3, confirmMs });
 
 describe('motion-assisted RSSI', () => {
   it.each(['still', 'unavailable'] as const)('preserves the existing filter when %s', (motion) => {
@@ -57,15 +57,17 @@ describe('motion-assisted RSSI', () => {
     { initial: -85, target: -65, near: true },
     { initial: -60, target: -80, near: false },
   ])('follows sustained walking evidence faster: $initial to $target', ({ initial, target, near }) => {
-    const baseline = tracker(), assisted = tracker();
-    baseline.update('a', initial, 0);
-    assisted.update('a', initial, 0);
-    for (const t of [500, 1000, 1500]) {
+    const baseline = tracker(1000), assisted = tracker(1000);
+    for (const t of [0, 1000, 2000]) {
+      baseline.update('a', initial, t);
+      assisted.update('a', initial, t, 'moving');
+    }
+    for (let t = 2500; t <= 5000; t += 500) {
       baseline.update('a', target, t);
       assisted.update('a', target, t, 'moving');
     }
-    expect(assisted.isNear('a', 1500)).toBe(near);
-    expect(baseline.isNear('a', 1500)).toBe(!near);
+    expect(assisted.isNear('a', 5000)).toBe(near);
+    expect(baseline.isNear('a', 5000)).toBe(!near);
   });
 
   it('does not treat motion alone as approach or departure', () => {
@@ -81,16 +83,17 @@ describe('motion-assisted RSSI', () => {
   });
 
   it('dampens a brief rotation-related dip, but does not suppress real departure indefinitely', () => {
-    const baseline = tracker(), assisted = tracker();
-    for (const t of [baseline, assisted]) t.update('a', -69, 0);
-    baseline.update('a', -100, 500);
-    assisted.update('a', -100, 500, 'turning');
-    expect(baseline.isNear('a', 500)).toBe(false);
-    expect(assisted.isNear('a', 500)).toBe(true);
-    assisted.update('a', -69, 1000, 'turning');
-    expect(assisted.isNear('a', 1000)).toBe(true);
-    for (let now = 1500; now <= 4500; now += 500) assisted.update('a', -85, now, 'turning');
-    expect(assisted.isNear('a', 4500)).toBe(false);
+    const baseline = tracker(1000), assisted = tracker(1000);
+    const both = (rssi: number, now: number) => { baseline.update('a', rssi, now); assisted.update('a', rssi, now, 'turning'); };
+    for (const now of [0, 1000, 2000]) both(-66, now);
+    both(-100, 2500);
+    both(-100, 3000);
+    both(-66, 3500);
+    expect(baseline.rssi('a')!).toBeLessThan(-75);
+    expect(assisted.rssi('a')!).toBeGreaterThan(-70);
+    expect(assisted.isNear('a', 3500)).toBe(true);
+    for (let now = 4000; now <= 9000; now += 500) assisted.update('a', -85, now, 'turning');
+    expect(assisted.isNear('a', 9000)).toBe(false);
   });
 
   it('does not accelerate a burst of advertisements or carry evidence across a radio gap', () => {
@@ -107,19 +110,21 @@ describe('motion-assisted RSSI', () => {
   });
 
   it('requires new sustained evidence after an interrupted crossing', () => {
-    const t = tracker();
-    t.update('a', -90, 0);
-    t.update('a', -69, 500, 'moving');
-    t.update('a', -69, 1000, 'moving');
-    t.update('a', -90, 1250, 'moving');
-    const before = t.rssi('a')!;
-    t.update('a', -69, 1500, 'moving');
-    expect(t.rssi('a')).toBeCloseTo(before + 0.3 * (-69 - before));
+    const baseline = tracker(), assisted = tracker();
+    const both = (rssi: number, now: number) => { baseline.update('a', rssi, now); assisted.update('a', rssi, now, 'moving'); };
+    for (const now of [0, 500]) both(-90, now);
+    both(-69, 1000);
+    both(-69, 1500);
+    both(-90, 1750); // interrupts the crossing
+    both(-69, 2000);
+    both(-69, 2500);
+    expect(assisted.rssi('a')).toBeCloseTo(baseline.rssi('a')!);
   });
 
   it('still expires moving/turning participants and starts stale entries afresh', () => {
     const t = tracker();
     t.update('a', -60, 0, 'moving');
+    t.heard('local', 16001); // the receiver works, so this is not a radio gap
     expect(t.isNear('a', 16001)).toBe(false);
     t.update('a', -90, 16001, 'turning');
     expect(t.rssi('a')).toBe(-90);
@@ -137,16 +142,21 @@ describe('motion fusion across all detection sources', () => {
       e.onAdvertisement({ deviceId: 'phone', rssi, uuids: [encodeBeacon({ phoneId: 2, capCount: 1, capHashes: [] })] }, now);
       e.onAdvertisement({ deviceId: 'cap', name: 'iledcolor-other', rssi }, now);
     };
+    const still = new ApproachEngine(1, { ...DEFAULT_APPROACH, settleMs: 0, countNearbyCaps: true });
     report(-85, 0);
-    for (const now of [500, 1000, 1500]) {
+    still.onLocalRssi('local', -85, 0);
+    for (let now = 500; now <= 3000; now += 500) {
       e.onMotion({ acceleration: 1, rotation: 0 }, now);
       report(-65, now);
+      still.onLocalRssi('local', -65, now);
     }
-    for (const key of ['local', 'peer:00000002', 'cap:cap']) expect(e.tracker.isNear(key, 1500)).toBe(true);
-    expect(e.motion.state(3001)).toBe('unavailable');
+    for (const key of ['local', 'peer:00000002', 'cap:cap']) expect(e.tracker.isNear(key, 3000)).toBe(true);
+    expect(still.tracker.isNear('local', 3000)).toBe(false);
+    // Stale motion: back to the plain time-based filter (the median prefilter still holds -65 for one sample).
+    expect(e.motion.state(4501)).toBe('unavailable');
     const before = e.tracker.rssi('local')!;
-    report(-90, 3100);
-    expect(e.tracker.rssi('local')).toBeCloseTo(before + 0.3 * (-90 - before));
+    report(-90, 4600);
+    expect(e.tracker.rssi('local')).toBeCloseTo(before + (1 - 0.7 ** 1.6) * (-65 - before));
   });
 
   it('preserves settle time and manual local marquee order while moving or turning', () => {
@@ -158,10 +168,12 @@ describe('motion fusion across all detection sources', () => {
     };
     report(0);
     expect(e.tick(0)).toBeNull();
-    report(1000);
+    report(1000); // near is confirmed with the second sample
     expect(e.tick(1000)).toBeNull();
     report(2000);
-    const plan = e.tick(2000)!;
+    expect(e.tick(2000)).toBeNull(); // settling
+    report(3000);
+    const plan = e.tick(3000)!;
     expect(plan.members.map((m) => m.key)).toEqual(['right', 'left', 'middle']);
     expect(plan.perCap.get('right')).toMatchObject({ kind: 'span', index: 0, total: 3 });
     expect(plan.perCap.get('middle')).toMatchObject({ kind: 'span', index: 2, total: 3 });

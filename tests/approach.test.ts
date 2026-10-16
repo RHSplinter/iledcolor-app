@@ -1,12 +1,12 @@
 import { dbmForMeters, formatMeters } from '../src/approach/distance';
 import { describe, expect, it } from 'vitest';
 import { capHash16, decodeBeacon, decodeBeaconName, encodeBeacon, fitBeaconName, maskHas, nearMaskFor, NAME_COMPANY_ID } from '../src/approach/beaconCodec';
-import { ProximityTracker } from '../src/approach/proximity';
+import { median, ProximityTracker } from '../src/approach/proximity';
 import { DEFAULT_APPROACH, tierFor, validateApproach, type ApproachSettings } from '../src/approach/tiers';
 import { ApproachEngine, capLabel, defaultLabel, fillTemplate, joinOthers, planFor, type Member } from '../src/approach/engine';
 import { gifDelayMs, msUntilLoopStart, sliceSpan, spanStep, MAX_SPAN_FRAMES } from '../src/render/span';
 
-const settings = (over: Partial<ApproachSettings> = {}): ApproachSettings => ({ ...DEFAULT_APPROACH, settleMs: 0, ...over });
+const settings = (over: Partial<ApproachSettings> = {}): ApproachSettings => ({ ...DEFAULT_APPROACH, settleMs: 0, confirmMs: 0, ...over });
 
 describe('beacon codec', () => {
   it('round-trips phone id, cap count, hashes and near mask', () => {
@@ -47,24 +47,50 @@ describe('beacon codec', () => {
 
 describe('proximity tracker', () => {
   it('uses hysteresis between enter and leave thresholds', () => {
-    const t = new ProximityTracker({ enterDbm: -70, leaveDbm: -80, staleMs: 5000, alpha: 1 });
+    const t = new ProximityTracker({ enterDbm: -70, leaveDbm: -80, staleMs: 5000, alpha: 1, confirmMs: 0 });
     t.update('a', -75, 0);
     expect(t.isNear('a', 0)).toBe(false); // between thresholds, not yet entered
-    t.update('a', -60, 100);
-    expect(t.isNear('a', 100)).toBe(true);
-    t.update('a', -75, 200);
-    expect(t.isNear('a', 200)).toBe(true); // still inside the hysteresis band
-    t.update('a', -85, 300);
-    expect(t.isNear('a', 300)).toBe(false);
+    t.update('a', -60, 1000); t.update('a', -60, 2000);
+    expect(t.isNear('a', 2000)).toBe(true);
+    t.update('a', -75, 3000); t.update('a', -75, 4000);
+    expect(t.isNear('a', 4000)).toBe(true); // still inside the hysteresis band
+    t.update('a', -85, 5000); t.update('a', -85, 6000);
+    expect(t.isNear('a', 6000)).toBe(false);
   });
-  it('smooths RSSI and expires stale entries', () => {
+  it('smooths RSSI over time, ignores single outliers and expires stale entries', () => {
     const t = new ProximityTracker({ enterDbm: -70, leaveDbm: -80, staleMs: 1000, alpha: 0.5 });
     t.update('a', -60, 0);
-    t.update('a', -100, 10); // a single dip does not drop it
-    expect(t.rssi('a')).toBe(-80);
-    t.expire(5000);
-    expect(t.isNear('a', 5000)).toBe(false);
+    t.update('a', -60, 1000);
+    t.update('a', -100, 2000); // a single dip is removed by the median prefilter
+    expect(t.rssi('a')).toBe(-60);
+    t.expire(20000); // beyond the radio-gap grace period, too
+    expect(t.isNear('a', 20000)).toBe(false);
     expect(t.keys()).toEqual([]);
+  });
+  it('weights samples by elapsed time, so fast reporters do not react faster', () => {
+    const fast = new ProximityTracker({ enterDbm: -70, leaveDbm: -80, staleMs: 8000, alpha: 0.3 });
+    const slow = new ProximityTracker({ enterDbm: -70, leaveDbm: -80, staleMs: 8000, alpha: 0.3 });
+    fast.update('a', -90, 0); slow.update('a', -90, 0);
+    for (let t = 100; t <= 4000; t += 100) fast.update('a', -60, t);
+    for (let t = 1000; t <= 4000; t += 1000) slow.update('a', -60, t);
+    expect(Math.abs(fast.rssi('a')! - slow.rssi('a')!)).toBeLessThan(2.5);
+  });
+  it('needs repeated evidence over confirmMs before flipping near or away', () => {
+    const t = new ProximityTracker({ enterDbm: -70, leaveDbm: -80, staleMs: 8000, alpha: 1, confirmMs: 1000 });
+    t.update('a', -90, 0);
+    t.update('a', -50, 1000);
+    expect(t.isNear('a', 1000)).toBe(false); // first strong sample only starts the confirmation
+    t.update('a', -50, 1500);
+    expect(t.isNear('a', 1500)).toBe(false); // two samples, but only 0.5 s apart
+    t.update('a', -50, 2000);
+    expect(t.isNear('a', 2000)).toBe(true);
+    // A short weak burst that recovers resets the pending change.
+    t.update('a', -95, 3000); t.update('a', -95, 3500); t.update('a', -50, 4000); t.update('a', -50, 4500);
+    expect(t.isNear('a', 4500)).toBe(true);
+  });
+  it('computes the median', () => {
+    expect(median([3, 1, 2])).toBe(2);
+    expect(median([4, 1])).toBe(2.5);
   });
 });
 
@@ -230,12 +256,38 @@ describe('P2P mode (one cap per phone)', () => {
     expect(b.tick(8000)!.perCap.get('CB')).toMatchObject({ text: 'Bob' });
     for (let t = 9000; t <= 12000; t += 1000) hear(-50, t); // rejoin
     expect(a.tick(12000)!.tier).toBe('pair');
-    // Peer phone goes silent (switched off / out of range): stale expiry falls back to solo.
-    // Near peers get a 2x staleMs grace period, so short radio gaps do not split the group.
+    // Peer phone goes silent (switched off / out of range) while the scanner still hears other devices:
+    // stale expiry falls back to solo. Strong near peers get a 2x staleMs grace period, so short radio gaps do not split the group.
+    for (let t = 13000; t <= 29000; t += 1000) a.onScanHeard(t);
     a.onLocalRssi('CA', -45, 20000);
     expect(a.tick(20000)).toBeNull(); // still the same pair, nothing to resend
     a.onLocalRssi('CA', -45, 29000);
     expect(a.tick(29000)!.perCap.get('CA')).toMatchObject({ text: 'Ann' });
+  });
+
+  it('holds a strong peer while the whole scanner is silent, but at most 10 s longer', () => {
+    const { a, hear } = pair(settings({ staleMs: 8000 }));
+    for (let t = 0; t <= 3000; t += 1000) hear(-50, t);
+    expect(a.tick(3000)!.tier).toBe('pair');
+    // Nothing at all is heard from 3 s on (scanner stalled): the pair is kept past 2x staleMs ...
+    a.onLocalRssi('CA', -45, 22000);
+    expect(a.tick(22000)).toBeNull();
+    // ... but not forever.
+    a.onLocalRssi('CA', -45, 30000);
+    expect(a.tick(30000)!.tier).toBe('solo');
+  });
+
+  it('drops a fading peer after staleMs instead of the radio-gap grace period', () => {
+    const { a, hear } = pair(settings({ staleMs: 8000 }));
+    for (let t = 0; t <= 3000; t += 1000) hear(-50, t);
+    expect(a.tick(3000)!.tier).toBe('pair');
+    // Signal falls steadily below the near threshold but stays above "away", then the peer vanishes.
+    for (const [i, rssi] of [-60, -66, -71, -73, -74, -74, -74, -74].entries()) hear(rssi, 4000 + i * 1000);
+    expect(a.tracker.rssi('peer:0000000b')!).toBeLessThan(-70);
+    expect(a.tracker.trend('peer:0000000b')!).toBeLessThan(-0.5);
+    expect(a.tracker.isNear('peer:0000000b', 11000)).toBe(true);
+    for (let t = 12000; t <= 20000; t += 1000) { a.onScanHeard(t); a.onLocalRssi('CA', -45, t); }
+    expect(a.tick(20000)!.tier).toBe('solo'); // 9 s silent: a strong peer would still be held for 16 s
   });
 
   it('gives each phone a complementary slice of the same spanned marquee', () => {
@@ -277,6 +329,7 @@ describe('P2P mode (one cap per phone)', () => {
     for (let t = 1000; t <= 6000; t += 1000) hear(-50, t);
     expect(a.heardPhones(6000)[0]).toMatchObject({ near: true });
     expect(a.heardPhones(20000)).toHaveLength(1);
+    a.onScanHeard(23000); // the scanner works, so the silent peer is really gone
     expect(a.heardPhones(23000)).toEqual([]);
   });
 

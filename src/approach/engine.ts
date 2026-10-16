@@ -3,11 +3,17 @@ import { ProximityTracker } from './proximity';
 import { MotionTracker, type MotionSample } from './motion';
 import { tierFor, type ApproachSettings, type TierId, type TierConfig } from './tiers';
 import { chooseGroupText, CONTENT_REFRESH_MS, CONTENT_STALE_MS, type TextChoice } from './sharedContent';
+import type { TraceEvent } from './trace';
 
 /** A cap connected to (and controlled by) this phone. Order = left-to-right span order. */
 export interface LocalCap { key: string; bleName: string; label: string }
 
-export interface Member { key: string; label: string; local: boolean; sortKey: string; source: 'local' | 'peer' | 'cap'; phoneId?: number }
+export interface Member { key: string; label: string; local: boolean; sortKey: string; source: 'local' | 'peer' | 'cap'; phoneId?: number; indirect?: boolean }
+
+/** The mutual (beacon-mask) rules only use beacons heard this recently. */
+export const MUTUAL_FRESH_MS = 4000;
+/** The mutual rule also needs our own reception within this many dB of the away threshold. */
+export const MUTUAL_MARGIN_DB = 10;
 
 export type Assignment =
   | { kind: 'create' }
@@ -117,25 +123,58 @@ export class ApproachEngine {
   private candidateSince = 0;
   private appliedSig = '';
 
+  /** Receives every engine input while a walk is being recorded (see trace.ts). */
+  recorder?: { push(e: TraceEvent): void };
+  /** Called with every raw RSSI report that is tracked (used by calibration). */
+  onSample?: (key: string, rssi: number, now: number) => void;
+  /** Latest input time, so caps/settings changes are recorded on the same clock as the RSSI reports. */
+  private clock?: number;
+  private at(now: number) { if (this.clock === undefined || now > this.clock) this.clock = now; return now; }
+
   constructor(readonly phoneId: number, private settings: ApproachSettings, readonly capPrefix = 'iledcolor') {
-    this.tracker = new ProximityTracker({ enterDbm: settings.enterDbm, leaveDbm: settings.leaveDbm, staleMs: settings.staleMs, alpha: 0.3 });
+    this.tracker = new ProximityTracker({ enterDbm: settings.enterDbm, leaveDbm: settings.leaveDbm, staleMs: settings.staleMs, alpha: 0.3, confirmMs: settings.confirmMs });
   }
 
   setSettings(s: ApproachSettings) {
     this.settings = s;
-    this.tracker.opts = { ...this.tracker.opts, enterDbm: s.enterDbm, leaveDbm: s.leaveDbm, staleMs: s.staleMs };
+    this.tracker.opts = { ...this.tracker.opts, enterDbm: s.enterDbm, leaveDbm: s.leaveDbm, staleMs: s.staleMs, confirmMs: s.confirmMs };
+    this.recorder?.push({ t: this.clock ?? Date.now(), k: 'settings', settings: structuredClone(s) });
     this.invalidate();
   }
-  setLocalCaps(caps: LocalCap[]) { this.localCaps = caps.slice(); }
+  setLocalCaps(caps: LocalCap[]) {
+    this.localCaps = caps.slice();
+    this.recorder?.push({ t: this.clock ?? Date.now(), k: 'caps', caps: caps.map((c) => ({ key: c.key, bleName: c.bleName, label: c.label })) });
+  }
   getLocalCaps() { return this.localCaps.slice(); }
   /** Forces the next settled tick to return a plan again (after settings change or a failed upload). */
   invalidate() { this.appliedSig = ''; }
 
-  onMotion(sample: MotionSample, now: number) { this.motion.update(sample, now); }
-  onLocalRssi(key: string, rssi: number, now: number) { this.tracker.update(key, rssi, now, this.motion.state(now)); }
+  onMotion(sample: MotionSample, now: number) {
+    this.at(now);
+    this.motion.update(sample, now);
+    this.recorder?.push({ t: now, k: 'motion', a: sample.acceleration, r: sample.rotation });
+  }
+  onLocalRssi(key: string, rssi: number, now: number) {
+    this.at(now);
+    this.recorder?.push({ t: now, k: 'rssi', key, rssi });
+    this.feed(key, rssi, now, 'local');
+  }
+  /** The scanner received something (tracked or not): it works, so silence of a participant means something. */
+  onScanHeard(now: number) {
+    this.at(now);
+    this.tracker.heard('scan', now);
+    this.recorder?.push({ t: now, k: 'heard' });
+  }
+
+  private feed(key: string, rssi: number, now: number, group: string) {
+    this.tracker.update(key, rssi, now, this.motion.state(now), group);
+    this.onSample?.(key, rssi, now);
+  }
 
   onAdvertisement(a: Advertisement, now: number) {
     if (a.rssi === undefined) return;
+    this.at(now);
+    this.tracker.heard('scan', now);
     for (const u of a.uuids ?? []) {
       const b = decodeBeacon(u);
       if (!b || b.phoneId === this.phoneId) continue;
@@ -144,18 +183,25 @@ export class ApproachEngine {
       this.peerDevices.set(b.phoneId, a.deviceId);
       const name = decodeBeaconName(a.manufacturerData, a.localName);
       if (name) this.peerNames.set(key, name);
-      this.tracker.update(key, a.rssi, now, this.motion.state(now));
+      this.recorder?.push({ t: now, k: 'adv', deviceId: a.deviceId, rssi: a.rssi, uuids: [u], ...(name ? { peerName: name } : {}) });
+      this.feed(key, a.rssi, now, 'scan');
       return;
     }
     const name = a.name ?? '';
-    if (!name.toLowerCase().startsWith(this.capPrefix)) return;
+    if (!name.toLowerCase().startsWith(this.capPrefix)) { this.recorder?.push({ t: now, k: 'heard' }); return; }
+    this.recorder?.push({ t: now, k: 'adv', deviceId: a.deviceId, rssi: a.rssi, name });
     if (this.localCaps.some((c) => c.bleName === name || c.key === a.deviceId)) return;
     const key = `cap:${a.deviceId}`;
     this.capNames.set(key, name);
-    this.tracker.update(key, a.rssi, now, this.motion.state(now));
+    this.feed(key, a.rssi, now, 'scan');
   }
 
-  /** The near group, ordered consistently on every phone (by phone id, then cap index). */
+  /**
+   * The near group, ordered consistently on every phone (by phone id, then cap index).
+   * Directly near participants form the group. When the resulting tier runs a marquee across the caps,
+   * phones that are near a group member (by both phones' beacons) are included too, so every phone of a
+   * chain computes the same marquee group; greetings stay with direct neighbours.
+   */
   members(now: number): Member[] {
     this.tracker.expire(now);
     const me = hex8(this.phoneId);
@@ -164,6 +210,8 @@ export class ApproachEngine {
       if (this.tracker.isNear(c.key, now)) out.push({ key: c.key, label: c.label, local: true, sortKey: `${me}:${String(i).padStart(3, '0')}`, source: 'local' });
     });
     const peerHashes = new Set<number>();
+    const direct: [string, BeaconInfo][] = [];
+    const others: [string, BeaconInfo][] = [];
     for (const [key, b] of this.peers) {
       if (!this.peerNear(key, b, now)) {
         if (!this.tracker.keys().includes(key)) {
@@ -172,14 +220,18 @@ export class ApproachEngine {
           this.peerDevices.delete(b.phoneId);
           this.peerContent.delete(b.phoneId);
           this.contentErrors.delete(b.phoneId);
-        }
+        } else others.push([key, b]);
         continue;
       }
+      direct.push([key, b]);
+    }
+    const addPeer = (key: string, b: BeaconInfo, indirect: boolean) => {
       b.capHashes.forEach((h) => peerHashes.add(h));
       const id = key.slice(5);
       for (let j = 0; j < b.capCount; j++)
-        out.push({ key: `${key}:${j}`, label: capLabel(b.phoneId, j, this.peerNames.get(key)), local: false, sortKey: `${id}:${String(j).padStart(3, '0')}`, source: 'peer', phoneId: b.phoneId });
-    }
+        out.push({ key: `${key}:${j}`, label: capLabel(b.phoneId, j, this.peerNames.get(key)), local: false, sortKey: `${id}:${String(j).padStart(3, '0')}`, source: 'peer', phoneId: b.phoneId, ...(indirect ? { indirect: true } : {}) });
+    };
+    for (const [key, b] of direct) addPeer(key, b, false);
     if (this.settings.countNearbyCaps) {
       for (const [key, name] of this.capNames) {
         if (!this.tracker.isNear(key, now)) { if (!this.tracker.keys().includes(key)) this.capNames.delete(key); continue; }
@@ -187,8 +239,38 @@ export class ApproachEngine {
         out.push({ key, label: name.slice(this.capPrefix.length).replace(/^[-_ ]/, '') || name, local: false, sortKey: `~${name}`, source: 'cap' });
       }
     }
+    const chain = this.chainPeers(direct, others, now);
+    if (chain.length && out.some((m) => m.local)) {
+      const hashes = new Set(chain.flatMap(([, b]) => b.capHashes));
+      const dupes = out.filter((m) => m.source === 'cap' && hashes.has(capHash16(this.capNames.get(m.key) ?? '')));
+      const extended = out.length - dupes.length + chain.reduce((n, [, b]) => n + b.capCount, 0);
+      if (extended > out.length && this.settings.tiers[tierFor(extended)].mode === 'span') {
+        for (const d of dupes) out.splice(out.indexOf(d), 1);
+        for (const [key, b] of chain) addPeer(key, b, true);
+      }
+    }
     // A lone local cap with nobody else around is just "solo".
     return out.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
+  }
+
+  /**
+   * Phones that are not near this phone but near a group member: both beacons, heard recently,
+   * must list each other. Requiring both directions keeps Bloom-filter false matches rare.
+   */
+  private chainPeers(direct: [string, BeaconInfo][], others: [string, BeaconInfo][], now: number): [string, BeaconInfo][] {
+    const fresh = ([key]: [string, BeaconInfo]) => this.tracker.isFresh(key, now, MUTUAL_FRESH_MS);
+    const group = direct.filter(fresh);
+    const chain: [string, BeaconInfo][] = [];
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const o of others) {
+        if (chain.includes(o) || !fresh(o)) continue;
+        if (group.some(([, q]) => maskHas(q.nearMask, o[1].phoneId) && maskHas(o[1].nearMask, q.phoneId))) {
+          chain.push(o); group.push(o); grew = true;
+        }
+      }
+    }
+    return chain;
   }
 
   /** Returns a plan only when a changed group has settled; otherwise null. */
@@ -203,7 +285,8 @@ export class ApproachEngine {
   }
 
   contentPeers(now: number): { phoneId: number; deviceId: string }[] {
-    return [...this.peers.values()].filter((b) => b.capCount > 0 && this.peerNear(`peer:${hex8(b.phoneId)}`, b, now))
+    const ids = new Set(this.members(now).filter((m) => m.source === 'peer').map((m) => m.phoneId!));
+    return [...this.peers.values()].filter((b) => b.capCount > 0 && ids.has(b.phoneId) && this.peerDevices.has(b.phoneId))
       .map((b) => ({ phoneId: b.phoneId, deviceId: this.peerDevices.get(b.phoneId)! }));
   }
 
@@ -249,12 +332,27 @@ export class ApproachEngine {
   }
 
   /**
-   * A peer is near when our own reception says so, or when we still hear it and its beacon
-   * lists us as near. The second rule keeps both phones in sync when one receives the other
-   * more weakly (different antennas, body shadowing, a throttled scan).
+   * A peer is near when our own reception says so, or when its beacon lists us as near and we hear it
+   * plausibly: recently (MUTUAL_FRESH_MS) and not much weaker than the away threshold. The second rule
+   * keeps both phones in sync when one receives the other more weakly (different antennas, body
+   * shadowing, a throttled scan); the plausibility checks stop stale beacons and Bloom-filter false
+   * matches of the 16-bit near mask from pulling in phones that are far away.
    */
   private peerNear(key: string, b: BeaconInfo, now: number): boolean {
-    return this.tracker.isNear(key, now) || (this.tracker.isHeard(key, now) && maskHas(b.nearMask, this.phoneId));
+    if (this.tracker.isNear(key, now)) return true;
+    const rssi = this.tracker.rssi(key);
+    return this.tracker.isFresh(key, now, MUTUAL_FRESH_MS) && rssi !== undefined
+      && rssi >= Math.min(this.settings.leaveDbm, this.settings.enterDbm) - MUTUAL_MARGIN_DB && maskHas(b.nearMask, this.phoneId);
+  }
+
+  /** Everything currently heard with its smoothed RSSI, strongest first (calibration source picker). */
+  sources(now: number): { key: string; label: string; rssi: number; kind: 'local' | 'peer' | 'cap' }[] {
+    this.tracker.expire(now);
+    const out: { key: string; label: string; rssi: number; kind: 'local' | 'peer' | 'cap' }[] = [];
+    for (const c of this.localCaps) { const r = this.tracker.rssi(c.key); if (r !== undefined) out.push({ key: c.key, label: c.label, rssi: r, kind: 'local' }); }
+    for (const [key, b] of this.peers) { const r = this.tracker.rssi(key); if (r !== undefined) out.push({ key, label: capLabel(b.phoneId, 0, this.peerNames.get(key)), rssi: r, kind: 'peer' }); }
+    for (const [key, name] of this.capNames) { const r = this.tracker.rssi(key); if (r !== undefined) out.push({ key, label: name, rssi: r, kind: 'cap' }); }
+    return out.sort((a, b) => b.rssi - a.rssi);
   }
 
   /** Beacon describing this phone's caps, plus the peers it sees near by its own reception. */
