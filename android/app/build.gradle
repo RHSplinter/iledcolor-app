@@ -1,10 +1,22 @@
 apply plugin: 'com.android.application'
 
-// Optional release signing: android/keystore.properties (gitignored) with
-// storeFile, storePassword, keyAlias, keyPassword. Without it the release APK is unsigned.
+// Local signing uses keystore.properties; CI supplies the same credentials via environment variables.
 def keystorePropsFile = rootProject.file('keystore.properties')
 def keystoreProps = new Properties()
 if (keystorePropsFile.exists()) { keystorePropsFile.withInputStream { keystoreProps.load(it) } }
+def ciKeystore = System.getenv('ANDROID_KEYSTORE_PATH')
+if (ciKeystore) {
+    [
+        storeFile: ciKeystore,
+        storePassword: System.getenv('ANDROID_KEYSTORE_PASSWORD'),
+        keyAlias: System.getenv('ANDROID_KEY_ALIAS'),
+        keyPassword: System.getenv('ANDROID_KEY_PASSWORD')
+    ].each { key, value ->
+        if (!value) throw new GradleException("Missing Android signing credential: ${key}")
+        keystoreProps.setProperty(key, value)
+    }
+}
+def hasReleaseSigning = keystorePropsFile.exists() || ciKeystore != null
 
 android {
     namespace = "com.harrybin.ledhat"
@@ -13,8 +25,8 @@ android {
         applicationId "com.harrybin.ledhat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 1001
+        versionName "0.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -23,7 +35,7 @@ android {
         }
     }
     signingConfigs {
-        if (keystorePropsFile.exists()) {
+        if (hasReleaseSigning) {
             release {
                 storeFile file(keystoreProps['storeFile'])
                 storePassword keystoreProps['storePassword']
@@ -34,7 +46,7 @@ android {
     }
     buildTypes {
         release {
-            if (keystorePropsFile.exists()) signingConfig signingConfigs.release
+            if (hasReleaseSigning) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
