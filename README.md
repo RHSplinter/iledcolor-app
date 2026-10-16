@@ -100,8 +100,9 @@ publishing jobs share a per-tag concurrency lock to avoid races when creating th
 The existing GitHub Pages workflow is unchanged.
 
 You can also start **Actions > Build Android release / Build iOS release > Run workflow** with
-an existing version tag, for example after correcting signing secrets. Enter the full tag
-(for example `v0.1.0`, not `0.1.0`); the workflow does not create it. For the initial release,
+an existing version tag, for example after correcting signing secrets. Android accepts either
+`0.1.0` or `v0.1.0` and resolves both to the existing `v0.1.0` tag; iOS requires the full
+`v0.1.0` tag. Neither workflow creates tags. For the initial release,
 create and push `v0.1.0` from the prepared release commit first:
 
 ```powershell

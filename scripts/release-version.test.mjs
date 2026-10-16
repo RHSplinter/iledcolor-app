@@ -73,33 +73,50 @@ test('CLI checks the tag, lockfile and native metadata and synchronizes a versio
   assert.equal(run('--check', '--tag', 'v1.2.3').status, 0);
 });
 
-test('Android manual releases validate the tag before checkout', () => {
+test('Android manual releases normalize and validate the tag before checkout', (t) => {
   const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8');
   const validation = workflow.match(/      - name: Validate manual release tag\n([\s\S]*?)      - uses: actions\/checkout@v4/);
   assert.ok(validation, 'manual tag validation must run before checkout');
   assert.ok(validation[1].includes("if: github.event_name == 'workflow_dispatch'"));
   assert.ok(validation[1].includes('RELEASE_TAG: ${{ inputs.tag }}'));
   assert.ok(validation[1].includes('GH_TOKEN: ${{ github.token }}'));
+  assert.ok(validation[1].includes('id: release_tag'));
+  assert.ok(workflow.includes("ref: ${{ steps.release_tag.outputs.tag && format('refs/tags/{0}', steps.release_tag.outputs.tag) || github.ref }}"));
+  assert.ok(workflow.includes('RELEASE_TAG: ${{ steps.release_tag.outputs.tag || github.ref_name }}'));
   const script = validation[1].split('        run: |\n')[1].replace(/^          /gm, '');
-  const run = (tag, exists) => spawnSync('bash', ['-c', `
+  const root = mkdtempSync(join(tmpdir(), 'led-hat-release-tag-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const output = join(root, 'output');
+  const run = (tag, exists) => {
+    writeFileSync(output, '');
+    return spawnSync('bash', ['-c', `
     gh() {
       printf 'API request: %s\\n' "$*"
-      [[ "$*" == "api --silent repos/example/app/git/ref/tags/$RELEASE_TAG" ]] || exit 99
+      [[ "$*" == "api --silent repos/example/app/git/ref/tags/v0.2.0" ]] || exit 99
       return "$TAG_STATUS"
     }
     ${script}
   `], {
     encoding: 'utf8',
-    env: { ...process.env, RELEASE_TAG: tag, GITHUB_REPOSITORY: 'example/app', TAG_STATUS: exists ? '0' : '1' },
+    env: { ...process.env, RELEASE_TAG: tag, GITHUB_REPOSITORY: 'example/app',
+      GITHUB_OUTPUT: output, TAG_STATUS: exists ? '0' : '1' },
   });
-  assert.equal(run('v0.1.0', true).status, 0);
-  const missing = run('v0.1.0', false);
-  assert.equal(missing.status, 1);
-  assert.match(missing.stdout, /Create and push it from the release commit/);
-  for (const tag of ['0.1.0', '', 'main', 'v01.2.3', 'v1.2.3-beta.1', 'v1.2.3; exit 0']) {
+  };
+  for (const tag of ['0.2.0', 'v0.2.0']) {
+    assert.equal(run(tag, true).status, 0, tag);
+    assert.equal(readFileSync(output, 'utf8'), 'tag=v0.2.0\n');
+    const missing = run(tag, false);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stdout, /Cannot find release tag v0.2.0/);
+    assert.match(missing.stdout, /Create and push it from the release commit/);
+    assert.equal(readFileSync(output, 'utf8'), '');
+  }
+  for (const tag of ['', 'main', '01.2.3', 'v01.2.3', 'vv1.2.3', 'v1.2.3-beta.1',
+    '1.2.3+build', 'v1.2.3; exit 0', '1.2.3\nmain']) {
     const invalid = run(tag, true);
     assert.equal(invalid.status, 1, tag);
-    assert.match(invalid.stdout, /Tag must use vMAJOR.MINOR.PATCH/);
+    assert.match(invalid.stdout, /Release must use MAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH/);
     assert.ok(!invalid.stdout.includes('API request:'), 'invalid tags must not reach the API');
+    assert.equal(readFileSync(output, 'utf8'), '');
   }
 });
