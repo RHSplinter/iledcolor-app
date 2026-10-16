@@ -12,6 +12,17 @@ npm run build       # static site in dist/
 Serve `dist/` from any static **HTTPS** origin (GitHub Pages, own host). Paths are relative, so
 subdirectory hosting works. Web Bluetooth does not work over `file://` or plain `http://192.168.x.x`.
 
+The GitHub Pages workflow always runs tests, builds the site, and uploads the `github-pages`
+artifact. Deployment is opt-in:
+
+1. In repository **Settings → Pages**, select **GitHub Actions** as the build and deployment source.
+2. In **Settings → Secrets and variables → Actions → Variables**, create the repository variable
+   `PAGES_ENABLED` with the value `true`.
+3. Push to `main` or run **Actions → Build and deploy to GitHub Pages → Run workflow**.
+
+Without that variable, the deployment job is skipped; builds do not require an enabled Pages site.
+Enable Pages before setting the variable: the default workflow token cannot enable a missing site.
+
 ## Install on Android
 
 1. Open the HTTPS URL in Chrome on the phone, wait for "Ready for offline use".
