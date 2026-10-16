@@ -66,6 +66,8 @@ another phone takes it) returned cap A to the solo content after ~9 s; releasing
 
 The text is rendered once as a wide strip. Each cap gets its slice as a looping animation with the same frame count and timing, at most 120 frames to stay within the cap's 64 KB transfer limit. Uploads to caps on the same phone run in parallel. Across phones, the start is aligned only by the shared settle time, so the marquee is close but not frame-accurate.
 
+The cap can play an animation too fast after its content changes, for example when a group separates and later re-forms with the same greeting. To avoid this, every animation upload first sends its first frame as a still image to stop the running animation. Every GIF also gets a random nonce in unused palette entries, so the cap never receives byte-identical content twice. The nonce does not change any pixel.
+
 **Physical direction cannot be inferred from these sensors.** Accelerometers and gyroscopes measure the
 phone's own motion, not the bearing or position of another phone/cap. Integrating their readings into
 positions drifts quickly, and phones may sit in differently oriented pockets rather than on the caps.

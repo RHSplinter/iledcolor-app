@@ -82,6 +82,23 @@ describe('upload', () => {
     expect(t.maxInFlight).toBe(1);
     expect(c.state).toBe('Ready');
   });
+  it('GIF with a still: stops the running animation with a static image, then sends the GIF', async () => {
+    const { t, c } = setup();
+    await c.connect(async () => t);
+    const gif = Uint8Array.of(0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x3b);
+    expect(await c.uploadGif(gif, 4, 2, img)).toBe('confirmed');
+    const w = t.writes.slice(2);
+    const starts = w.flatMap((x, i) => (x.channel === 'cmd' && x.frame[1] === 0x06 ? [i] : []));
+    const ends = w.flatMap((x, i) => (x.channel === 'data' && x.frame[1] === 0x01 ? [i] : []));
+    expect(starts).toHaveLength(2);
+    expect(ends).toHaveLength(2);
+    expect(ends[0]!).toBeLessThan(starts[1]!);
+    const len = (i: number) => (w[starts[i]!]!.frame[10]! << 8) | w[starts[i]!]!.frame[11]!;
+    expect(len(0)).toBe(24 + 22 + img.pixels.length);
+    expect(len(1)).toBe(24 + 22 + gif.length);
+    expect(t.maxInFlight).toBe(1);
+    expect(c.state).toBe('Ready');
+  });
   it('rejects invalid input before any write', async () => {
     const { t, c } = setup();
     await c.connect(async () => t);

@@ -151,54 +151,66 @@ export class DeviceController {
   }
 
   async upload(img: RgbImage): Promise<UploadResult> {
-    return this.uploadStream(buildImageStream(img, this.profile.maxStreamBytes));
+    return this.uploadStreams([buildImageStream(img, this.profile.maxStreamBytes)]);
   }
 
-  /** Looping GIF (e.g. a scrolling marquee) played by the hat itself. */
-  async uploadGif(gif: Uint8Array, width: number, height: number): Promise<UploadResult> {
-    return this.uploadStream(buildGifStream(gif, width, height, this.profile.maxStreamBytes));
+  /**
+   * Looping GIF (e.g. a scrolling marquee) played by the hat itself. `still` (normally the first
+   * frame) is sent first as a static image: replacing a running animation directly can leave the
+   * old playback running alongside the new one on the hat, which then plays visibly faster.
+   */
+  async uploadGif(gif: Uint8Array, width: number, height: number, still?: RgbImage): Promise<UploadResult> {
+    const gifStream = buildGifStream(gif, width, height, this.profile.maxStreamBytes);
+    return this.uploadStreams(still ? [buildImageStream(still, this.profile.maxStreamBytes), gifStream] : [gifStream]);
   }
 
-  private async uploadStream({ bytes, crc }: { bytes: Uint8Array; crc: number }): Promise<UploadResult> {
+  private async uploadStreams(streams: { bytes: Uint8Array; crc: number }[]): Promise<UploadResult> {
     // Validate everything before any BLE write.
-    const frames = buildContinueFrames(bytes, this.profile.chunkSize);
-    const start = buildStartStream(crc, bytes.length);
+    const parts = streams.map(({ bytes, crc }) => ({
+      start: buildStartStream(crc, bytes.length),
+      frames: buildContinueFrames(bytes, this.profile.chunkSize),
+    }));
     const end = buildEndStream();
+    const total = parts.reduce((n, p) => n + p.frames.length, 0);
 
     return this.exclusive(async () => {
       if (this._state !== 'Ready') throw new DeviceError('Not connected', 'disconnected');
       const epoch = this.epoch;
       this.cancelled = false;
       this.setState('Uploading');
-      this.progress = { sent: 0, total: frames.length };
+      this.progress = { sent: 0, total };
       this.listeners.forEach((cb) => cb());
       let result: UploadResult = 'confirmed';
+      let sent = 0;
       try {
-        await this.request(start, 'cmd', Cmd.START_STREAM, this.timeouts.startMs);
-        for (let seq = 0; seq < frames.length; seq++) {
+        for (const { start, frames } of parts) {
           this.checkCancel(epoch);
-          const frame = frames[seq]!;
-          try {
-            await this.request(frame, 'data', Cmd.CONTINUE, this.timeouts.chunkMs, (body) => {
-              // If the ack echoes a sequence number (first 4 bytes), it must be ours.
-              if (body.length >= 4) {
-                const got = ((body[0]! << 24) | (body[1]! << 16) | (body[2]! << 8) | body[3]!) >>> 0;
-                if (got !== seq) throw new DeviceError(`Ack for chunk ${got}, expected ${seq}`, 'protocol');
-              }
-              // Observed hat ack: seq(4) + status(1), status 0x01 = accepted.
-              if (body.length >= 5 && body[4] !== 0x01)
-                throw new DeviceError(`Chunk ${seq} rejected (status 0x${body[4]!.toString(16)})`, 'protocol');
-            });
-          } catch (e) {
-            if (e instanceof DeviceError && e.kind === 'timeout' && this.profile.allowMissingChunkAcks) {
-              result = 'sent-unconfirmed';
-            } else throw e;
+          await this.request(start, 'cmd', Cmd.START_STREAM, this.timeouts.startMs);
+          for (let seq = 0; seq < frames.length; seq++) {
+            this.checkCancel(epoch);
+            const frame = frames[seq]!;
+            try {
+              await this.request(frame, 'data', Cmd.CONTINUE, this.timeouts.chunkMs, (body) => {
+                // If the ack echoes a sequence number (first 4 bytes), it must be ours.
+                if (body.length >= 4) {
+                  const got = ((body[0]! << 24) | (body[1]! << 16) | (body[2]! << 8) | body[3]!) >>> 0;
+                  if (got !== seq) throw new DeviceError(`Ack for chunk ${got}, expected ${seq}`, 'protocol');
+                }
+                // Observed hat ack: seq(4) + status(1), status 0x01 = accepted.
+                if (body.length >= 5 && body[4] !== 0x01)
+                  throw new DeviceError(`Chunk ${seq} rejected (status 0x${body[4]!.toString(16)})`, 'protocol');
+              });
+            } catch (e) {
+              if (e instanceof DeviceError && e.kind === 'timeout' && this.profile.allowMissingChunkAcks) {
+                result = 'sent-unconfirmed';
+              } else throw e;
+            }
+            this.progress = { sent: ++sent, total };
+            this.listeners.forEach((cb) => cb());
           }
-          this.progress = { sent: seq + 1, total: frames.length };
-          this.listeners.forEach((cb) => cb());
+          this.checkCancel(epoch);
+          await this.request(end, 'data', Cmd.END_STREAM, this.timeouts.endMs);
         }
-        this.checkCancel(epoch);
-        await this.request(end, 'data', Cmd.END_STREAM, this.timeouts.endMs);
       } catch (e) {
         this.trace('ev', 'upload failed: ' + errMsg(e));
         if (epoch === this.epoch) {
