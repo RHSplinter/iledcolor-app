@@ -70,6 +70,8 @@ export function chooseGroupText(rows: CapText[]): TextChoice {
   const tied = !!top && ranked[1]?.length === top.length;
   // Wait for every participant: a partial view could elect different texts on different phones.
   const complete = rows.every((row) => row.config !== undefined);
+  // A majority means more than half of all caps in the group, not just the largest minority.
+  const majority = !!top && top.length * 2 > rows.length;
   return { rows, votes: top?.length ?? 0, tied,
-    winner: rows.length > 2 && complete && !tied ? top?.[0] : undefined };
+    winner: rows.length > 2 && complete && majority ? top[0] : undefined };
 }

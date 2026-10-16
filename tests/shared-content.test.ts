@@ -54,11 +54,18 @@ describe('most common marquee proposal', () => {
     expect(chooseGroupText([row('a', 'A'), row('b', 'B'), row('c', 'C')]).tied).toBe(true);
     expect(chooseGroupText([row('a', 'A'), row('b', 'A'), row('c', 'B'), row('d', 'B')]).winner).toBeUndefined();
   });
-  it('uses a unique plurality even without an absolute majority; canonical first cap supplies colours and speed', () => {
+  it('does not elect a text without a strict majority, even when it is the unique most common', () => {
     const rows = [row('a', 'A'), row('b', 'B'), row('c', 'A'), row('d', 'C'), row('e', 'D')];
-    rows[2]!.config!.speed = 9;
     const choice = chooseGroupText(rows);
     expect(choice.votes).toBe(2);
+    expect(choice.tied).toBe(false);
+    expect(choice.winner).toBeUndefined();
+  });
+  it('uses a strict majority; canonical first cap supplies colours and speed', () => {
+    const rows = [row('a', 'A'), row('b', 'B'), row('c', 'A'), row('d', 'C'), row('e', 'A')];
+    rows[2]!.config!.speed = 9;
+    const choice = chooseGroupText(rows);
+    expect(choice.votes).toBe(3);
     expect(choice.winner).toBe(rows[0]);
     expect(choice.winner!.config!.speed).toBe(5);
   });

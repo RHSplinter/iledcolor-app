@@ -42,12 +42,13 @@ own slice locally. **Texts of nearby caps** shows each near cap's original text 
 speed for the current group size. **Use text** saves that cap's full text settings for this group size on
 this phone. With two caps, select a matching text manually.
 
-With **three or more caps**, marquee mode automatically uses the uniquely most common marquee text,
-even when it has less than half of the votes (for example, 2 out of 5 with the other texts all different).
+With **three or more caps**, marquee mode automatically uses the marquee text that has a **majority**:
+more than half of all caps in the group propose it (for example 2 of 3, or 3 of 5; 2 of 5 is not enough).
+Without a majority, every phone keeps its own text and texts can be adopted manually.
 Each cap has one vote, including multiple caps controlled by a Master phone. Templates are compared exactly,
 before replacing `{me}`, `{other}`, etc. If several caps propose that text with different colours or speeds,
 the first cap in the shared phone-ID/cap order supplies those settings. The winning entries are marked
-**Most common · used automatically**. Ties keep this phone's own text and allow manual adoption.
+**Majority · used automatically**. Ties keep this phone's own text and allow manual adoption.
 Individual greetings are not overridden or counted as marquee votes.
 
 The automatic choice is temporary: the original saved proposals keep their votes and are shared unchanged,

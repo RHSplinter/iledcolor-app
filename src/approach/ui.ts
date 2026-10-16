@@ -785,12 +785,12 @@ function renderGroupTexts() {
   const automatic = choice.winner && own.mode === 'span';
   status.textContent = !running ? 'Start approach mode to compare nearby caps.'
     : choice.rows.length === 0 ? 'No near caps yet.'
-    : automatic ? `${TIER_LABELS[tier]}: most common text used automatically (${choice.votes}/${choice.rows.length} caps). Your saved text is unchanged.`
+    : automatic ? `${TIER_LABELS[tier]}: majority text used automatically (${choice.votes}/${choice.rows.length} caps). Your saved text is unchanged.`
     : choice.rows.some((r) => !r.config) ? `${TIER_LABELS[tier]}: waiting for all cap texts. No automatic selection.`
     : choice.rows.length <= 2 ? `${TIER_LABELS[tier]}: choose a text manually; automatic selection starts at 3 caps.`
     : choice.tied ? `${TIER_LABELS[tier]}: tied texts. Choose a text manually.`
-    : own.mode !== 'span' ? `${TIER_LABELS[tier]}: Individual mode keeps your own greeting. Automatic selection applies to marquee mode.`
-    : `${TIER_LABELS[tier]}: no shared marquee text. Choose a text manually.`;
+    : own.mode === 'span' ? `${TIER_LABELS[tier]}: no text has a majority (more than half of the caps). Choose a text manually.`
+    : `${TIER_LABELS[tier]}: Individual mode keeps your own greeting. Automatic selection applies to marquee mode.`;
   const rows = running ? choice.rows : [];
   const markup = rows.map((row) => {
     const c = row.config;
@@ -802,7 +802,7 @@ function renderGroupTexts() {
         ${c ? `<p class="cap-text-value">${esc(c.text) || '<em>Empty text</em>'}</p>
         <small class="muted">${c.mode === 'span' ? 'Marquee' : c.useCreate ? 'Create tab content; template not active' : 'Individual'} · ${esc(c.fg)} / ${esc(c.bg)} · speed ${c.speed}</small>`
         : `<p class="small">${esc(row.unavailable ?? 'Text unavailable')}</p>`}
-        ${winner ? '<p class="text-choice-label">Most common · used automatically</p>' : ''}
+        ${winner ? '<p class="text-choice-label">Majority · used automatically</p>' : ''}
       </div>
       ${c && !row.local ? `<button type="button" data-use-text="${esc(row.key)}" ${same ? 'disabled' : ''} aria-label="Use text from ${esc(row.label)}">${same ? 'Same settings' : 'Use text'}</button>` : ''}
     </li>`;
