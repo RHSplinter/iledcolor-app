@@ -1,12 +1,13 @@
 import { capHash16, decodeBeacon, decodeBeaconName, maskHas, nearMaskFor, type BeaconInfo } from './beaconCodec';
 import { ProximityTracker } from './proximity';
 import { MotionTracker, type MotionSample } from './motion';
-import { tierFor, type ApproachSettings, type TierId } from './tiers';
+import { tierFor, type ApproachSettings, type TierId, type TierConfig } from './tiers';
+import { chooseGroupText, CONTENT_REFRESH_MS, CONTENT_STALE_MS, type TextChoice } from './sharedContent';
 
 /** A cap connected to (and controlled by) this phone. Order = left-to-right span order. */
 export interface LocalCap { key: string; bleName: string; label: string }
 
-export interface Member { key: string; label: string; local: boolean; sortKey: string; source: 'local' | 'peer' | 'cap' }
+export interface Member { key: string; label: string; local: boolean; sortKey: string; source: 'local' | 'peer' | 'cap'; phoneId?: number }
 
 export type Assignment =
   | { kind: 'create' }
@@ -59,11 +60,12 @@ export function fillTemplate(tpl: string, v: { me: string; others: string[]; cou
 }
 
 /** Pure: content for each local cap given the (ordered) near group. */
-export function planFor(members: Member[], localCaps: LocalCap[], s: ApproachSettings): Plan {
+export function planFor(members: Member[], localCaps: LocalCap[], s: ApproachSettings, shared?: TierConfig): Plan {
   const perCap = new Map<string, Assignment>();
   const count = members.length;
   const tier = tierFor(count);
-  const cfg = s.tiers[tier];
+  const own = s.tiers[tier];
+  const cfg = own.mode === 'span' && tier !== 'solo' ? shared ?? own : own;
   members.forEach((m, i) => {
     if (!m.local) return;
     if (tier === 'solo' && cfg.useCreate) {
@@ -107,6 +109,9 @@ export class ApproachEngine {
   private localCaps: LocalCap[] = [];
   private peers = new Map<string, BeaconInfo>();
   private peerNames = new Map<string, string>(); // kept across reports: not every report includes the scan response
+  private peerDevices = new Map<number, string>();
+  private peerContent = new Map<number, { tier: TierId; config: TierConfig; at: number }>();
+  private contentErrors = new Map<number, string>();
   private capNames = new Map<string, string>(); // tracker key -> advertised cap name
   private candidateSig = '';
   private candidateSince = 0;
@@ -136,6 +141,7 @@ export class ApproachEngine {
       if (!b || b.phoneId === this.phoneId) continue;
       const key = `peer:${hex8(b.phoneId)}`;
       this.peers.set(key, b);
+      this.peerDevices.set(b.phoneId, a.deviceId);
       const name = decodeBeaconName(a.manufacturerData, a.localName);
       if (name) this.peerNames.set(key, name);
       this.tracker.update(key, a.rssi, now, this.motion.state(now));
@@ -159,11 +165,20 @@ export class ApproachEngine {
     });
     const peerHashes = new Set<number>();
     for (const [key, b] of this.peers) {
-      if (!this.peerNear(key, b, now)) { if (!this.tracker.keys().includes(key)) { this.peers.delete(key); this.peerNames.delete(key); } continue; }
+      if (!this.peerNear(key, b, now)) {
+        if (!this.tracker.keys().includes(key)) {
+          this.peers.delete(key);
+          this.peerNames.delete(key);
+          this.peerDevices.delete(b.phoneId);
+          this.peerContent.delete(b.phoneId);
+          this.contentErrors.delete(b.phoneId);
+        }
+        continue;
+      }
       b.capHashes.forEach((h) => peerHashes.add(h));
       const id = key.slice(5);
       for (let j = 0; j < b.capCount; j++)
-        out.push({ key: `${key}:${j}`, label: capLabel(b.phoneId, j, this.peerNames.get(key)), local: false, sortKey: `${id}:${String(j).padStart(3, '0')}`, source: 'peer' });
+        out.push({ key: `${key}:${j}`, label: capLabel(b.phoneId, j, this.peerNames.get(key)), local: false, sortKey: `${id}:${String(j).padStart(3, '0')}`, source: 'peer', phoneId: b.phoneId });
     }
     if (this.settings.countNearbyCaps) {
       for (const [key, name] of this.capNames) {
@@ -179,12 +194,46 @@ export class ApproachEngine {
   /** Returns a plan only when a changed group has settled; otherwise null. */
   tick(now: number): Plan | null {
     const members = this.members(now);
-    const plan = planFor(members, this.localCaps, this.settings);
+    const plan = planFor(members, this.localCaps, this.settings, this.groupTexts(now).winner?.config);
     const sig = JSON.stringify([members.map((m) => m.key), [...plan.perCap]]);
     if (sig !== this.candidateSig) { this.candidateSig = sig; this.candidateSince = now; }
     if (now - this.candidateSince < this.settings.settleMs || sig === this.appliedSig) return null;
     this.appliedSig = sig;
     return plan;
+  }
+
+  contentPeers(now: number): { phoneId: number; deviceId: string }[] {
+    return [...this.peers.values()].filter((b) => b.capCount > 0 && this.peerNear(`peer:${hex8(b.phoneId)}`, b, now))
+      .map((b) => ({ phoneId: b.phoneId, deviceId: this.peerDevices.get(b.phoneId)! }));
+  }
+
+  receiveContent(phoneId: number, tier: TierId, config: TierConfig, now: number) {
+    this.peerContent.set(phoneId, { tier, config: { ...config }, at: now });
+    this.contentErrors.delete(phoneId);
+  }
+
+  contentFailed(phoneId: number, message: string) {
+    this.peerContent.delete(phoneId);
+    this.contentErrors.set(phoneId, message);
+  }
+
+  clearContent() {
+    this.peerContent.clear();
+    this.contentErrors.clear();
+  }
+
+  groupTexts(now: number): TextChoice {
+    const members = this.members(now);
+    const tier = tierFor(members.length);
+    const maxAge = Math.max(CONTENT_STALE_MS, this.contentPeers(now).length * CONTENT_REFRESH_MS);
+    return chooseGroupText(members.map((m) => {
+      if (m.local) return { ...m, config: this.settings.tiers[tier] };
+      const cached = m.phoneId === undefined ? undefined : this.peerContent.get(m.phoneId);
+      const config = cached?.tier === tier && now - cached.at < maxAge ? cached.config : undefined;
+      return { ...m, config, unavailable: config ? undefined : m.source === 'cap'
+        ? 'Text unavailable: no controlling phone'
+        : this.contentErrors.get(m.phoneId!) ?? 'Loading text from phone…' };
+    }));
   }
 
   /** Other phones currently heard (near or not), with smoothed RSSI, for display and threshold tuning. */

@@ -86,12 +86,23 @@ describe('upload', () => {
     const { t, c } = setup();
     await c.connect(async () => t);
     let writesAtHook = -1;
+    let hooks = 0;
     const gif = new Uint8Array(100).fill(7);
-    expect(await c.uploadGif(gif, 4, 2, img, { beforeEnd: async () => { writesAtHook = t.writes.length; } })).toBe('confirmed');
+    expect(await c.uploadGif(gif, 4, 2, img, { beforeEnd: async () => { hooks++; writesAtHook = t.writes.length; } })).toBe('confirmed');
+    expect(hooks).toBe(1);
     expect(writesAtHook).toBe(t.writes.length - 1);
     expect(t.writes[writesAtHook - 1]!.frame[1]).toBe(0x00);
     expect(t.writes[t.writes.length - 1]!.frame[1]).toBe(0x01);
     expect(t.writes.filter((w) => w.frame[1] === 0x01)).toHaveLength(2);
+  });
+  it('rechecks cancellation after the synchronized GIF wait, without ending the final stream', async () => {
+    const { t, c } = setup();
+    await c.connect(async () => t);
+    await expect(c.uploadGif(new Uint8Array(100), 4, 2, img, {
+      beforeEnd: async () => { c.cancelUpload(); },
+    })).rejects.toThrow('Upload cancelled');
+    expect(t.writes.filter((w) => w.frame[1] === 0x01)).toHaveLength(1);
+    expect(c.state).toBe('Disconnected');
   });
   it('GIF with a still: stops the running animation with a static image, then sends the GIF', async () => {
     const { t, c } = setup();

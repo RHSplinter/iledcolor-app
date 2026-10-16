@@ -13,6 +13,7 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "publishContent", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setKeepAwake", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startMotion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopMotion", returnType: CAPPluginReturnPromise),
@@ -22,6 +23,12 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
     private var pendingUuid: CBUUID?
     private var pendingName: String?
     private var pendingCall: CAPPluginCall?
+    private let contentService = CBUUID(string: "4c454448-1000-4000-8000-000000000001")
+    private var contentValues: [CBUUID: Data] = [:]
+    private var contentCall: CAPPluginCall?
+    private var contentReady = false
+    private var contentAdding = false
+    private var publishedService: CBMutableService?
     private let motion = CMMotionManager()
     private var motionRequested = false
 
@@ -85,22 +92,104 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
         NotificationCenter.default.removeObserver(self)
     }
 
+    @objc func publishContent(_ call: CAPPluginCall) {
+        guard let values = call.getArray("values", String.self), values.count == 6 else {
+            call.reject("Six content values required"); return
+        }
+        var next: [CBUUID: Data] = [:]
+        for (i, value) in values.enumerated() {
+            guard let data = Data(base64Encoded: value), data.count <= 512, i != 0 || data.count == 8 else {
+                call.reject("Invalid content value"); return
+            }
+            let suffix = i == 0 ? 2 : 9 + i
+            next[CBUUID(string: String(format: "4c454448-1000-4000-8000-%012d", suffix))] = data
+        }
+        DispatchQueue.main.async {
+            guard self.contentCall == nil else { call.reject("Content service is starting"); return }
+            self.contentValues = next
+            if self.contentReady { call.resolve(); return }
+            self.contentCall = call
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                guard self.contentCall === call else { return }
+                self.contentCall = nil
+                self.contentAdding = false
+                self.publishedService = nil
+                self.manager?.removeAllServices()
+                call.reject("Shared text service timed out; retrying")
+            }
+            if let manager = self.manager {
+                if manager.state == .poweredOn { self.addContentService(manager) }
+                else if manager.state == .poweredOff || manager.state == .unauthorized || manager.state == .unsupported {
+                    self.contentCall = nil
+                    call.reject("Bluetooth is off or unavailable")
+                }
+            } else { self.manager = CBPeripheralManager(delegate: self, queue: nil) }
+        }
+    }
+
+    private func addContentService(_ peripheral: CBPeripheralManager) {
+        guard !contentReady, !contentAdding, !contentValues.isEmpty else { return }
+        let service = CBMutableService(type: contentService, primary: true)
+        service.characteristics = contentValues.keys.map {
+            CBMutableCharacteristic(type: $0, properties: [.read], value: nil, permissions: [.readable])
+        }
+        contentAdding = true
+        publishedService = service
+        peripheral.add(service)
+    }
+
+    public func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
+        guard service === publishedService else { return }
+        contentAdding = false
+        if let error = error { contentCall?.reject("Could not publish shared texts: \(error.localizedDescription)") }
+        else { contentReady = true; contentCall?.resolve() }
+        contentCall = nil
+    }
+
+    public func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
+        guard let value = contentValues[request.characteristic.uuid] else {
+            peripheral.respond(to: request, withResult: .readNotPermitted); return
+        }
+        guard request.offset <= value.count else {
+            peripheral.respond(to: request, withResult: .invalidOffset); return
+        }
+        request.value = value.subdata(in: request.offset..<value.count)
+        peripheral.respond(to: request, withResult: .success)
+    }
+
     @objc func start(_ call: CAPPluginCall) {
         guard let raw = call.getString("uuid"), UUID(uuidString: raw) != nil else {
             call.reject("uuid required"); return
         }
-        pendingUuid = CBUUID(string: raw)
         let name = call.getString("name")?.trimmingCharacters(in: .whitespaces) ?? ""
-        pendingName = name.isEmpty ? nil : name
-        pendingCall = call
-        if let m = manager, m.state == .poweredOn { advertise(m) }
-        else if manager == nil { manager = CBPeripheralManager(delegate: self, queue: nil) }
+        DispatchQueue.main.async {
+            self.pendingUuid = CBUUID(string: raw)
+            self.pendingName = name.isEmpty ? nil : name
+            self.pendingCall = call
+            if let m = self.manager, m.state == .poweredOn { self.advertise(m) }
+            else if self.manager == nil { self.manager = CBPeripheralManager(delegate: self, queue: nil) }
+            else if self.manager?.state == .poweredOff || self.manager?.state == .unauthorized || self.manager?.state == .unsupported {
+                self.pendingCall = nil
+                call.reject("Bluetooth is off or unavailable")
+            }
+        }
     }
 
     @objc func stop(_ call: CAPPluginCall) {
-        manager?.stopAdvertising()
-        pendingUuid = nil
-        call.resolve()
+        DispatchQueue.main.async {
+            self.manager?.stopAdvertising()
+            self.manager?.removeAllServices()
+            self.pendingUuid = nil
+            self.contentValues = [:]
+            self.contentReady = false
+            self.contentAdding = false
+            self.publishedService = nil
+            self.contentCall?.reject("Shared text service stopped")
+            self.contentCall = nil
+            self.pendingCall?.reject("Beacon stopped")
+            self.pendingCall = nil
+            call.resolve()
+        }
     }
 
     @objc func setKeepAwake(_ call: CAPPluginCall) {
@@ -122,10 +211,13 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
 
     public func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
         switch peripheral.state {
-        case .poweredOn: advertise(peripheral)
-        case .unauthorized: pendingCall?.reject("Bluetooth permission denied"); pendingCall = nil
-        case .poweredOff: pendingCall?.reject("Bluetooth is off"); pendingCall = nil
-        case .unsupported: pendingCall?.reject("This device cannot advertise BLE"); pendingCall = nil
+        case .poweredOn: addContentService(peripheral); advertise(peripheral)
+        case .unauthorized, .poweredOff, .unsupported:
+            pendingCall?.reject("Bluetooth is off or unavailable"); pendingCall = nil
+            contentCall?.reject("Bluetooth is off or unavailable"); contentCall = nil
+            contentReady = false
+            contentAdding = false
+            publishedService = nil
         default: break
         }
     }

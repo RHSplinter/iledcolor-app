@@ -38,7 +38,36 @@ Both use the same Approach tab and engine; only the setup differs.
   Hub and P2P mix freely: a phone with 3 caps meeting a phone with 1 cap forms a group of 4.
 
 For a P2P spanned marquee all phones must use the same tier text/colours/speed, because each phone renders its
-own slice locally. Slice order follows phone IDs (not physical left/right); start times are aligned to the phones' clocks (see Span mode).
+own slice locally. **Texts of nearby caps** shows each near cap's original text template, mode, colours and
+speed for the current group size. **Use text** saves that cap's full text settings for this group size on
+this phone. With two caps, select a matching text manually.
+
+With **three or more caps**, marquee mode automatically uses the uniquely most common marquee text,
+even when it has less than half of the votes (for example, 2 out of 5 with the other texts all different).
+Each cap has one vote, including multiple caps controlled by a Master phone. Templates are compared exactly,
+before replacing `{me}`, `{other}`, etc. If several caps propose that text with different colours or speeds,
+the first cap in the shared phone-ID/cap order supplies those settings. The winning entries are marked
+**Most common · used automatically**. Ties keep this phone's own text and allow manual adoption.
+Individual greetings are not overridden or counted as marquee votes.
+
+The automatic choice is temporary: the original saved proposals keep their votes and are shared unchanged,
+so a temporary choice cannot turn itself into a manufactured majority. Leaving the group or changing tier
+re-evaluates the choice. Automatic selection waits for fresh content from every group member; missing text,
+an older app, or a failed transfer is shown explicitly and never treated as agreement.
+
+Texts are exchanged directly over Bluetooth, without a server or a connection to another person's cap.
+While approach mode and its beacon are on, the phone publishes a **read-only GATT service** containing the
+five group-size text configurations (not Create tab text, images or animations). Nearby app users can read
+these settings without pairing; do not use private text in these templates. Phones read the relevant tier
+over short-lived phone-to-phone connections while keeping their cap connections. A header checks the
+phone ID and content revision before and after each read; length-prefixed UTF-8 rejects incomplete reads.
+Successful reads are refreshed every 5 s when the Bluetooth queue permits, oldest reads first. Cached text
+expires after 15 s (or 5 s per nearby phone in larger groups, allowing a full read round), and failures retry
+after 30 s. Turning approach mode off removes the service and clears received texts.
+Both phones need the updated native app for text sharing. Existing beacons remain version-2 compatible;
+an older app can still participate in proximity detection, but its texts are unavailable.
+
+Slice order follows phone IDs (not physical left/right); start times are aligned to the phones' clocks (see Span mode).
 
 Hardware check (Pixel 9 Pro, release APK, one cap per phone): with only cap A connected, the phone grouped the
 still-unconnected cap B (2 caps → greeting uploaded to cap A). Connecting cap B elsewhere (it stops advertising, as when

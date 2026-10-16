@@ -40,3 +40,10 @@ ul.list li span { flex:1; overflow:hidden; text-overflow:ellipsis; }
 fieldset.tier { border:1px solid #333; border-radius:8px; margin:0 0 12px; padding:8px 12px; }
 fieldset.tier legend { padding:0 6px; font-weight:600; }
 .pill.muted { opacity:.6; }
+.cap-texts li { align-items:flex-start; flex-wrap:wrap; }
+.cap-text-detail { flex:1 1 220px; min-width:0; }
+.cap-text-value { margin:6px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.text-selected { border-color:var(--ok); }
+.text-choice-label { color:var(--ok); font-size:13px; margin:6px 0 0; }
+.sim-peer { flex-wrap:wrap; }
+.sim-peer > label { flex:1 1 100%; }
