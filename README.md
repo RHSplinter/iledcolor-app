@@ -100,7 +100,18 @@ publishing jobs share a per-tag concurrency lock to avoid races when creating th
 The existing GitHub Pages workflow is unchanged.
 
 You can also start **Actions > Build Android release / Build iOS release > Run workflow** with
-an existing version tag, for example after correcting signing secrets. Use **Re-run failed jobs**
+an existing version tag, for example after correcting signing secrets. Enter the full tag
+(for example `v0.1.0`, not `0.1.0`); the workflow does not create it. For the initial release,
+create and push `v0.1.0` from the prepared release commit first:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Pushing the tag starts the Android build automatically; a manual run is only needed to rebuild it.
+Selecting a branch in **Run workflow** does not replace the required tag.
+Use **Re-run failed jobs**
 for transient failures. Retrying a workflow replaces only its own platform's package and checksum
 file, leaving the other platform's downloads intact. New app versions must still use a new version
 and tag. A newly created draft is published after that platform's upload succeeds; the other
