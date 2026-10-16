@@ -45,3 +45,19 @@ Observed ack formats that differ from the app's assumptions (below) must be reco
   charging animation (confirmed by user on hardware). Whether the charging animation returns on
   re-plugging is not yet recorded.
 - Still to record: EndStream ack, brightness/display acks, larger chunk sizes, persistence after power cycle.
+
+## Battery-service inspection (2026-10-16, Pixel 9 Pro)
+
+- Connected to `iledcolor-947F` and enumerated GATT services without sending control commands.
+- Services: `1800` (Generic Access), `A950` (iLEDColor), and `AE00` (vendor-specific).
+- `1800` exposes readable/writable device name `2A00`; `A950` exposes write-without-response
+  `A951`/`A952` and notify `A953`; `AE00` exposes write-without-response `AE01` and notify `AE02`.
+- No standard Battery Service `180F` or Battery Level characteristic `2A19` is exposed.
+  Standard battery-level reads therefore cannot provide a percentage on this hat.
+- `AE00` carries the encrypted JieLi-style challenge/response channel (see `zagi/iledcolor_small`
+  `docs/protocol.md`); it is undecoded and not usable for queries.
+- Vendor app `com.led.iledcolor` v1.0.59, connected to `iledcolor-947F`, shows no battery level
+  anywhere: scan list (name, `16x32`, RSSI only), home screen, settings, and "Geräteinformationen"
+  (screen size `16*32`, colour type `3`, firmware `11`, serial `6`, uuid). The open-source
+  references (`zagi/iledcolor_small`, `winnerplace/ha-iledcolor-led-matrix`) have no battery command.
+- Conclusion: no known way to read the battery level from this hat, so the app does not show one.
