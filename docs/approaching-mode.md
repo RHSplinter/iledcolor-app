@@ -38,7 +38,37 @@ Both use the same Approach tab and engine; only the setup differs.
   Hub and P2P mix freely: a phone with 3 caps meeting a phone with 1 cap forms a group of 4.
 
 For a P2P spanned marquee all phones must use the same tier text/colours/speed, because each phone renders its
-own slice locally. Slice order follows phone IDs (not physical left/right) and start times are only roughly aligned.
+own slice locally. **Texts of nearby caps** shows each near cap's original text template, mode, colours and
+speed for the current group size. **Use text** saves that cap's full text settings for this group size on
+this phone. With two caps, select a matching text manually.
+
+With **three or more caps**, marquee mode automatically uses the marquee text that has a **majority**:
+more than half of all caps in the group propose it (for example 2 of 3, or 3 of 5; 2 of 5 is not enough).
+Without a majority, every phone keeps its own text and texts can be adopted manually.
+Each cap has one vote, including multiple caps controlled by a Master phone. Templates are compared exactly,
+before replacing `{me}`, `{other}`, etc. If several caps propose that text with different colours or speeds,
+the first cap in the shared phone-ID/cap order supplies those settings. The winning entries are marked
+**Majority · used automatically**. Ties keep this phone's own text and allow manual adoption.
+Individual greetings are not overridden or counted as marquee votes.
+
+The automatic choice is temporary: the original saved proposals keep their votes and are shared unchanged,
+so a temporary choice cannot turn itself into a manufactured majority. Leaving the group or changing tier
+re-evaluates the choice. Automatic selection waits for fresh content from every group member; missing text,
+an older app, or a failed transfer is shown explicitly and never treated as agreement.
+
+Texts are exchanged directly over Bluetooth, without a server or a connection to another person's cap.
+While approach mode and its beacon are on, the phone publishes a **read-only GATT service** containing the
+five group-size text configurations (not Create tab text, images or animations). Nearby app users can read
+these settings without pairing; do not use private text in these templates. Phones read the relevant tier
+over short-lived phone-to-phone connections while keeping their cap connections. A header checks the
+phone ID and content revision before and after each read; length-prefixed UTF-8 rejects incomplete reads.
+Successful reads are refreshed every 5 s when the Bluetooth queue permits, oldest reads first. Cached text
+expires after 15 s (or 5 s per nearby phone in larger groups, allowing a full read round), and failures retry
+after 30 s. Turning approach mode off removes the service and clears received texts.
+Both phones need the updated native app for text sharing. Existing beacons remain version-2 compatible;
+an older app can still participate in proximity detection, but its texts are unavailable.
+
+Slice order follows phone IDs (not physical left/right); start times are aligned to the phones' clocks (see Span mode).
 
 Hardware check (Pixel 9 Pro, release APK, one cap per phone): with only cap A connected, the phone grouped the
 still-unconnected cap B (2 caps → greeting uploaded to cap A). Connecting cap B elsewhere (it stops advertising, as when
@@ -64,7 +94,7 @@ another phone takes it) returned cap A to the solo content after ~9 s; releasing
 
 ### Span mode
 
-The text is rendered once as a wide strip. Each cap gets its slice as a looping animation with the same frame count and timing, at most 120 frames to stay within the cap's 64 KB transfer limit. Uploads to caps on the same phone run in parallel. Across phones, the start is aligned only by the shared settle time, so the marquee is close but not frame-accurate.
+The text is rendered once as a wide strip. Each cap gets its slice as a looping animation with the same frame count and timing, at most 120 frames to stay within the cap's 64 KB transfer limit. Uploads to caps on the same phone run in parallel. Playback of a cap starts when its upload ends, and uploads finish at different times (different phones, settle moments and GIF sizes). Unaligned slices look like a separate marquee on every cap, so the app sends the final EndStream only on a shared wall-clock boundary (a multiple of the loop period, with whole-centisecond frame delays). All caps of the group, on this and other phones, therefore start the loop together; across phones the accuracy follows the phones' clock sync (usually well under a second). This adds up to one loop period of waiting before a new marquee starts.
 
 The cap can play an animation too fast after its content changes, for example when a group separates and later re-forms with the same greeting. To avoid this, every animation upload first sends its first frame as a still image to stop the running animation. Every GIF also gets a random nonce in unused palette entries, so the cap never receives byte-identical content twice. The nonce does not change any pixel.
 

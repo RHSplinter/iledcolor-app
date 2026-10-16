@@ -6,6 +6,8 @@ export interface ApproachBeaconPlugin {
   /** `name` (≤ 20 UTF-8 bytes, see fitBeaconName) is sent in the scan response / iOS local name. */
   start(opts: { uuid: string; name?: string }): Promise<{ advertising: boolean }>;
   stop(): Promise<void>;
+  /** Header + five binary tier values, base64 encoded for the native bridge. Read-only nearby GATT service. */
+  publishContent(opts: { values: string[] }): Promise<void>;
   setKeepAwake(opts: { on: boolean }): Promise<void>;
   startMotion(): Promise<void>;
   stopMotion(): Promise<void>;

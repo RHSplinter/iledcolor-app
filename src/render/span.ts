@@ -10,6 +10,21 @@ export function spanStep(stripWidth: number, segWidth: number, total: number, mi
   return Math.max(minStep, Math.ceil(distance / MAX_SPAN_FRAMES));
 }
 
+/** Frame delay as stored in a GIF (whole centiseconds, ≥ 20 ms), so the loop period is exact. */
+export function gifDelayMs(ms: number): number {
+  return Math.max(20, Math.round(ms / 10) * 10);
+}
+
+/**
+ * Milliseconds until the next wall-clock multiple of `periodMs`. Caps of a spanning marquee
+ * (on this or other phones) start their loop on these shared boundaries so their slices stay in step.
+ */
+export function msUntilLoopStart(now: number, periodMs: number): number {
+  if (!(periodMs > 0)) return 0;
+  const r = now % periodMs;
+  return r === 0 ? 0 : periodMs - r;
+}
+
 /**
  * One marquee scrolling across `total` displays placed side by side. Returns the frames of
  * display `index` (0 = leftmost). Every display gets the same number of frames and the same

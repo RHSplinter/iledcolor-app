@@ -3,12 +3,15 @@ import type { RgbImage } from '../protocol/framing';
 import { encodeGif, gifNonce } from '../render/gif';
 import { drawPreview, parseHexColor } from '../render/matrix';
 import { ensureFont, renderSpanMarquee } from '../render/text';
+import { gifDelayMs, msUntilLoopStart } from '../render/span';
 import { loadKv, savePreset, saveKv } from '../storage/db';
 import type { Content, GroupContent } from '../storage/presets';
 import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
 import { MotionSupport } from './motionSupport';
+import { readPeerContent } from './contentExchange';
+import { CONTENT_REFRESH_MS, contentSnapshot, encodeTierContent } from './sharedContent';
 import { encodeBeacon, fitBeaconName } from './beaconCodec';
 import { dbmForMeters, formatMeters } from './distance';
 import { ApproachEngine, capLabel, defaultLabel, planFor, type Advertisement, type Assignment, type LocalCap, type Member, type Plan } from './engine';
@@ -51,7 +54,7 @@ interface CapEntry extends LocalCap {
   manualOff?: boolean;
   preview?: { frames: RgbImage[]; delays: number[] };
 }
-interface SimPeer { id: number; caps: number; rssi: number }
+interface SimPeer { id: number; caps: number; rssi: number; tiers: ApproachSettings['tiers'] }
 interface SavedCap { deviceId: string; bleName: string; label: string }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -81,6 +84,9 @@ let beaconBusy = false;
 let lastScanStart = 0;
 let lastHeard = 0;
 let scanBusy = false;
+let contentEpoch = 0;
+let contentRead: Promise<void> | undefined;
+const contentAttempts = new Map<number, { tier: TierId; at: number; failed: boolean }>();
 /** Some phones (e.g. Xiaomi: 5 min) silently downgrade long unfiltered scans; restart well before that. */
 const SCAN_RESTART_MS = 4 * 60_000;
 /** Restart the scan when nothing at all was received for this long. */
@@ -282,7 +288,8 @@ async function onConnectSaved() {
 // ---------- detection loop --------------------------------------------------------
 
 const beaconName = () => fitBeaconName(caps[0]?.customLabel || userName);
-const beaconSig = (now: number) => `${encodeBeacon(engine.beacon(now))}|${beaconName()}`;
+const base64 = (value: Uint8Array) => btoa(String.fromCharCode(...value));
+const beaconSig = (now: number) => `${encodeBeacon(engine.beacon(now))}|${beaconName()}|${base64(contentSnapshot(phoneId, settings.tiers)[0]!)}`;
 
 async function startBeacon() {
   if (!ctx.native) { beaconNote = settings.beacon ? 'Beacon needs the mobile app.' : ''; return; }
@@ -292,9 +299,12 @@ async function startBeacon() {
     if (!settings.beacon) { await ApproachBeacon.stop(); advertisedSig = ''; beaconNote = 'Beacon off.'; return; }
     const name = beaconName();
     const uuid = encodeBeacon(engine.beacon());
+    const values = contentSnapshot(phoneId, settings.tiers).map(base64);
+    await ApproachBeacon.publishContent({ values });
+    if (!running) { await ApproachBeacon.stop(); return; }
     await ApproachBeacon.start({ uuid, name: name || undefined });
     if (!running) { await ApproachBeacon.stop(); return; } // approach mode was switched off meanwhile
-    advertisedSig = `${uuid}|${name}`;
+    advertisedSig = `${uuid}|${name}|${values[0]}`;
     lastAdvertise = Date.now();
     beaconNote = `Beacon on${name ? ` as "${name}"` : ''} (phone ${phoneId.toString(16).padStart(8, '0')}, ${caps.length} cap${caps.length === 1 ? '' : 's'}).`;
   } catch (e) {
@@ -336,6 +346,9 @@ async function keepRadiosAlive(now: number) {
 async function start() {
   if (running) return;
   running = true;
+  contentEpoch++;
+  contentAttempts.clear();
+  engine.clearContent();
   engine.invalidate();
   caps.forEach((c) => (c.lastSig = undefined));
   note('approach mode started');
@@ -356,11 +369,14 @@ async function start() {
 async function stop() {
   if (!running) return;
   running = false;
+  contentEpoch++;
   clearInterval(loopTimer);
   pendingPlan = null;
   await motionSupport?.stop();
   engine.motion.reset();
   await ctx.stopScan();
+  await contentRead;
+  engine.clearContent();
   if (ctx.native) {
     await ApproachBeacon.stop().catch(() => undefined);
     void ApproachBeacon.setKeepAwake({ on: false }).catch(() => undefined);
@@ -391,13 +407,47 @@ async function loop() {
     }
   }));
   if (!running) return;
-  for (const p of simPeers)
+  for (const p of simPeers) {
     engine.onAdvertisement({ deviceId: `sim-${p.id}`, rssi: p.rssi + (Math.random() * 4 - 2), uuids: [encodeBeacon({ phoneId: p.id, capCount: p.caps, capHashes: [] })] }, now);
+  }
+  const tier = tierFor(engine.members(now).length);
+  for (const p of simPeers) engine.receiveContent(p.id, tier, p.tiers[tier], now);
+  refreshPeerContent(now, tier);
   for (const [id, n] of nearby) if (now - n.seen > 10000) nearby.delete(id);
   const plan = engine.tick(now);
   if (plan) schedule(plan);
   void keepRadiosAlive(now);
   renderStatusSoon();
+}
+
+/** One short-lived phone connection at a time, separate from the persistent cap connections. */
+function refreshPeerContent(now: number, tier: TierId) {
+  if (!ctx.native || ctx.mock || contentRead) return;
+  const peers = engine.contentPeers(now);
+  for (const id of contentAttempts.keys()) if (!peers.some((p) => p.phoneId === id)) contentAttempts.delete(id);
+  const peer = peers.filter((p) => {
+    const last = contentAttempts.get(p.phoneId);
+    return !last || last.tier !== tier || now - last.at >= (last.failed ? 30000 : CONTENT_REFRESH_MS);
+  }).sort((a, b) => (contentAttempts.get(a.phoneId)?.at ?? 0) - (contentAttempts.get(b.phoneId)?.at ?? 0))[0];
+  if (!peer) return;
+  const epoch = contentEpoch;
+  contentAttempts.set(peer.phoneId, { tier, at: now, failed: false });
+  contentRead = (async () => {
+    try {
+      const config = await readPeerContent(peer.deviceId, peer.phoneId, tier);
+      if (running && epoch === contentEpoch) engine.receiveContent(peer.phoneId, tier, config, Date.now());
+    } catch (e) {
+      if (running && epoch === contentEpoch) {
+        const message = `Text unavailable: ${(e as Error).message}. Keep both apps open and up to date; retrying.`;
+        engine.contentFailed(peer.phoneId, message);
+        contentAttempts.set(peer.phoneId, { tier, at: Date.now(), failed: true });
+        note(message);
+      }
+    } finally {
+      contentRead = undefined;
+      renderStatusSoon();
+    }
+  })();
 }
 
 function schedule(plan: Plan) {
@@ -421,7 +471,7 @@ async function applyPlan(plan: Plan) {
     const a = plan.perCap.get(c.key);
     if (!a) return;
     let sig: string;
-    let r: { frames: RgbImage[]; delays: number[] } | { image: RgbImage };
+    let r: { frames: RgbImage[]; delays: number[]; periodMs?: number } | { image: RgbImage };
     try {
       const content = a.kind === 'create' ? ctx.createContent() : undefined;
       sig = JSON.stringify(content ?? a);
@@ -432,8 +482,12 @@ async function applyPlan(plan: Plan) {
     if (c.controller.state !== 'Ready') { c.note = 'not connected; will update after reconnect'; return; }
     try {
       c.note = 'updating…'; renderCapsSoon();
-      if ('frames' in r) await c.controller.uploadGif(encodeGif(r.frames, r.delays, { nonce: gifNonce() }), r.frames[0]!.width, r.frames[0]!.height, r.frames[0]);
-      else await c.controller.upload(r.image);
+      if ('frames' in r) {
+        // A slice only reads as one marquee when all caps loop in phase: start playback on a shared clock boundary.
+        const period = r.periodMs;
+        const beforeEnd = period ? () => new Promise<void>((res) => setTimeout(res, msUntilLoopStart(Date.now(), period))) : undefined;
+        await c.controller.uploadGif(encodeGif(r.frames, r.delays, { nonce: gifNonce() }), r.frames[0]!.width, r.frames[0]!.height, r.frames[0], { beforeEnd });
+      } else await c.controller.upload(r.image);
       c.lastSig = sig;
       c.note = describe(a);
     } catch (e) {
@@ -448,7 +502,7 @@ async function applyPlan(plan: Plan) {
 
 const describe = (a: Assignment) => (a.kind === 'create' ? 'Create tab content' : a.kind === 'span' ? `span ${a.index + 1}/${a.total}: "${a.text}"` : `"${a.text}"`);
 
-async function renderAssignment(a: Assignment, content?: Content): Promise<{ frames: RgbImage[]; delays: number[] } | { image: RgbImage }> {
+async function renderAssignment(a: Assignment, content?: Content): Promise<{ frames: RgbImage[]; delays: number[]; periodMs?: number } | { image: RgbImage }> {
   if (a.kind === 'individual' || a.kind === 'create') {
     const selected: Content | undefined = a.kind === 'individual'
       ? { kind: 'text', text: a.text, fg: a.fg, bg: a.bg, speed: a.speed }
@@ -460,9 +514,9 @@ async function renderAssignment(a: Assignment, content?: Content): Promise<{ fra
   const [w, h] = ctx.logicalDims();
   const m = renderSpanMarquee(a.text, w, h, a.total, a.index, parseHexColor(a.fg), parseHexColor(a.bg));
   const frames = m.frames.map((f) => ctx.physical(f));
-  // Keep the visual speed of a normal marquee (2 px per frame) despite larger steps.
-  const delay = Math.round((ctx.marqueeDelay(a.speed) * m.step) / 2);
-  return { frames, delays: frames.map(() => delay) };
+  // Keep the visual speed of a normal marquee (2 px per frame) despite larger steps; whole centiseconds keep the period exact.
+  const delay = gifDelayMs((ctx.marqueeDelay(a.speed) * m.step) / 2);
+  return { frames, delays: frames.map(() => delay), periodMs: a.total > 1 ? frames.length * delay : undefined };
 }
 
 // ---------- rendering ------------------------------------------------------------
@@ -534,6 +588,13 @@ export function renderApproach() {
       ${ctx.mock ? '<div class="row"><button id="ap-sim-peer">Simulate nearby phone</button></div><ul class="list" id="ap-peers"></ul>' : ''}
     </div>
     <div class="card">
+      <h2>Texts of nearby caps</h2>
+      <p class="small">Compare texts for the current group size. Use another cap's text with its mode, colours and speed.</p>
+      <p class="small">While approach mode is on, nearby app users can read your group text settings over Bluetooth. Create tab images and animations are not shared.</p>
+      <p class="small" id="ap-text-choice" role="status"></p>
+      <ul class="list cap-texts" id="ap-texts"></ul>
+    </div>
+    <div class="card">
       <h2>Content per group size</h2>
       <p class="small">${esc(TEMPLATE_HELP)}</p>
       ${TIER_IDS.map(tierEditor).join('')}
@@ -578,7 +639,7 @@ export function renderApproach() {
   const savedBtn = document.getElementById('ap-saved');
   if (savedBtn) savedBtn.onclick = () => void onConnectSaved();
   const simBtn = document.getElementById('ap-sim-peer');
-  if (simBtn) simBtn.onclick = () => { simPeers.push({ id: (crypto.getRandomValues(new Uint32Array(1))[0]! || 1) >>> 0, caps: 1, rssi: -60 }); renderApproach(); };
+  if (simBtn) simBtn.onclick = () => { simPeers.push({ id: (crypto.getRandomValues(new Uint32Array(1))[0]! || 1) >>> 0, caps: 1, rssi: -60, tiers: structuredClone(settings.tiers) }); renderApproach(); };
   $<HTMLInputElement>('#ap-solo-create').onchange = (e) => {
     updateSettings({ ...settings, tiers: { ...settings.tiers, solo: { ...settings.tiers.solo, useCreate: (e.target as HTMLInputElement).checked } } });
     renderApproach();
@@ -662,6 +723,8 @@ function updateSettings(s: ApproachSettings) {
   engine.setSettings(settings);
   caps.forEach((c) => (c.lastSig = undefined));
   void persist();
+  if (running) void startBeacon();
+  renderGroupTexts();
 }
 
 function tierEditor(id: TierId): string {
@@ -709,6 +772,62 @@ function renderStatus() {
   if (ph) ph.innerHTML = engine.heardPhones(Date.now()).map((p) => `<li><span>${esc(p.label)} · ${p.id} · ${p.capCount} cap${p.capCount === 1 ? '' : 's'}</span><span>${formatMeters(p.rssi)} · ${p.rssi} dBm · ${p.mutual ? 'near (sees you)' : p.near ? 'near' : 'far'}</span></li>`).join('')
     || `<li class="muted">${running ? 'No other phone heard.' : 'Start approach mode to listen.'}</li>`;
   if (nb) nb.innerHTML = [...nearby.values()].sort((a, b) => b.rssi - a.rssi).map((n) => `<li><span>${esc(n.name)}</span><span>${formatMeters(n.rssi)} · ${n.rssi} dBm</span></li>`).join('') || '<li class="muted">None seen (connected caps often stop advertising).</li>';
+  renderGroupTexts();
+}
+
+function renderGroupTexts() {
+  const list = document.getElementById('ap-texts');
+  const status = document.getElementById('ap-text-choice');
+  if (!list || !status) return;
+  const choice = engine.groupTexts(Date.now());
+  const tier = tierFor(choice.rows.length);
+  const own = settings.tiers[tier];
+  const automatic = choice.winner && own.mode === 'span';
+  status.textContent = !running ? 'Start approach mode to compare nearby caps.'
+    : choice.rows.length === 0 ? 'No near caps yet.'
+    : automatic ? `${TIER_LABELS[tier]}: majority text used automatically (${choice.votes}/${choice.rows.length} caps). Your saved text is unchanged.`
+    : choice.rows.some((r) => !r.config) ? `${TIER_LABELS[tier]}: waiting for all cap texts. No automatic selection.`
+    : choice.rows.length <= 2 ? `${TIER_LABELS[tier]}: choose a text manually; automatic selection starts at 3 caps.`
+    : choice.tied ? `${TIER_LABELS[tier]}: tied texts. Choose a text manually.`
+    : own.mode === 'span' ? `${TIER_LABELS[tier]}: no text has a majority (more than half of the caps). Choose a text manually.`
+    : `${TIER_LABELS[tier]}: Individual mode keeps your own greeting. Automatic selection applies to marquee mode.`;
+  const rows = running ? choice.rows : [];
+  const markup = rows.map((row) => {
+    const c = row.config;
+    const winner = automatic && c?.mode === 'span' && c.text === choice.winner?.config?.text;
+    const same = c && base64(encodeTierContent(c)) === base64(encodeTierContent(own));
+    return `<li data-text-key="${esc(row.key)}"${winner ? ' class="text-selected"' : ''}>
+      <div class="cap-text-detail">
+        <b>${esc(row.label)}</b> <small class="muted">${row.local ? '(this phone)' : '(nearby)'}</small>
+        ${c ? `<p class="cap-text-value">${esc(c.text) || '<em>Empty text</em>'}</p>
+        <small class="muted">${c.mode === 'span' ? 'Marquee' : c.useCreate ? 'Create tab content; template not active' : 'Individual'} · ${esc(c.fg)} / ${esc(c.bg)} · speed ${c.speed}</small>`
+        : `<p class="small">${esc(row.unavailable ?? 'Text unavailable')}</p>`}
+        ${winner ? '<p class="text-choice-label">Majority · used automatically</p>' : ''}
+      </div>
+      ${c && !row.local ? `<button type="button" data-use-text="${esc(row.key)}" ${same ? 'disabled' : ''} aria-label="Use text from ${esc(row.label)}">${same ? 'Same settings' : 'Use text'}</button>` : ''}
+    </li>`;
+  }).join('') || '<li class="muted">No cap texts to compare.</li>';
+  // Do not replace focused buttons on every RSSI tick.
+  if (list.dataset.markup === markup) return;
+  list.dataset.markup = markup;
+  list.innerHTML = markup;
+  list.querySelectorAll<HTMLButtonElement>('[data-use-text]').forEach((button) => {
+    button.onclick = () => {
+      const current = engine.groupTexts(Date.now());
+      const row = current.rows.find((r) => r.key === button.dataset.useText);
+      if (!row?.config) { note('text no longer available; wait for the peer to reconnect'); renderGroupTexts(); return; }
+      const id = tierFor(current.rows.length);
+      const displayed = rows.find((r) => r.key === row.key)?.config;
+      if (id !== tier || !displayed || base64(encodeTierContent(displayed)) !== base64(encodeTierContent(row.config))) {
+        note('group or peer text changed; select the updated text');
+        renderGroupTexts();
+        return;
+      }
+      updateSettings({ ...settings, tiers: { ...settings.tiers, [id]: { ...row.config } } });
+      note(`adopted ${row.label}'s ${TIER_LABELS[id]} text`);
+      renderApproach();
+    };
+  });
 }
 
 function renderCaps() {
@@ -748,12 +867,17 @@ function renderCaps() {
   });
   const pl = document.getElementById('ap-peers');
   if (pl) {
-    pl.innerHTML = simPeers.map((p, i) => `<li data-i="${i}"><span>Phone ${defaultLabel(p.id, 0)} with <input type="number" data-act="caps" min="1" max="20" value="${p.caps}" style="width:4em" /> caps</span>
+    const tier = tierFor(engine.members(Date.now()).length);
+    pl.innerHTML = simPeers.map((p, i) => `<li data-i="${i}" class="sim-peer"><span>Phone ${defaultLabel(p.id, 0)} with <input type="number" data-act="caps" min="1" max="20" value="${p.caps}" style="width:4em" /> caps</span>
+      <label>Shared text (${esc(TIER_LABELS[tier])})<input type="text" data-act="text" maxlength="120" value="${esc(p.tiers[tier].text)}" /></label>
+      <label>Text mode<select data-act="mode"><option value="individual" ${p.tiers[tier].mode === 'individual' ? 'selected' : ''}>Individual</option><option value="span" ${p.tiers[tier].mode === 'span' ? 'selected' : ''}>Marquee</option></select></label>
       <label class="small">RSSI <input type="range" data-act="rssi" min="-100" max="-40" value="${p.rssi}" /></label><button data-act="del" class="danger">✕</button></li>`).join('');
     pl.querySelectorAll<HTMLLIElement>('li').forEach((li) => {
       const p = simPeers[Number(li.dataset.i)]!;
       li.querySelector<HTMLInputElement>('[data-act=caps]')!.onchange = (e) => { p.caps = Math.max(1, Math.min(20, Number((e.target as HTMLInputElement).value) || 1)); };
       li.querySelector<HTMLInputElement>('[data-act=rssi]')!.oninput = (e) => { p.rssi = Number((e.target as HTMLInputElement).value); };
+      li.querySelector<HTMLInputElement>('[data-act=text]')!.onchange = (e) => { p.tiers[tier].text = (e.target as HTMLInputElement).value; };
+      li.querySelector<HTMLSelectElement>('[data-act=mode]')!.onchange = (e) => { p.tiers[tier].mode = (e.target as HTMLSelectElement).value === 'span' ? 'span' : 'individual'; };
       li.querySelector<HTMLButtonElement>('[data-act=del]')!.onclick = () => { simPeers = simPeers.filter((x) => x !== p); renderApproach(); };
     });
   }

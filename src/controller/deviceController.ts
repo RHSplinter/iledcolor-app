@@ -9,6 +9,11 @@ export type DeviceState =
 
 export type UploadResult = 'confirmed' | 'sent-unconfirmed';
 
+export interface UploadOptions {
+  /** Awaited after the last chunk, right before EndStream (which starts playback), e.g. to align caps. */
+  beforeEnd?: () => Promise<void>;
+}
+
 export interface Timeouts { handshakeMs: number; startMs: number; chunkMs: number; endMs: number; controlMs: number }
 export const DEFAULT_TIMEOUTS: Timeouts = { handshakeMs: 2000, startMs: 2000, chunkMs: 500, endMs: 1000, controlMs: 500 };
 
@@ -159,12 +164,12 @@ export class DeviceController {
    * frame) is sent first as a static image: replacing a running animation directly can leave the
    * old playback running alongside the new one on the hat, which then plays visibly faster.
    */
-  async uploadGif(gif: Uint8Array, width: number, height: number, still?: RgbImage): Promise<UploadResult> {
+  async uploadGif(gif: Uint8Array, width: number, height: number, still?: RgbImage, opts: UploadOptions = {}): Promise<UploadResult> {
     const gifStream = buildGifStream(gif, width, height, this.profile.maxStreamBytes);
-    return this.uploadStreams(still ? [buildImageStream(still, this.profile.maxStreamBytes), gifStream] : [gifStream]);
+    return this.uploadStreams(still ? [buildImageStream(still, this.profile.maxStreamBytes), gifStream] : [gifStream], opts);
   }
 
-  private async uploadStreams(streams: { bytes: Uint8Array; crc: number }[]): Promise<UploadResult> {
+  private async uploadStreams(streams: { bytes: Uint8Array; crc: number }[], opts: UploadOptions = {}): Promise<UploadResult> {
     // Validate everything before any BLE write.
     const parts = streams.map(({ bytes, crc }) => ({
       start: buildStartStream(crc, bytes.length),
@@ -183,7 +188,7 @@ export class DeviceController {
       let result: UploadResult = 'confirmed';
       let sent = 0;
       try {
-        for (const { start, frames } of parts) {
+        for (const [index, { start, frames }] of parts.entries()) {
           this.checkCancel(epoch);
           await this.request(start, 'cmd', Cmd.START_STREAM, this.timeouts.startMs);
           for (let seq = 0; seq < frames.length; seq++) {
@@ -209,6 +214,10 @@ export class DeviceController {
             this.listeners.forEach((cb) => cb());
           }
           this.checkCancel(epoch);
+          if (index === parts.length - 1 && opts.beforeEnd) {
+            await opts.beforeEnd();
+            this.checkCancel(epoch);
+          }
           await this.request(end, 'data', Cmd.END_STREAM, this.timeouts.endMs);
         }
       } catch (e) {
