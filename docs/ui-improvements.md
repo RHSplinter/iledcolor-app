@@ -60,3 +60,11 @@ The release is 0.2.1 (Android/iOS build 2002), synchronized by the existing vers
 The release-workflow test normalizes CRLF before extracting its Bash block so the same
 checks run on Windows and Linux. Android publication uses the existing signed GitHub
 Actions release workflow and a matching `v0.2.1` tag, not an unsigned/debug fallback.
+
+The first tagged build exposed an SDK provisioning failure before compilation:
+`android-actions/setup-android@v3` defaults to `tools platform-tools`, but Google's SDK
+repository no longer supplies the legacy `tools` package. The workflow now requests
+`platform-tools` explicitly, while keeping the explicit Android 36 / build-tools 35
+installation. A regression test covers that package selection. The failed release tag
+is not moved: after merging the workflow correction, a manual run of the corrected
+workflow from main can build the unchanged `v0.2.1` application sources.

@@ -73,6 +73,14 @@ test('CLI checks the tag, lockfile and native metadata and synchronizes a versio
   assert.equal(run('--check', '--tag', 'v1.2.3').status, 0);
 });
 
+test('Android setup uses supported SDK packages without the removed tools package', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const setup = workflow.match(/      - uses: android-actions\/setup-android@v3\n([\s\S]*?)(?=      - )/);
+  assert.ok(setup, 'Android SDK setup must be present');
+  assert.match(setup[1], /packages: platform-tools\n/);
+  assert.ok(workflow.includes('sdkmanager "platforms;android-36" "build-tools;35.0.0"'));
+});
+
 test('Android manual releases normalize and validate the tag before checkout', (t) => {
   const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const validation = workflow.match(/      - name: Validate manual release tag\n([\s\S]*?)      - uses: actions\/checkout@v4/);
