@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LED Hat listens for sounds and spoken phrases to trigger the effects you enable. Audio is processed on this device.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>LED Hat recognizes your selected spoken phrases on this device to trigger cap effects.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>LED Hat uses the camera to scan badge QR codes and greet the scanned person on your cap.</string>
 	<key>NSMotionUsageDescription</key>

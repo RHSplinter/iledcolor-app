@@ -20,6 +20,7 @@ import { listenForShares, withShareLink } from '../approach/contentExchange';
 import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
 import { shareTextFile } from './shareFile';
 import { GreetingUi } from '../scanner/ui';
+import { SoundUi } from '../sound/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -43,6 +44,7 @@ let imageDataUrl = '';
 let renderSeq = 0;
 let savedCreateContent: Content | undefined;
 let scanner: GreetingUi | undefined;
+let sound: SoundUi | undefined;
 
 function profileFor(s: Settings): TransportProfile {
   return { ...SPIKE_PROFILE, chunkSize: s.chunkSize, interWriteDelayMs: s.interWriteDelayMs };
@@ -64,6 +66,7 @@ const sharedCap = () => native || useMock;
 const watched = new WeakSet<DeviceController>();
 function onPrimaryChange(p: PrimaryCap | null) {
   scanner?.stopCamera();
+  void sound?.stop();
   if (p) {
     controller = p.controller;
     deviceName = p.name;
@@ -92,6 +95,7 @@ function renderStatus() {
   if (prog && p) { prog.max = p.total; prog.value = p.sent; }
   updateButtons();
   scanner?.updateStatus();
+  sound?.updateStatus();
 }
 
 function updateButtons() {
@@ -103,7 +107,7 @@ function updateButtons() {
   set('btn-disconnect', s === 'Disconnected');
   set('btn-send', !ready || !lastImage);
   const help = document.getElementById('send-help');
-  if (help) help.textContent = controller.temporaryActive ? 'Wait for the QR greeting to finish before sending.'
+  if (help) help.textContent = controller.temporaryActive ? 'Wait for the current cap reaction to finish before sending.'
     : !ready ? 'Connect your hat above to send content. You can edit and preview offline.'
     : !lastImage ? 'Choose valid content to enable sending.' : 'Preview ready. Send it to your connected hat.';
   set('btn-test-color', !ready); set('btn-test-corner', !ready);
@@ -695,8 +699,9 @@ function showTab(name: string) {
     b.setAttribute('aria-selected', String(selected));
     b.tabIndex = selected ? 0 : -1;
   });
-  for (const v of ['connect', 'approach', 'scan', 'settings']) $(`#view-${v}`).hidden = v !== name;
+  for (const v of ['connect', 'approach', 'scan', 'sound', 'settings']) $(`#view-${v}`).hidden = v !== name;
   if (name !== 'scan') scanner?.stopCamera();
+  if (name !== 'sound') void sound?.stop();
   if (name === 'settings') void renderPresets();
   if (name === 'approach') renderApproach();
   window.scrollTo(0, 0);
@@ -763,6 +768,8 @@ async function main() {
   renderCreate();
   scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
   await scanner.init();
+  sound = new SoundUi({ controller: () => controller, logicalDims, physical });
+  await sound.init();
   $('#tab-approach').hidden = !approachAvailable;
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));
   $('#tab-bar').onkeydown = (event) => {

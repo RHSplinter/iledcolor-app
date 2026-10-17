@@ -2,8 +2,8 @@
 
 ## App navigation
 
-The native apps have four icon tabs: **Connect**, **Approach**, **Scan**, and
-**Settings** (the gear icon at the far right). The web app has **Connect**, **Scan**
+The native apps have five icon tabs: **Connect**, **Approach**, **Scan**, **Sound**, and
+**Settings** (the gear icon at the far right). The web app has **Connect**, **Scan**, **Sound**
 and **Settings**; native-only Approach detection is not offered in the browser.
 The same source supplies the content editor, scan-first layout, settings, accessible
 tab navigation and responsive controls on Android, iOS and web.
@@ -15,6 +15,8 @@ tab navigation and responsive controls on Android, iOS and web.
   physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
 - **Scan:** the scan/stop/end-greeting actions, camera and status come first, followed by
   the profile selector, QR profile editor, greeting settings, manual entry, and scan-log/privacy controls.
+- **Sound:** opt-in applause/whistle detection, wearer voice sampling, English/German
+  phrase reactions, pocket-pause settings, dictionary and editable animation text.
 - **Settings:** saved presets and category-based sharing/import, then display brightness/on/off,
   expandable test patterns and protocol log, and rotation/mirroring/transport settings.
   Loading a content preset opens Connect; loading a group preset opens Approach.
@@ -35,7 +37,63 @@ and backup/import remain available without Bluetooth. Camera scanning requires H
 and permission. Imported native group presets are retained and can be exported again,
 but cannot be loaded in the browser. Nearby BLE sharing is native-only; JSON file
 sharing/download remains available on web. The `#mock` development mode deliberately
-keeps all four tabs for simulated Approach scenarios.
+keeps all five tabs for simulated Approach scenarios.
+
+## Sound and voice reactions
+
+**Sound** is available on Android, iOS and web. Connect the primary cap and send
+content first, then tap **Start listening**. Applause and whistles trigger coloured
+scrolling-text GIF animations on that cap only. Phrase categories cover greetings,
+farewells, approval, food, thanks, questions, coffee breaks and celebrations.
+Each category can be disabled and its animation text edited; **Preview animation**
+works offline without a microphone or cap, and **Test on cap** exercises playback
+and restoration without listening. Reactions use the existing temporary-content
+controller, restore the previous content, skip busy/QR-greeting periods and apply
+a 10-second cooldown. **End reaction** restores early. Firmware playback timing
+and physical display behaviour still require real-cap verification.
+
+Phrases are off by default. First record a **12-second voice sample** in a quiet
+place, then enable phrases and select **English** or **Deutsch** for the conversation.
+The editable reaction list includes a built-in bilingual dictionary, including
+“hello / guten Morgen”, “bye / tschüss”, “awesome / toll”, “food / Frühstück”
+and conference phrases. Matching uses whole words and prefers longer phrases.
+The recognizer listens in one selected language at a time; it does not switch
+languages automatically.
+
+The local **experimental wearer filter** compares pitch and acoustic cepstral
+features throughout the recognized utterance with the saved sample. Missing audio,
+insufficient clear speech or a mismatch rejects the phrase; a match from an earlier,
+unrelated utterance is not enough. This is **not a trained speaker-embedding model,
+biometric authentication or a guarantee of wearer-only activation**. Similar voices,
+replays, microphone position and conference noise can cause false acceptance or
+rejection. Applause and whistle recognition is likewise a conservative acoustic
+heuristic, not a trained sound-event classifier; music, beeps and other noise may
+trigger it. Other people's applause intentionally does not need a wearer match.
+
+| Platform | Audio and speech | Pocket detection |
+| --- | --- | --- |
+| Android | App-local `SoundDetection` plugin captures mono PCM. Phrase recognition requires Android 13+, a compatible on-device speech service, and an installed model for the chosen language; older/unsupported devices can use room sounds and voice sampling. No minimum-SDK increase. | Optional hardware proximity sensor; unavailable sensors are reported. |
+| iOS | App-local `SoundDetection` plugin uses AVAudioEngine and on-device-only Speech recognition. Microphone and, for phrases, speech permissions are required. Unsupported/unavailable language models reject speech startup rather than using server recognition. | UIDevice proximity monitoring on supported devices; commonly unavailable on iPads. |
+| Web/PWA | HTTPS/localhost, Web Audio/AudioWorklet and microphone permission are required. Speech also requires browser SpeechRecognition support and explicit **Allow browser speech recognition** consent: the browser provider may process audio remotely and require internet. Sound detection and voice sampling are local. | Not available: browsers do not expose a reliable proximity sensor here. Automatic pocket pause is disabled, not simulated. |
+
+**Pause recognition while the phone is in a pocket** is on by default where a
+sensor exists. A covered sensor lasting at least 500 ms pauses sound analysis
+and phrase reactions; uncovering clears stale audio and resumes them. Microphone
+capture remains active while paused. With the option off, a covered-sensor warning
+explains that muffling may reduce accuracy. Proximity is only an indication:
+a hand or nearby object can cover it too.
+
+Listening stops when leaving Sound, hiding/locking the app, losing microphone
+access, or tapping Stop. There is no background recording service or background
+entitlement. Keep the app foregrounded through cap playback/restoration.
+The app persists only sound settings and a local acoustic voice template, not raw
+audio or transcripts. **Delete voice sample** removes the template; audio buffers
+are cleared when stopped. These settings/template are not exported in preset
+backups. Browser speech-provider privacy policies apply if that service is enabled.
+Native plugins are registered directly in MainActivity/AppViewController, so they
+do not appear as npm plugins in `cap ls`; rebuild the native app after synchronizing.
+Native permissions, language-service support, proximity screen-off behaviour and
+speaker/noise accuracy must still be verified on physical phones.
 
 ### App icons
 

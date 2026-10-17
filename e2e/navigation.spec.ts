@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test';
 
-test('four icon tabs keep content on Connect and device controls on Settings', async ({ page }) => {
+test('five icon tabs keep content on Connect and device controls on Settings', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/#mock');
   await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
   const tabs = page.getByRole('tab');
-  await expect(tabs).toHaveCount(4);
+  await expect(tabs).toHaveCount(5);
   expect(await tabs.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-tab'))))
-    .toEqual(['connect', 'approach', 'scan', 'settings']);
+    .toEqual(['connect', 'approach', 'scan', 'sound', 'settings']);
   for (const tab of await tabs.all()) await expect(tab.locator('svg')).toHaveCount(1);
   await expect(page.locator('#view-create, #view-presets')).toHaveCount(0);
   await expect(page.locator('#c-kind')).toBeVisible();
@@ -90,7 +90,7 @@ test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async 
   for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 },
     { width: 844, height: 390 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
-    for (const name of ['Connect', 'Approach', 'Scan', 'Settings']) {
+    for (const name of ['Connect', 'Approach', 'Scan', 'Sound', 'Settings']) {
       await page.getByRole('tab', { name, exact: true }).click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const tab = await page.getByRole('tab', { name, exact: true }).boundingBox();
@@ -104,7 +104,7 @@ test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async 
   }
   await page.setViewportSize({ width: 360, height: 800 });
   await page.addStyleTag({ content: 'body { font-size:32px; }' });
-  for (const name of ['Connect', 'Approach', 'Scan', 'Settings']) {
+  for (const name of ['Connect', 'Approach', 'Scan', 'Sound', 'Settings']) {
     await page.getByRole('tab', { name, exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
