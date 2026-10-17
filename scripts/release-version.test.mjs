@@ -74,7 +74,7 @@ test('CLI checks the tag, lockfile and native metadata and synchronizes a versio
 });
 
 test('Android manual releases normalize and validate the tag before checkout', (t) => {
-  const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8');
+  const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const validation = workflow.match(/      - name: Validate manual release tag\n([\s\S]*?)      - uses: actions\/checkout@v4/);
   assert.ok(validation, 'manual tag validation must run before checkout');
   assert.ok(validation[1].includes("if: github.event_name == 'workflow_dispatch'"));

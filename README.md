@@ -1,5 +1,27 @@
 # Local Android LED Hat Controller
 
+## App navigation
+
+The bottom navigation has four icon tabs: **Connect**, **Approach**, **Scan**, and
+**Settings** (the gear icon at the far right).
+
+- **Connect:** connect/disconnect your primary cap, then create text, solid colours,
+  images or GIFs, preview and send them, or save a content preset. There is no separate Create tab.
+- **Approach:** configure greetings and group content, compare nearby texts, calibrate
+  detection and record/replay walks. Every spanning **Marquee** choice is marked **unstable**:
+  physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
+- **Scan:** the scan/stop/end-greeting actions, camera and status come first, followed by
+  the profile selector, QR profile editor, greeting settings, manual entry, and scan-log/privacy controls.
+- **Settings:** saved presets and category-based sharing/import, then display brightness/on/off,
+  expandable test patterns and protocol log, and rotation/mirroring/transport settings.
+  Loading a content preset opens Connect; loading a group preset opens Approach.
+
+The UI retains its dark theme and blue accent, with larger touch targets, visible keyboard
+focus, arrow/Home/End tab navigation, a non-colour selected-tab marker, responsive form
+grids and wrapping long preset names. Diagnostics are expandable, not removed.
+Existing stored content, settings, QR profiles, backup formats and BLE preset sharing are preserved.
+See [the UI change record](docs/ui-improvements.md) for the expert review and implementation details.
+
 ## Native apps and approach mode
 
 Besides the PWA, the project builds **Android** and **iOS** apps (Capacitor, `android/` and `ios/`) with the same features plus **Approach mode**: when caps come close, they show greetings for each other or one marquee spanning all caps, configurable for 1, 2, up to 4, up to 8, and more than 8 caps. While approach mode runs, presets can also be shared with a nearby phone; the receiver must accept the preset before it is transferred. See [docs/approaching-mode.md](docs/approaching-mode.md) for the detection design and [docs/INSTALL.md](docs/INSTALL.md) for building the APK.
@@ -132,7 +154,7 @@ GitHub Actions must be enabled, and repository/organization policy must allow th
 
 ### Versioning and publishing
 
-`package.json` is the version source (currently **0.2.0**), with `package-lock.json` kept in sync.
+`package.json` is the version source (currently **0.2.1**), with `package-lock.json` kept in sync.
 The npm `version` hook updates Android's `versionName` and iOS's `MARKETING_VERSION`, plus both
 native build numbers. Only stable `MAJOR.MINOR.PATCH` versions are supported (no prerelease/build
 suffixes). The build number is `MAJOR * 1000000 + MINOR * 1000 + PATCH + 1`: `0.2.0` becomes

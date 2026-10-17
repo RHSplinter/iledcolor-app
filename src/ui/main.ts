@@ -101,6 +101,10 @@ function updateButtons() {
   set('btn-connect', busy || ready || controller.temporaryActive);
   set('btn-disconnect', s === 'Disconnected');
   set('btn-send', !ready || !lastImage);
+  const help = document.getElementById('send-help');
+  if (help) help.textContent = controller.temporaryActive ? 'Wait for the QR greeting to finish before sending.'
+    : !ready ? 'Connect your hat above to send content. You can edit and preview offline.'
+    : !lastImage ? 'Choose valid content to enable sending.' : 'Preview ready. Send it to your connected hat.';
   set('btn-test-color', !ready); set('btn-test-corner', !ready);
   set('btn-disp-on', !ready); set('btn-disp-off', !ready);
   set('brightness', !ready);
@@ -137,6 +141,15 @@ function renderConnect() {
       <p class="small">Close other controller apps first. Android will ask for Bluetooth permission the first time you connect.</p>
       <p class="small" id="install-help" hidden>To install: Chrome menu → Install app / Add to Home screen.</p>
     </div>
+    <div id="content-editor"></div>`;
+  $('#btn-connect').onclick = onConnect;
+  $('#btn-disconnect').onclick = () => (sharedCap() ? disconnectPrimary() : controller.disconnect());
+  renderStatus();
+}
+
+function renderDeviceSettings() {
+  const root = $('#settings-device');
+  root.innerHTML = `
     <div class="card">
       <h2>Display</h2>
       <label for="brightness">Dimming level: <b id="bval">${settings.brightness}</b> (0 = brightest, 10 = dimmest) <span id="bstate" class="small">${esc(brightnessNote)}</span></label>
@@ -144,33 +157,31 @@ function renderConnect() {
       <p class="small">Mapping and "dimmest ≠ off" are unverified on this hat. Start dim for the first tests.</p>
       <div class="row"><button id="btn-disp-on">Display on</button><button id="btn-disp-off">Display off</button><span id="dstate" class="small">${esc(displayNote)}</span></div>
     </div>
-    <div class="card">
-      <h2>Test patterns (dim, static)</h2>
+    <details class="card">
+      <summary>Test patterns (dim, static)</summary>
       <div class="row"><button id="btn-test-color">Solid red</button><button id="btn-test-corner">Corner test</button></div>
       <p class="small">Corner test: red top-left (double width), green top-right, blue bottom-left, white bottom-right.</p>
-    </div>
-    <div class="card">
-      <h2>Protocol log</h2>
+    </details>
+    <details class="card">
+      <summary>Protocol log</summary>
       <div class="row"><button id="btn-copylog">Copy log</button><button id="btn-clearlog">Clear</button></div>
       <pre id="trace" class="small" style="max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all">${esc(traceLog.join('\n'))}</pre>
-    </div>
+    </details>
     <div class="card">
       <h2>Device settings</h2>
       <label for="s-rot">Rotation</label>
       <select id="s-rot">${[0, 90, 180, 270].map((r) => `<option ${r === settings.transform.rotation ? 'selected' : ''}>${r}</option>`).join('')}</select>
       <label><input type="checkbox" id="s-mh" ${settings.transform.mirrorH ? 'checked' : ''}/> Mirror horizontally</label>
       <label><input type="checkbox" id="s-mv" ${settings.transform.mirrorV ? 'checked' : ''}/> Mirror vertically</label>
-      <div class="row">
+      <div class="form-grid">
         <div><label for="s-chunk">Chunk bytes</label><input id="s-chunk" type="number" min="1" max="512" value="${settings.chunkSize}" /></div>
         <div><label for="s-delay">Write delay ms</label><input id="s-delay" type="number" min="0" max="1000" value="${settings.interWriteDelayMs}" /></div>
       </div>
       <p class="small">Chunk size and delay apply on the next connection. Only raise them after testing on the hat.</p>
     </div>`;
 
-  $('#btn-connect').onclick = onConnect;
   $('#btn-copylog').onclick = () => navigator.clipboard?.writeText(traceLog.join('\n'));
   $('#btn-clearlog').onclick = () => { traceLog.length = 0; $('#trace').textContent = ''; };
-  $('#btn-disconnect').onclick = () => (sharedCap() ? disconnectPrimary() : controller.disconnect());
   $('#btn-test-color').onclick = () => sendImage(solid(settings.width, settings.height, [255, 0, 0]));
   $('#btn-test-corner').onclick = () => sendImage(physical(cornerTest(...logicalDims())));
   $('#btn-disp-on').onclick = () => control('display', () => controller.setDisplay(true), (n) => (displayNote = n), 'dstate', 'On');
@@ -260,8 +271,9 @@ function logicalDims(): [number, number] {
 function physical(img: RgbImage): RgbImage { return transformImage(img, settings.transform); }
 
 function renderCreate() {
-  $('#view-create').innerHTML = `
+  $('#content-editor').innerHTML = `
     <div class="card">
+      <h2>Create content</h2>
       <label for="c-kind">Content</label>
       <select id="c-kind"><option value="text">Text</option><option value="solid">Solid color</option><option value="image">Image (PNG/JPEG/GIF)</option></select>
       <div id="c-text">
@@ -282,9 +294,11 @@ function renderCreate() {
       <p id="c-err" class="bad small"></p>
       <canvas id="preview" aria-label="Pixel preview"></canvas>
       <div class="row"><button id="btn-send" class="primary" disabled>Send to hat</button><button id="btn-cancel" class="danger" hidden>Cancel</button></div>
-      <progress id="progress" hidden value="0" max="1"></progress>
-      <p id="send-note" class="small">${esc(sendNote)}</p>
-      <div class="row"><input id="c-name" type="text" placeholder="Preset name" maxlength="60" style="flex:1" /><button id="btn-save">Save preset</button></div>
+      <p id="send-help" class="small"></p>
+      <progress id="progress" aria-label="Content upload progress" hidden value="0" max="1"></progress>
+      <p id="send-note" class="small" role="status">${esc(sendNote)}</p>
+      <label for="c-name">Preset name</label>
+      <div class="row preset-save"><input id="c-name" type="text" placeholder="e.g. My greeting" maxlength="60" /><button id="btn-save">Save preset</button></div>
     </div>`;
   $('#c-kind').onchange = () => { syncKind(); void refreshPreview(); };
   ['#c-str', '#c-fg', '#c-bg', '#c-fit', '#c-speed'].forEach((s) => ($(s).oninput = () => void refreshPreview()));
@@ -316,7 +330,7 @@ function syncKind() {
 
 function currentContent(): Content {
   if (!document.getElementById('c-kind')) {
-    if (!savedCreateContent) throw new Error('Choose content on the Create tab first.');
+    if (!savedCreateContent) throw new Error('Choose content on the Connect tab first.');
     return savedCreateContent;
   }
   const k = $<HTMLSelectElement>('#c-kind').value;
@@ -362,7 +376,7 @@ async function refreshPreview(content?: Content) {
     if (seq !== renderSeq) return;
     savedCreateContent = selected;
     createContentChanged();
-    void saveKv('createContent', selected).catch((e) => { $('#c-err').textContent = `Could not save Create content: ${(e as Error).message}`; });
+    void saveKv('createContent', selected).catch((e) => { $('#c-err').textContent = `Could not save Connect content: ${(e as Error).message}`; });
     lastImage = image;
     lastFrames = frames ?? null;
     lastDelays = delays ?? [];
@@ -438,7 +452,7 @@ async function savePresetClick() {
 const backupSelection: ShareSelection = { creations: true, approach: true, scan: true };
 
 async function renderPresets(message = '') {
-  const root = $('#view-presets');
+  const root = $('#settings-presets');
   let presets: Preset[] = [];
   let err = '';
   try { presets = await listPresets(); } catch (e) { err = (e as Error).message; }
@@ -447,7 +461,7 @@ async function renderPresets(message = '') {
     <div class="card">
       <h2>Presets</h2>
       ${err ? `<p class="bad">${esc(err)}</p>` : ''}
-      <ul class="list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? 'group content' : p.content.kind}</small></span><button data-act="load">Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || '<li class="muted">No presets yet.</li>'}</ul>
+      <ul class="list preset-list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? 'group content' : p.content.kind}</small></span><button data-act="load">Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || '<li class="muted">No presets yet. Save content on Connect or a group preset on Approach to find it here.</li>'}</ul>
     </div>
     <div class="card">
       <h2>Backup</h2>
@@ -473,7 +487,7 @@ async function renderPresets(message = '') {
     try {
       const { image } = await renderContent(p.content);
       lastImage = image;
-      showTab('create');
+      showTab('connect');
       setCreateFrom(p.content);
       await refreshPreview(p.content);
     } catch (e) { $('#p-msg').textContent = (e as Error).message; }
@@ -518,6 +532,8 @@ async function renderPresets(message = '') {
       if (data.version === 1) settings = data.settings;
       if (nextApproach) applyImportedApproachSettings(nextApproach);
       if (data.qrProfiles) await scanner?.importProfiles(data.qrProfiles);
+      renderDeviceSettings();
+      await refreshPreview();
       await renderPresets(data.version === 1
         ? `Imported ${data.presets.length} presets and ${data.qrProfiles.profiles.length} QR profiles. Restart the connection to apply transport settings.`
         : `Imported shared categories.${data.qrProfiles ? ` Imported ${data.qrProfiles.profiles.length} QR profiles.` : ''} Other presets and settings were kept.`);
@@ -653,7 +669,7 @@ function initShareReceiver() {
       incomingNote = `Saved preset "${p.name}"${o.fromName ? ` from ${o.fromName}` : ''}.`;
       setTimeout(() => {
         renderSharePrompt();
-        if (!$('#view-presets').hidden) void renderPresets();
+        if (!$('#view-settings').hidden) void renderPresets();
       }, 0);
     },
     onClosed: (o, _state, message) => { incomingNote = `Preset "${o.name}" not received: ${message}`; renderSharePrompt(); },
@@ -671,11 +687,16 @@ function setCreateFrom(c: Content) {
 // ---------- tabs, offline, install, updates ---------------------------------------
 
 function showTab(name: string) {
-  document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  for (const v of ['connect', 'create', 'presets', 'approach', 'scan']) $(`#view-${v}`).hidden = v !== name;
+  document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => {
+    const selected = b.dataset.tab === name;
+    b.setAttribute('aria-selected', String(selected));
+    b.tabIndex = selected ? 0 : -1;
+  });
+  for (const v of ['connect', 'approach', 'scan', 'settings']) $(`#view-${v}`).hidden = v !== name;
   if (name !== 'scan') scanner?.stopCamera();
-  if (name === 'presets') void renderPresets();
+  if (name === 'settings') void renderPresets();
   if (name === 'approach') renderApproach();
+  window.scrollTo(0, 0);
 }
 
 function setupPwa() {
@@ -731,14 +752,27 @@ async function main() {
   try {
     const saved = await loadKv('createContent');
     if (saved !== undefined) savedCreateContent = validateContent(saved);
-  } catch (e) { banner(`<b>Could not restore Create content:</b> ${esc((e as Error).message)}`); }
+  } catch (e) { banner(`<b>Could not restore Connect content:</b> ${esc((e as Error).message)}`); }
   await initApproach(approachContext());
   initShareReceiver();
   renderConnect();
+  renderDeviceSettings();
   renderCreate();
   scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
   await scanner.init();
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));
+  $('#tab-bar').onkeydown = (event) => {
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('nav button')];
+    const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    if (index < 0) return;
+    const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+      : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    showTab(tabs[next]!.dataset.tab!);
+    tabs[next]!.focus();
+  };
   setupPwa();
   void requestPersistence();
 }

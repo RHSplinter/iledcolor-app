@@ -35,7 +35,7 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   await page.reload();
   await page.click('#btn-connect');
   await expect(page.locator('#status')).toContainText('Ready');
-  await page.click('nav [data-tab=create]');
+  await page.click('nav [data-tab=connect]');
   await page.selectOption('#c-kind', 'solid');
   await page.click('#btn-send');
   await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
@@ -94,7 +94,7 @@ test('a greeting pauses only the primary cap while approach updates keep reachin
 test('regex errors leave content alone and settings persist without badge data', async ({ page }) => {
   await page.goto('/#mock');
   await page.click('#btn-connect');
-  await page.click('nav [data-tab=create]');
+  await page.click('nav [data-tab=connect]');
   await page.selectOption('#c-kind', 'solid');
   await page.click('#btn-send');
   await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
@@ -158,7 +158,7 @@ test('saves three QR profiles with notes, restores them on reload, and supports 
   await expect(page.locator('#qr-error')).toContainText('All three profile slots are in use');
 
   await page.selectOption('#qr-profile', '3');
-  await page.click('nav [data-tab=presets]');
+  await page.click('nav [data-tab=settings]');
   const downloadPromise = page.waitForEvent('download');
   await page.click('#btn-export');
   const download = await downloadPromise;
@@ -174,7 +174,7 @@ test('saves three QR profiles with notes, restores them on reload, and supports 
   await expect(page.locator('#qr-profile option')).toHaveCount(3);
   await expect(page.locator('#qr-profile')).toHaveValue('');
 
-  await page.click('nav [data-tab=presets]');
+  await page.click('nav [data-tab=settings]');
   await page.locator('#p-import').setInputFiles(backupPath);
   await expect(page.locator('#p-msg')).toContainText('3 QR profiles');
   await page.click('nav [data-tab=scan]');
@@ -186,6 +186,8 @@ test('saves three QR profiles with notes, restores them on reload, and supports 
 test('scan logging is opt-in, persists, includes failed manual entries, and stops when disabled', async ({ page }) => {
   await page.goto('/#mock');
   await page.click('#btn-connect');
+  await page.click('nav [data-tab=settings]');
+  await page.getByText('Test patterns (dim, static)', { exact: true }).click();
   await page.click('#btn-test-color');
   await expect(page.locator('#status')).toContainText('Ready');
   await page.click('nav [data-tab=scan]');
@@ -218,6 +220,8 @@ test('scan logging is opt-in, persists, includes failed manual entries, and stop
 
   await page.click('nav [data-tab=connect]');
   await page.click('#btn-connect');
+  await page.click('nav [data-tab=settings]');
+  await page.getByText('Test patterns (dim, static)', { exact: true }).click();
   await page.click('#btn-test-color');
   await expect(page.locator('#status')).toContainText('Ready');
   await page.click('nav [data-tab=scan]');

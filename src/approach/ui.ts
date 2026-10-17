@@ -536,14 +536,14 @@ async function applyPlan(plan: Plan) {
   renderStatus();
 }
 
-const describe = (a: Assignment) => (a.kind === 'create' ? 'Create tab content' : a.kind === 'span' ? `span ${a.index + 1}/${a.total}: "${a.text}"` : `"${a.text}"`);
+const describe = (a: Assignment) => (a.kind === 'create' ? 'Connect tab content' : a.kind === 'span' ? `span ${a.index + 1}/${a.total} (unstable): "${a.text}"` : `"${a.text}"`);
 
 async function renderAssignment(a: Assignment, content?: Content): Promise<{ frames: RgbImage[]; delays: number[]; periodMs?: number } | { image: RgbImage }> {
   if (a.kind === 'individual' || a.kind === 'create') {
     const selected: Content | undefined = a.kind === 'individual'
       ? { kind: 'text', text: a.text, fg: a.fg, bg: a.bg, speed: a.speed }
       : content;
-    if (!selected) throw new Error('Choose content on the Create tab first.');
+    if (!selected) throw new Error('Choose content on the Connect tab first.');
     const r = await ctx.renderContent(selected);
     return r.frames ? { frames: r.frames, delays: r.delays ?? r.frames.map(() => 100) } : { image: r.image };
   }
@@ -596,7 +596,7 @@ export function renderApproach() {
       <h2>Approach mode</h2>
       ${available ? '' : '<p class="warn">Approach mode needs the Android or iOS app (BLE scanning, several cap connections and a phone beacon are not available to web apps).</p>'}
       ${ctx.mock ? '<p class="warn">Mock mode: caps and nearby phones are simulated; use the RSSI sliders.</p>' : ''}
-      <p class="small">Caps that come close are grouped; every cap then shows the content configured for the group size, either a personal greeting or one marquee running across all caps.</p>
+      <p class="small">Caps that come close are grouped; every cap then shows the content configured for the group size, either a personal greeting or one marquee (unstable) running across all caps.</p>
       <label for="ap-name">Your name</label>
       <input id="ap-name" type="text" maxlength="16" value="${esc(userName)}" placeholder="${esc(defaultLabel(phoneId, 0))}" autocomplete="nickname" />
       <p class="small">Shown on other phones and used in their greetings (e.g. "Hi ${esc(userName || 'Anna')}!"). Your caps are labelled with it unless you rename them below.</p>
@@ -613,7 +613,7 @@ export function renderApproach() {
     <div class="card">
       <h2>${hub ? 'Caps on this phone' : 'Your cap'}</h2>
       ${hub
-        ? `<p class="small">A cap accepts one Bluetooth connection. Connect all caps this phone controls. Order = left-to-right position for spanning marquees. Cap 1 is the cap of the Connect tab.</p>
+        ? `<p class="small">A cap accepts one Bluetooth connection. Connect all caps this phone controls. Order = left-to-right position for spanning marquees (unstable). Cap 1 is the cap of the Connect tab.</p>
       <div class="row">
         <button id="ap-add" ${available ? '' : 'disabled'}>Add cap</button>
         <button id="ap-saved" ${available && !ctx.mock ? '' : 'disabled'}>Connect saved caps</button>
@@ -626,7 +626,7 @@ export function renderApproach() {
     <div class="card">
       <h2>Texts of nearby caps</h2>
       <p class="small">Compare texts for the current group size. Use another cap's text with its mode, colours and speed.</p>
-      <p class="small">While approach mode is on, nearby app users can read your group text settings over Bluetooth. Create tab images and animations are not shared.</p>
+      <p class="small">While approach mode is on, nearby app users can read your group text settings over Bluetooth. Connect tab images and animations are not shared.</p>
       <p class="small" id="ap-text-choice" role="status"></p>
       <ul class="list cap-texts" id="ap-texts"></ul>
     </div>
@@ -634,12 +634,13 @@ export function renderApproach() {
       <h2>Content per group size</h2>
       <p class="small">${esc(TEMPLATE_HELP)}</p>
       ${TIER_IDS.map(tierEditor).join('')}
-      <div class="row"><input id="ap-preset-name" type="text" placeholder="Preset name" maxlength="60" style="flex:1" /><button id="ap-preset-save">Save as preset</button></div>
-      <p id="ap-preset-msg" class="small">Saved group presets appear on the Presets tab and are included in export/import.</p>
+      <label for="ap-preset-name">Group preset name</label>
+      <div class="row preset-save"><input id="ap-preset-name" type="text" placeholder="e.g. Festival greetings" maxlength="60" /><button id="ap-preset-save">Save as preset</button></div>
+      <p id="ap-preset-msg" class="small" role="status">Saved group presets appear on the Settings tab and are included in share/import.</p>
     </div>
     <div class="card">
       <h2>Detection</h2>
-      <div class="row">
+      <div class="form-grid">
         <div><label for="ap-enter">Near at ≥ dBm</label><input id="ap-enter" type="number" min="-110" max="-20" value="${settings.enterDbm}" /><span class="small" id="ap-enter-m">${formatMeters(settings.enterDbm)}</span></div>
         <div><label for="ap-leave">Away below dBm</label><input id="ap-leave" type="number" min="-120" max="-20" value="${settings.leaveDbm}" /><span class="small" id="ap-leave-m">${formatMeters(settings.leaveDbm)}</span></div>
         <div><label for="ap-settle">Settle s</label><input id="ap-settle" type="number" min="0" max="30" step="0.5" value="${settings.settleMs / 1000}" /></div>
@@ -718,6 +719,7 @@ export function renderApproach() {
       else if (field === 'mode') t.mode = el.value === 'span' ? 'span' : 'individual';
       else t[field] = el.value;
       updateSettings({ ...settings, tiers: { ...settings.tiers, [id]: t } });
+      if (field === 'mode') $(`[data-marquee-warning="${id}"]`).hidden = t.mode !== 'span';
     }));
   }
   $('#ap-preset-save').onclick = async () => {
@@ -807,17 +809,18 @@ function updateSettings(s: ApproachSettings, save = true) {
 function tierEditor(id: TierId): string {
   const t = settings.tiers[id];
   return `<fieldset class="tier" data-tier-box="${id}"><legend>${esc(TIER_LABELS[id])}</legend>
-    ${id === 'solo' ? `<label class="switch"><input type="checkbox" id="ap-solo-create" ${t.useCreate ? 'checked' : ''} /> Use Create tab content</label>
-    <p class="small">Use your text, color, image or animation from Create when alone, and restore it when approach mode is switched off.</p>` : ''}
+    ${id === 'solo' ? `<label class="switch"><input type="checkbox" id="ap-solo-create" ${t.useCreate ? 'checked' : ''} /> Use Connect tab content</label>
+    <p class="small">Use your text, color, image or animation from Connect when alone, and restore it when approach mode is switched off.</p>` : ''}
     <div ${id === 'solo' && t.useCreate ? 'hidden' : ''}>
     <div class="row">
       <select data-tier="${id}" data-field="mode" aria-label="${esc(TIER_LABELS[id])} mode">
         <option value="individual" ${t.mode === 'individual' ? 'selected' : ''}>Individual (greeting per cap)</option>
-        <option value="span" ${t.mode === 'span' ? 'selected' : ''}>Marquee across all caps</option>
+        <option value="span" ${t.mode === 'span' ? 'selected' : ''}>Marquee across all caps (unstable)</option>
       </select>
       <input type="color" data-tier="${id}" data-field="fg" value="${t.fg}" aria-label="text color" />
       <input type="color" data-tier="${id}" data-field="bg" value="${t.bg}" aria-label="background" />
     </div>
+    <p class="warn small" data-marquee-warning="${id}" ${t.mode === 'span' ? '' : 'hidden'}>Marquee is unstable: physical cap order and playback synchronization may differ. Use Individual for reliable greetings.</p>
     <input type="text" data-tier="${id}" data-field="text" maxlength="120" value="${esc(t.text)}" aria-label="${esc(TIER_LABELS[id])} text" />
     <label class="small">Speed <input type="range" min="1" max="10" data-tier="${id}" data-field="speed" value="${t.speed}" /></label>
     </div>
@@ -990,7 +993,7 @@ function renderGroupTexts() {
     : choice.rows.length <= 2 ? `${TIER_LABELS[tier]}: choose a text manually; automatic selection starts at 3 caps.`
     : choice.tied ? `${TIER_LABELS[tier]}: tied texts. Choose a text manually.`
     : own.mode === 'span' ? `${TIER_LABELS[tier]}: no text has a majority (more than half of the caps). Choose a text manually.`
-    : `${TIER_LABELS[tier]}: Individual mode keeps your own greeting. Automatic selection applies to marquee mode.`;
+    : `${TIER_LABELS[tier]}: Individual mode keeps your own greeting. Automatic selection applies to marquee mode (unstable).`;
   const rows = running ? choice.rows : [];
   const markup = rows.map((row) => {
     const c = row.config;
@@ -1000,7 +1003,7 @@ function renderGroupTexts() {
       <div class="cap-text-detail">
         <b>${esc(row.label)}</b> <small class="muted">${row.local ? '(this phone)' : '(nearby)'}</small>
         ${c ? `<p class="cap-text-value">${esc(c.text) || '<em>Empty text</em>'}</p>
-        <small class="muted">${c.mode === 'span' ? 'Marquee' : c.useCreate ? 'Create tab content; template not active' : 'Individual'} · ${esc(c.fg)} / ${esc(c.bg)} · speed ${c.speed}</small>`
+        <small class="muted">${c.mode === 'span' ? 'Marquee (unstable)' : c.useCreate ? 'Connect tab content; template not active' : 'Individual'} · ${esc(c.fg)} / ${esc(c.bg)} · speed ${c.speed}</small>`
         : `<p class="small">${esc(row.unavailable ?? 'Text unavailable')}</p>`}
         ${winner ? '<p class="text-choice-label">Majority · used automatically</p>' : ''}
       </div>
@@ -1070,7 +1073,7 @@ function renderCaps() {
     const tier = tierFor(engine.members(Date.now()).length);
     pl.innerHTML = simPeers.map((p, i) => `<li data-i="${i}" class="sim-peer"><span>Phone ${defaultLabel(p.id, 0)} with <input type="number" data-act="caps" min="1" max="20" value="${p.caps}" style="width:4em" /> caps</span>
       <label>Shared text (${esc(TIER_LABELS[tier])})<input type="text" data-act="text" maxlength="120" value="${esc(p.tiers[tier].text)}" /></label>
-      <label>Text mode<select data-act="mode"><option value="individual" ${p.tiers[tier].mode === 'individual' ? 'selected' : ''}>Individual</option><option value="span" ${p.tiers[tier].mode === 'span' ? 'selected' : ''}>Marquee</option></select></label>
+      <label>Text mode<select data-act="mode"><option value="individual" ${p.tiers[tier].mode === 'individual' ? 'selected' : ''}>Individual</option><option value="span" ${p.tiers[tier].mode === 'span' ? 'selected' : ''}>Marquee (unstable)</option></select></label>
       <label class="small">RSSI <input type="range" data-act="rssi" min="-100" max="-40" value="${p.rssi}" /></label><button data-act="del" class="danger">✕</button></li>`).join('');
     pl.querySelectorAll<HTMLLIElement>('li').forEach((li) => {
       const p = simPeers[Number(li.dataset.i)]!;

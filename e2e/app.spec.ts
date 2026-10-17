@@ -10,7 +10,7 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
   await page.click('#btn-connect');
   await expect(page.locator('#status')).toContainText('Ready');
 
-  await page.click('nav [data-tab=create]');
+  await page.click('nav [data-tab=connect]');
   await page.fill('#c-str', 'Hi');
   await expect(page.locator('#btn-send')).toBeEnabled();
   await page.click('#btn-send');
@@ -18,14 +18,14 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
 
   await page.fill('#c-name', 'Greeting');
   await page.click('#btn-save');
-  await page.click('nav [data-tab=presets]');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('ul.list li').first()).toContainText('Greeting');
 
   // Offline relaunch: cached shell loads and presets are still editable.
   await context.setOffline(true);
   await page.reload();
   await expect(page.locator('#status')).toBeVisible();
-  await page.click('nav [data-tab=presets]');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('ul.list li').first()).toContainText('Greeting');
   await page.click('nav [data-tab=connect]');
   await page.click('#btn-connect');
@@ -36,7 +36,7 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
 
 test('rejects a corrupt preset import visibly', async ({ page }) => {
   await page.goto('/#mock');
-  await page.click('nav [data-tab=presets]');
+  await page.click('nav [data-tab=settings]');
   await page.setInputFiles('#p-import', { name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{nope') });
   await expect(page.locator('#p-msg')).toContainText('Import failed');
 });
@@ -53,7 +53,7 @@ test('group content presets: save, export, load', async ({ page }) => {
   await pairText.fill('Something else');
   await pairText.dispatchEvent('change');
 
-  await page.click('nav [data-tab=presets]');
+  await page.click('nav [data-tab=settings]');
   const item = page.locator('ul.list li', { hasText: 'Bavarian' });
   await expect(item).toContainText('group content');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
@@ -66,7 +66,7 @@ test('group content presets: save, export, load', async ({ page }) => {
   await expect(pairText).toHaveValue('Servus {other}!');
 
   // Import restores group presets too.
-  await page.click('nav [data-tab=presets]');
+  await page.click('nav [data-tab=settings]');
   await item.locator('[data-act=del]').click();
   await expect(page.locator('ul.list li', { hasText: 'Bavarian' })).toHaveCount(0);
   await page.setInputFiles('#p-import', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
@@ -77,7 +77,7 @@ test('group content presets: save, export, load', async ({ page }) => {
 test('share categories: scan-only file excludes creations and approach content, import preserves them', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#mock');
-  await page.click('nav [data-tab=create]');
+  await page.click('nav [data-tab=connect]');
   await page.fill('#c-name', 'Keep this creation');
   await page.click('#btn-save');
   await page.click('nav [data-tab=approach]');
@@ -87,7 +87,7 @@ test('share categories: scan-only file excludes creations and approach content, 
   await page.locator('#ap-enter').dispatchEvent('change');
   await page.fill('#ap-preset-name', 'Keep this group');
   await page.click('#ap-preset-save');
-  await page.click('nav [data-tab=presets]');
+  await page.click('nav [data-tab=settings]');
   await page.getByLabel('Creations', { exact: false }).uncheck();
   await page.getByLabel('Approach settings', { exact: false }).uncheck();
   await page.getByLabel('Scan settings', { exact: false }).uncheck();
@@ -111,10 +111,10 @@ test('share categories: scan-only file excludes creations and approach content, 
   await expect(page.locator('[data-tier=pair][data-field=text]')).toHaveValue('Keep my greeting');
 });
 
-test('solo uses Create content, restores it after approaching, and remembers the choice', async ({ page }) => {
+test('solo uses Connect content, restores it after approaching, and remembers the choice', async ({ page }) => {
   await page.goto('/#mock');
   await page.click('#btn-connect');
-  await page.click('nav [data-tab=create]');
+  await page.click('nav [data-tab=connect]');
   await page.selectOption('#c-kind', 'solid');
   await page.locator('#c-fg').fill('#ff0000');
   await page.click('nav [data-tab=approach]');
@@ -123,28 +123,28 @@ test('solo uses Create content, restores it after approaching, and remembers the
   await page.fill('#ap-settle', '0');
   await page.locator('#ap-settle').dispatchEvent('change');
   await page.check('#ap-start');
-  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Create tab content', { timeout: 15000 });
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Connect tab content', { timeout: 15000 });
   const pixel = () => page.locator('#ap-caps canvas').evaluate((cv: HTMLCanvasElement) =>
     Array.from(cv.getContext('2d')!.getImageData(1, 1, 1, 1).data).slice(0, 3));
   await expect.poll(pixel).toEqual([255, 0, 0]);
   await page.click('#ap-sim-peer');
   await expect(page.locator('#ap-caps .cap-note')).toContainText('Hi ', { timeout: 15000 });
   await page.locator('#ap-peers [data-act=rssi]').fill('-100');
-  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Create tab content', { timeout: 15000 });
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Connect tab content', { timeout: 15000 });
   await expect.poll(pixel).toEqual([255, 0, 0]);
-  await page.click('nav [data-tab=create]');
+  await page.click('nav [data-tab=connect]');
   await page.locator('#c-fg').fill('#00ff00');
   await page.click('nav [data-tab=approach]');
   await expect.poll(pixel, { timeout: 15000 }).toEqual([0, 255, 0]);
   await page.locator('#ap-peers [data-act=rssi]').fill('-50');
   await expect(page.locator('#ap-caps .cap-note')).toContainText('Hi ', { timeout: 15000 });
   await page.uncheck('#ap-start');
-  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Create tab content', { timeout: 15000 });
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Connect tab content', { timeout: 15000 });
   await expect.poll(pixel).toEqual([0, 255, 0]);
   await page.reload();
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-solo-create')).toBeChecked();
-  await page.click('nav [data-tab=create]');
+  await page.click('nav [data-tab=connect]');
   await expect(page.locator('#c-kind')).toHaveValue('solid');
   await expect(page.locator('#c-fg')).toHaveValue('#00ff00');
 });

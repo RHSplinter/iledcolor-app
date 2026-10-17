@@ -13,20 +13,30 @@
     <div id="offline" class="pill muted">Checking offline…</div>
   </header>
   <div id="banner" hidden></div>
-  <div id="share-prompt" role="alertdialog" aria-live="assertive" hidden></div>
+  <div id="share-prompt" role="region" aria-label="Incoming preset transfer" aria-live="polite" hidden></div>
   <main>
-    <section id="view-connect" class="view"></section>
-    <section id="view-create" class="view" hidden></section>
-    <section id="view-presets" class="view" hidden></section>
-    <section id="view-approach" class="view" hidden></section>
-    <section id="view-scan" class="view" hidden></section>
+    <section id="view-connect" class="view" role="tabpanel" aria-labelledby="tab-connect"></section>
+    <section id="view-approach" class="view" role="tabpanel" aria-labelledby="tab-approach" hidden></section>
+    <section id="view-scan" class="view" role="tabpanel" aria-labelledby="tab-scan" hidden></section>
+    <section id="view-settings" class="view" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <h1>Settings</h1>
+      <div id="settings-presets"></div>
+      <div id="settings-device"></div>
+    </section>
   </main>
-  <nav>
-    <button data-tab="connect" aria-selected="true">Connect</button>
-    <button data-tab="create" aria-selected="false">Create</button>
-    <button data-tab="presets" aria-selected="false">Presets</button>
-    <button data-tab="approach" aria-selected="false">Approach</button>
-    <button data-tab="scan" aria-selected="false">Scan</button>
+  <nav id="tab-bar" role="tablist" aria-label="Main navigation">
+    <button id="tab-connect" role="tab" data-tab="connect" aria-controls="view-connect" aria-selected="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg><span>Connect</span>
+    </button>
+    <button id="tab-approach" role="tab" data-tab="approach" aria-controls="view-approach" aria-selected="false" tabindex="-1">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="6" r="3"/><circle cx="19" cy="6" r="3"/><path d="M1 21v-4a4 4 0 0 1 8 0v4m6 0v-4a4 4 0 0 1 8 0v4M9 10l3 3 3-3m-3 3V7"/></svg><span>Approach</span>
+    </button>
+    <button id="tab-scan" role="tab" data-tab="scan" aria-controls="view-scan" aria-selected="false" tabindex="-1">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 12h18"/><path d="M7 7h3v3H7zm7 7h3v3h-3z"/></svg><span>Scan</span>
+    </button>
+    <button id="tab-settings" role="tab" data-tab="settings" aria-controls="view-settings" aria-selected="false" tabindex="-1" aria-label="Settings" title="Settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-1 3 2 3h3l2 3h3l1-3 3-1 2-3-2-2 1-3-2-3h-3l-2-3z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
   </nav>
   <script type="module" src="/src/ui/main.ts"></script>
 </body>

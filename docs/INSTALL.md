@@ -65,8 +65,10 @@ or TestFlight build.
 
 ## First use on the hat
 
-Read `docs/compatibility-report.md` and complete it before relying on the app. Start at a dim level,
-use **Corner test**, fix orientation in Device settings, then tick "Dimensions verified".
+Read `docs/compatibility-report.md` and complete it before relying on the app. Connect your cap
+on **Connect**, then open **Settings** (the rightmost gear). Start at a dim level in **Display**,
+expand **Test patterns (dim, static)** to use **Corner test**, and fix orientation in **Device settings**.
+Create, preview and send regular content below the connection controls on **Connect**.
 
 Mock mode for development: open `/#mock`.
 
