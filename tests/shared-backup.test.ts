@@ -4,27 +4,45 @@ import { DEFAULT_APPROACH } from '../src/approach/tiers';
 import { DEFAULT_SETTINGS, exportJson, type ContentPreset, type GroupPreset } from '../src/storage/presets';
 import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSelection } from '../src/storage/sharedBackup';
 import { listPresets, loadKv, loadSettings, restoreBackup } from '../src/storage/db';
+import { DEFAULT_GREETING } from '../src/scanner/greeting';
 
 const creation: ContentPreset = { id: 'creation', name: 'Hello', updatedAt: 1, content: { kind: 'solid', color: '#ffffff' } };
 const group: GroupPreset = { id: 'group', name: 'Party', updatedAt: 2, groups: structuredClone(DEFAULT_APPROACH.tiers) };
-const all = { creations: true, approach: true, scan: true };
+const all = { creations: true, approach: true, scan: true, settings: true };
 const localCreation = { ...creation, id: 'local-creation' };
 const localGroup = { ...group, id: 'local-group' };
+const profiles = { selectedId: '1', profiles: [{ id: '1', note: 'Conference', pattern: '^(.+)$', template: 'Hello {name}!' }] };
+const features = {
+  settings: { ...DEFAULT_SETTINGS, brightness: 3, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90 as const, mirrorH: true, mirrorV: true } },
+  createContent: { kind: 'text' as const, text: 'Current draft', fg: '#123456', bg: '#654321', speed: 9 },
+  qrGreeting: { pattern: 'name=(.+)', template: 'Welcome {name}!', repetitions: 17, speed: 8 },
+  qrScanLogging: true,
+};
+const approach = { ...DEFAULT_APPROACH, mode: 'hub' as const, beacon: false, countNearbyCaps: false, enterDbm: -62, settleMs: 4500 };
 
 describe('selected backup categories', () => {
-  for (let flags = 1; flags < 8; flags++) {
-    const selection: ShareSelection = { creations: !!(flags & 1), approach: !!(flags & 2), scan: !!(flags & 4) };
+  for (let flags = 1; flags < 16; flags++) {
+    const selection: ShareSelection = { creations: !!(flags & 1), approach: !!(flags & 2), scan: !!(flags & 4), settings: !!(flags & 8) };
     it(`round-trips selection ${JSON.stringify(selection)} without excluded categories`, () => {
-      const json = exportSelectedJson([creation, group], DEFAULT_APPROACH, selection);
+      const json = exportSelectedJson([creation, group], approach, selection, profiles, features);
       const data = parseSharedBackup(json);
       expect(data.version).toBe(2);
       if (data.version !== 2) throw new Error('Wrong version');
       expect(data.creations).toEqual(selection.creations ? [creation] : undefined);
-      expect(data.approach).toEqual(selection.approach ? { groups: DEFAULT_APPROACH.tiers, presets: [group] } : undefined);
-      expect(data.scan).toEqual(selection.scan ? {
-        enterDbm: -70, leaveDbm: -75, settleMs: 2000, confirmMs: 1000, staleMs: 8000,
+      expect(data.approach).toEqual(selection.approach ? {
+        groups: approach.tiers, presets: [group], mode: 'hub', beacon: false, countNearbyCaps: false,
       } : undefined);
-      expect(json).not.toContain('"settings"'); // Device settings and identity are never shared.
+      expect(data.scan).toEqual(selection.scan ? {
+        enterDbm: -62, leaveDbm: -75, settleMs: 4500, confirmMs: 1000, staleMs: 8000,
+      } : undefined);
+      expect(data.settings).toEqual(selection.settings ? features.settings : undefined);
+      expect(data.createContent).toEqual(selection.creations ? features.createContent : undefined);
+      expect(data.qrProfiles).toEqual(selection.scan ? profiles : undefined);
+      expect(data.qrGreeting).toEqual(selection.scan ? features.qrGreeting : undefined);
+      expect(data.qrScanLogging).toEqual(selection.scan ? true : undefined);
+      for (const excluded of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'qr-scan-log', 'qr-raw']) {
+        expect(json).not.toContain(excluded);
+      }
       const merged = mergeSharedPresets([localCreation, localGroup], data);
       expect(merged).toHaveLength(2);
       expect(merged).toContainEqual(selection.creations ? creation : localCreation);
@@ -35,6 +53,38 @@ describe('selected backup categories', () => {
   it('requires at least one category', () => {
     expect(() => exportSelectedJson([], DEFAULT_APPROACH, { creations: false, approach: false, scan: false })).toThrow(/Choose/);
     expect(() => parseSharedBackup('{"app":"iledcolor-app","version":2}')).toThrow(/No shared categories/);
+    expect(() => exportSelectedJson([], DEFAULT_APPROACH, { creations: false, approach: false, scan: false, settings: true }))
+      .toThrow(/settings are unavailable/);
+  });
+
+  it('keeps older version-2 files importable without inventing absent preferences', () => {
+    const data = parseSharedBackup(JSON.stringify({
+      app: 'iledcolor-app', version: 2, creations: [creation],
+      approach: { groups: DEFAULT_APPROACH.tiers, presets: [group] },
+      scan: { enterDbm: -70, leaveDbm: -75, settleMs: 2000, confirmMs: 1000, staleMs: 8000 },
+    }));
+    expect(data.version).toBe(2);
+    if (data.version !== 2) throw new Error('Wrong version');
+    expect(data.approach).toEqual({ groups: DEFAULT_APPROACH.tiers, presets: [group] });
+    expect(data.createContent).toBeUndefined();
+    expect(data.settings).toBeUndefined();
+    expect(data.qrGreeting).toBeUndefined();
+    expect(data.qrScanLogging).toBeUndefined();
+    expect(data.qrProfiles).toBeUndefined();
+  });
+
+  it('preserves an explicitly disabled logging preference', () => {
+    const data = parseSharedBackup(exportSelectedJson([], approach, { creations: false, approach: false, scan: true },
+      undefined, { qrScanLogging: false }));
+    if (data.version !== 2) throw new Error('Wrong version');
+    expect(data.qrScanLogging).toBe(false);
+  });
+
+  it('does not validate excluded feature settings', () => {
+    const data = parseSharedBackup(exportSelectedJson([], approach, { creations: true, approach: false, scan: false },
+      profiles, { qrGreeting: { ...DEFAULT_GREETING, repetitions: 0 } }));
+    if (data.version !== 2) throw new Error('Wrong version');
+    expect(data.qrGreeting).toBeUndefined();
   });
 
   it('distinguishes an empty included category from an excluded one', () => {
@@ -44,9 +94,9 @@ describe('selected backup categories', () => {
 
   it('shares QR profiles only when scan settings are selected', () => {
     const profiles = { selectedId: null, profiles: [] };
-    const withScan = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, all, profiles));
+    const withScan = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, all, profiles, features));
     expect(withScan.qrProfiles).toEqual(profiles);
-    const withoutScan = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, { ...all, scan: false }, profiles));
+    const withoutScan = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, { ...all, scan: false }, profiles, features));
     expect(withoutScan.qrProfiles).toBeUndefined();
     expect(() => parseSharedBackup(JSON.stringify({
       app: 'iledcolor-app', version: 2, creations: [], qrProfiles: profiles,
@@ -60,7 +110,7 @@ describe('selected backup categories', () => {
   });
 
   it('rejects malformed or misplaced categories, duplicates, and invalid group content', () => {
-    const file = JSON.parse(exportSelectedJson([creation, group], DEFAULT_APPROACH, all));
+    const file = JSON.parse(exportSelectedJson([creation, group], DEFAULT_APPROACH, all, undefined, features));
     const invalid = [
       { ...file, creations: [group] },
       { ...file, creations: null },
@@ -82,6 +132,27 @@ describe('selected backup categories', () => {
     }
   });
 
+  it('rejects invalid feature preferences and preferences without their category', () => {
+    const file = JSON.parse(exportSelectedJson([creation, group], approach, all, profiles, features));
+    const invalid = [
+      { ...file, qrGreeting: null },
+      { ...file, qrGreeting: { ...features.qrGreeting, pattern: '(' } },
+      { ...file, qrGreeting: { ...features.qrGreeting, repetitions: 0 } },
+      { ...file, qrGreeting: { ...features.qrGreeting, speed: 11 } },
+      { ...file, qrScanLogging: 'true' },
+      { ...file, settings: { ...features.settings, brightness: -1 } },
+      { ...file, createContent: { kind: 'solid', color: 'red' } },
+      { ...file, approach: { ...file.approach, mode: 'unknown' } },
+      { ...file, approach: { ...file.approach, beacon: 1 } },
+      { ...file, approach: { ...file.approach, countNearbyCaps: null } },
+      { ...file, approach: { ...file.approach, mode: 'p2p', beacon: false } },
+      { app: file.app, version: 2, creations: [], qrGreeting: features.qrGreeting },
+      { app: file.app, version: 2, creations: [], qrScanLogging: false },
+      { app: file.app, version: 2, scan: file.scan, createContent: features.createContent },
+    ];
+    for (const raw of invalid) expect(() => parseSharedBackup(JSON.stringify(raw))).toThrow();
+  });
+
   it('does not overwrite an excluded preset with a colliding ID', () => {
     const data = parseSharedBackup(exportSelectedJson([{ ...creation, id: localGroup.id }], DEFAULT_APPROACH, { creations: true, approach: false, scan: false }));
     expect(() => mergeSharedPresets([localGroup], data)).toThrow(/conflicts/);
@@ -89,11 +160,50 @@ describe('selected backup categories', () => {
 
   it('rejects exports that are too large to import', () => {
     const huge = { ...creation, name: 'x'.repeat(4 * 1024 * 1024) };
-    expect(() => exportSelectedJson([huge], DEFAULT_APPROACH, all)).toThrow(/4 MB/);
+    expect(() => exportSelectedJson([huge], DEFAULT_APPROACH, all, undefined, features)).toThrow(/4 MB/);
   });
 });
 
 describe('saving an imported backup', () => {
+  it('persists all feature preferences together and retains omitted preferences', async () => {
+    await restoreBackup([creation, group], features.settings, approach, { ...features, qrProfiles: profiles });
+    expect(await loadSettings()).toEqual(features.settings);
+    expect(await loadKv('approach')).toEqual(approach);
+    expect(await loadKv('createContent')).toEqual(features.createContent);
+    expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
+    expect(await loadKv('qrGreetingProfiles')).toEqual(profiles);
+    expect(await loadKv('qrScanLogging')).toBe(true);
+    await restoreBackup([localCreation], undefined, undefined, { qrScanLogging: false });
+    expect(await loadKv('qrScanLogging')).toBe(false);
+    expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
+    expect(await loadKv('qrGreetingProfiles')).toEqual(profiles);
+    expect(await loadKv('createContent')).toEqual(features.createContent);
+    expect(await loadSettings()).toEqual(features.settings);
+    expect(await loadKv('approach')).toEqual(approach);
+  });
+
+  it('rolls back every category if a scanner preference cannot be saved', async () => {
+    await restoreBackup([creation], features.settings, approach, { ...features, qrProfiles: profiles });
+    const original = IDBObjectStore.prototype.put;
+    const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+      if (key === 'qrScanLogging') throw new DOMException('Scanner write failed', 'DataCloneError');
+      return original.call(this, value, key);
+    });
+    try {
+      await expect(restoreBackup([localCreation], DEFAULT_SETTINGS, DEFAULT_APPROACH, {
+        createContent: creation.content, qrProfiles: { selectedId: null, profiles: [] },
+        qrGreeting: DEFAULT_GREETING, qrScanLogging: false,
+      })).rejects.toThrow(/Scanner write failed/);
+    } finally { put.mockRestore(); }
+    expect(await listPresets()).toEqual([creation]);
+    expect(await loadSettings()).toEqual(features.settings);
+    expect(await loadKv('approach')).toEqual(approach);
+    expect(await loadKv('createContent')).toEqual(features.createContent);
+    expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
+    expect(await loadKv('qrGreetingProfiles')).toEqual(profiles);
+    expect(await loadKv('qrScanLogging')).toBe(true);
+  });
+
   it('saves presets and optional settings together, retaining omitted settings', async () => {
     const settings = { ...DEFAULT_SETTINGS, brightness: 3 };
     const approach = { ...DEFAULT_APPROACH, enterDbm: -62 };

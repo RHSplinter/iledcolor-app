@@ -23,6 +23,12 @@ export interface GreetingProfileState {
   profiles: GreetingProfile[];
 }
 
+export interface ScannerBackup {
+  qrProfiles?: GreetingProfileState;
+  qrGreeting?: GreetingSettings;
+  qrScanLogging?: boolean;
+}
+
 export const DEFAULT_GREETING: GreetingSettings = {
   pattern: '',
   template: 'Hi {name}!',

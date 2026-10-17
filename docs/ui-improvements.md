@@ -12,7 +12,7 @@ text, scroll speed, foreground/background colour, solid colour, image/GIF input 
 preview, send/cancel/progress, and preset saving.
 
 Settings retains the preset list, content/group preset loading and deletion, native BLE
-sharing, all three backup categories, share/import, and storage status. It also contains
+sharing, all four backup categories, share/import, and storage status. It also contains
 everything previously below the connection card: Display, Test patterns, Protocol log,
 and Device settings. Test patterns and Protocol log are expandable native disclosures;
 their controls and live updates remain mounted. Brightness, display power, transforms,
