@@ -4,17 +4,12 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing release version or tag (e.g. 0.1.0 or v0.1.0), matching package.json
-        required: true
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: mobile-release-android-${{ inputs.tag || github.ref_name }}
+  group: mobile-release-android-${{ github.ref_name }}
   cancel-in-progress: false
 
 defaults:
@@ -27,33 +22,35 @@ jobs:
     timeout-minutes: 30
     outputs:
       tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.version.outputs.commit }}
     steps:
-      - name: Validate manual release tag
-        id: release_tag
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          RELEASE_TAG="v${RELEASE_TAG#v}"
-          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "::error::Release must use MAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH (for example 0.1.0 or v0.1.0), not a branch."
-            exit 1
-          fi
-          if ! gh api --silent "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG"; then
-            echo "::error::Cannot find release tag $RELEASE_TAG. Create and push it from the release commit before running this workflow (see README: Versioning and publishing)."
-            exit 1
-          fi
-          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.release_tag.outputs.tag && format('refs/tags/{0}', steps.release_tag.outputs.tag) || github.ref }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - name: Resolve manual release tag
+        id: release_tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          npm run version:check
+          RELEASE_TAG="v$(node -p "require('./package.json').version")"
+          RELEASE_REF=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" \
+            --jq ".[] | select(.ref == \"refs/tags/$RELEASE_TAG\") | .ref")
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "ref=${RELEASE_REF:-$RELEASE_COMMIT}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          ref: ${{ steps.release_tag.outputs.ref }}
+          persist-credentials: false
       - name: Validate version and tag
         id: version
         env:
@@ -62,6 +59,7 @@ jobs:
           set -euo pipefail
           npm run version:check -- --tag "$RELEASE_TAG"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Prepare Android signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -132,6 +130,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ needs.android.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.android.outputs.commit }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -144,6 +143,15 @@ jobs:
           APK="led-hat-$RELEASE_TAG-android.apk"
           test -s "$APK"
           sha256sum "$APK" > SHA256SUMS-android.txt
+          if ! gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > /dev/null 2>&1; then
+            gh api --method POST "repos/$GH_REPO/git/refs" \
+              -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$RELEASE_COMMIT" > /dev/null
+          fi
+          TAG_COMMIT=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)
+          if [[ "$TAG_COMMIT" != "$RELEASE_COMMIT" ]]; then
+            echo "::error::Release tag $RELEASE_TAG resolves to $TAG_COMMIT, expected $RELEASE_COMMIT."
+            exit 1
+          fi
           if ! gh release view "$RELEASE_TAG" --json tagName > /dev/null; then
             gh release create "$RELEASE_TAG" --verify-tag --draft \
               --title "LED Hat $RELEASE_TAG" --generate-notes \

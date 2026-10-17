@@ -299,26 +299,23 @@ when iOS is disabled, skipped, still running, or failing; iOS can add its downlo
 publishing jobs share a per-tag concurrency lock to avoid races when creating the release.
 The existing GitHub Pages workflow is unchanged.
 
-You can also start **Actions > Build Android release / Build iOS release > Run workflow** with
-an existing version tag, for example after correcting signing secrets. Android accepts either
-`0.1.0` or `v0.1.0` and resolves both to the existing `v0.1.0` tag; iOS requires the full
-`v0.1.0` tag. Neither workflow creates tags. For the initial release,
-create and push `v0.1.0` from the prepared release commit first:
+You can also start **Actions > Build Android release / Build iOS release > Run workflow**,
+for example after correcting signing secrets. Android asks for no version: it reads `package.json`
+from the selected branch's commit and checks that the npm manifests and native metadata agree.
+If the corresponding tag (for example `v0.2.0`) exists, Android builds that tag. Otherwise it builds
+the selected commit and creates the tag at that exact commit when publishing the successful build.
+No version bump is performed; prepare and commit version changes before running the workflow.
+iOS requires an existing full `v0.2.0` tag and never creates tags.
 
-```powershell
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-Pushing the tag starts the Android build automatically; a manual run is only needed to rebuild it.
-Selecting a branch in **Run workflow** does not replace the required tag.
+Pushing a tag starts the Android build automatically; manual Android runs also support releasing
+a prepared commit without first pushing a tag.
 Use **Re-run failed jobs**
 for transient failures. Retrying a workflow replaces only its own platform's package and checksum
 file, leaving the other platform's downloads intact. New app versions must still use a new version
 and tag. A newly created draft is published after that platform's upload succeeds; the other
 platform does not need to finish first.
 Build artifacts remain available in Actions for seven days; the GitHub Release assets are the
-persistent downloads. Neither workflow generates version-bump commits or pushes tags itself.
+persistent downloads. Neither workflow generates version-bump commits.
 
 ## Project Description
 
