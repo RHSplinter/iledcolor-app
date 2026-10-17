@@ -88,8 +88,9 @@ access, or tapping Stop. There is no background recording service or background
 entitlement. Keep the app foregrounded through cap playback/restoration.
 The app persists only sound settings and a local acoustic voice template, not raw
 audio or transcripts. **Delete voice sample** removes the template; audio buffers
-are cleared when stopped. These settings/template are not exported in preset
-backups. Browser speech-provider privacy policies apply if that service is enabled.
+are cleared when stopped. Sound settings can be included in backups (Settings →
+Backup → **Sound settings**); the voice template and the browser speech permission
+are never exported. Browser speech-provider privacy policies apply if that service is enabled.
 Native plugins are registered directly in MainActivity/AppViewController, so they
 do not appear as npm plugins in `cap ls`; rebuild the native app after synchronizing.
 Native permissions, language-service support, proximity screen-off behaviour and
@@ -130,8 +131,12 @@ In **Settings → Backup**, choose what to include before tapping **Share preset
 **Creations** (saved text, colors, images and GIFs plus current Connect content),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
 **Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
-repetitions, speed and scan-logging preference), and **Display & transport settings**
-(dimensions, brightness, rotation, mirroring and Bluetooth write settings).
+repetitions, speed and scan-logging preference), **Display & transport settings**
+(dimensions, brightness, rotation, mirroring and Bluetooth write settings), and
+**Sound settings** (room sounds, phrases, language, pocket pause, enabled reactions and
+their cap texts). Importing Sound settings stops active listening; the voice sample and
+the browser speech permission stay on each device, so record a voice sample on the
+receiving phone before using phrases.
 The system share sheet sends a JSON file. Import replaces only the included categories,
 keeping excluded presets and settings unchanged. Importing Scan settings can enable
 local scan logging; log contents and scanned QR payloads are never included. Phone

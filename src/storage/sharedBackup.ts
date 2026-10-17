@@ -1,14 +1,15 @@
 import type { ApproachSettings } from '../approach/tiers';
+import { validatePreferences as validateSoundPreferences, type SoundPreferences } from '../sound/dictionary';
 import { validateGreeting, validateGreetingProfiles, type GreetingProfileState, type ScannerBackup } from '../scanner/greeting';
 import {
   DEFAULT_SETTINGS, MAX_IMPORT_BYTES, MAX_PRESETS, isGroupPreset, parseImport, validateContent, validateGroups, validateSettings,
   type Content, type ContentPreset, type GroupContent, type GroupPreset, type Preset, type Settings,
 } from './presets';
 
-export interface ShareSelection { creations: boolean; approach: boolean; scan: boolean; settings?: boolean }
+export interface ShareSelection { creations: boolean; approach: boolean; scan: boolean; settings?: boolean; sound?: boolean }
 export type ScanSettings = Pick<ApproachSettings, 'enterDbm' | 'leaveDbm' | 'settleMs' | 'confirmMs' | 'staleMs'>;
 type ApproachOptions = Pick<ApproachSettings, 'mode' | 'beacon' | 'countNearbyCaps'>;
-export interface BackupFeatures extends ScannerBackup { settings?: Settings; createContent?: Content }
+export interface BackupFeatures extends ScannerBackup { settings?: Settings; createContent?: Content; sound?: SoundPreferences }
 export interface SharedBackup extends BackupFeatures {
   app: 'iledcolor-app';
   version: 2;
@@ -19,8 +20,9 @@ export interface SharedBackup extends BackupFeatures {
 export type ImportedBackup = SharedBackup | { version: 1; settings: Settings; presets: Preset[]; qrProfiles: GreetingProfileState };
 
 export function exportSelectedJson(presets: Preset[], approach: ApproachSettings, selection: ShareSelection, qrProfiles?: GreetingProfileState, features: BackupFeatures = {}): string {
-  if (!selection.creations && !selection.approach && !selection.scan && !selection.settings) throw new Error('Choose at least one category to share.');
+  if (!selection.creations && !selection.approach && !selection.scan && !selection.settings && !selection.sound) throw new Error('Choose at least one category to share.');
   if (selection.settings && !features.settings) throw new Error('Display and transport settings are unavailable.');
+  if (selection.sound && !features.sound) throw new Error('Sound settings are unavailable.');
   const file: SharedBackup = {
     app: 'iledcolor-app', version: 2,
     ...(selection.creations ? { creations: presets.filter((p): p is ContentPreset => !isGroupPreset(p)) } : {}),
@@ -37,6 +39,8 @@ export function exportSelectedJson(presets: Preset[], approach: ApproachSettings
     ...(selection.scan && features.qrGreeting ? { qrGreeting: validateGreeting(features.qrGreeting) } : {}),
     ...(selection.scan && features.qrScanLogging !== undefined ? { qrScanLogging: validateLogging(features.qrScanLogging) } : {}),
     ...(selection.settings && features.settings ? { settings: validateSettings(features.settings) } : {}),
+    // Browser speech consent is a per-device privacy decision and is never shared.
+    ...(selection.sound && features.sound ? { sound: { ...validateSoundPreferences(features.sound), allowBrowserSpeech: false } } : {}),
   };
   if ((file.creations?.length ?? 0) + (file.approach?.presets.length ?? 0) > MAX_PRESETS) {
     throw new Error(`Share at most ${MAX_PRESETS} presets at a time. Choose fewer categories.`);
@@ -90,7 +94,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
   if (!isObj(raw) || raw.app !== 'iledcolor-app') throw new Error('Not an iledcolor-app export.');
   if (raw.version === 1) return { version: 1, ...parseImport(text) };
   if (raw.version !== 2) throw new Error(`Unsupported export version ${String(raw.version)}.`);
-  if (!('creations' in raw) && !('approach' in raw) && !('scan' in raw) && !('settings' in raw)) throw new Error('No shared categories in this file.');
+  if (!('creations' in raw) && !('approach' in raw) && !('scan' in raw) && !('settings' in raw) && !('sound' in raw)) throw new Error('No shared categories in this file.');
   if (['qrProfiles', 'qrGreeting', 'qrScanLogging'].some((key) => key in raw) && !('scan' in raw))
     throw new Error('QR profiles and greeting preferences must be included with scan settings.');
   if ('createContent' in raw && !('creations' in raw)) throw new Error('Connect content must be included with creations.');
@@ -117,6 +121,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
     ...('qrScanLogging' in raw ? { qrScanLogging: validateLogging(raw.qrScanLogging) } : {}),
     ...('createContent' in raw ? { createContent: validateContent(raw.createContent) } : {}),
     ...('settings' in raw ? { settings: validateSettings(raw.settings) } : {}),
+    ...('sound' in raw ? { sound: validateSoundPreferences(raw.sound) } : {}),
   };
 }
 

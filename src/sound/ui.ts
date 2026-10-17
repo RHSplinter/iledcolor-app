@@ -103,7 +103,7 @@ export class SoundUi {
         <h2>Privacy &amp; listening limits</h2>
         <p class="small">Listening starts only when you tap a button and stops when you leave this tab, hide or lock the app, or stop it.
         Microphone permission is required. Audio and recognized phrases are not saved by this app.
-        Only a local acoustic voice template and your sound settings are saved; they are excluded from preset backups.
+        Only a local acoustic voice template and your sound settings are saved. Backups can include sound settings, but never the voice template or the browser speech permission.
         Delete the voice sample here to remove the template. Respect other people's privacy when using speech services.</p>
       </div>`;
     const reactions = $('sound-reactions');
@@ -188,6 +188,19 @@ export class SoundUi {
       this.preferences = preferences; this.error('');
     } catch (error) { this.error(`Could not save sound settings: ${message(error)}`); }
     finally { this.saving = false; this.updateStatus(); }
+  }
+  /** Last saved settings, for backups. */
+  exportPreferences(): SoundPreferences { return validatePreferences(this.preferences); }
+  /** Keep this device's browser speech consent; imported files never grant it. */
+  prepareImport(imported: SoundPreferences): SoundPreferences {
+    return { ...validatePreferences(imported), allowBrowserSpeech: this.preferences.allowBrowserSpeech };
+  }
+  /** Call after the import is committed to storage. */
+  applyImported(preferences: SoundPreferences) {
+    this.preferences = validatePreferences(preferences);
+    this.error('');
+    this.writeControls();
+    this.updateStatus();
   }
   private async forget() {
     this.saving = true; this.updateStatus();
