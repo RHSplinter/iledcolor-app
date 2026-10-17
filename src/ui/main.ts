@@ -20,6 +20,7 @@ import { listenForShares, withShareLink } from '../approach/contentExchange';
 import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
 import { shareTextFile } from './shareFile';
 import { GreetingUi } from '../scanner/ui';
+import { SoundUi } from '../sound/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -44,6 +45,7 @@ let imageDataUrl = '';
 let renderSeq = 0;
 let savedCreateContent: Content | undefined;
 let scanner: GreetingUi | undefined;
+let sound: SoundUi | undefined;
 
 function profileFor(s: Settings): TransportProfile {
   return { ...SPIKE_PROFILE, chunkSize: s.chunkSize, interWriteDelayMs: s.interWriteDelayMs };
@@ -65,6 +67,7 @@ const sharedCap = () => native || useMock;
 const watched = new WeakSet<DeviceController>();
 function onPrimaryChange(p: PrimaryCap | null) {
   scanner?.stopCamera();
+  void sound?.stop();
   if (p) {
     controller = p.controller;
     deviceName = p.name;
@@ -93,6 +96,7 @@ function renderStatus() {
   if (prog && p) { prog.max = p.total; prog.value = p.sent; }
   updateButtons();
   scanner?.updateStatus();
+  sound?.updateStatus();
 }
 
 function updateButtons() {
@@ -104,7 +108,7 @@ function updateButtons() {
   set('btn-disconnect', s === 'Disconnected');
   set('btn-send', !ready || !lastImage);
   const help = document.getElementById('send-help');
-  if (help) help.textContent = controller.temporaryActive ? 'Wait for the QR greeting to finish before sending.'
+  if (help) help.textContent = controller.temporaryActive ? 'Wait for the current cap reaction to finish before sending.'
     : !ready ? 'Connect your hat above to send content. You can edit and preview offline.'
     : !lastImage ? 'Choose valid content to enable sending.' : 'Preview ready. Send it to your connected hat.';
   set('btn-test-color', !ready); set('btn-test-corner', !ready);
@@ -451,7 +455,7 @@ async function savePresetClick() {
 
 // ---------- Presets view ---------------------------------------------------------
 
-const backupSelection: ShareSelection = { creations: true, approach: true, scan: true, settings: true };
+const backupSelection: ShareSelection = { creations: true, approach: true, scan: true, settings: true, sound: true };
 
 async function renderPresets(message = '') {
   const root = $('#settings-presets');
@@ -474,6 +478,7 @@ async function renderPresets(message = '') {
         <label><input type="checkbox" id="p-include-approach" ${backupSelection.approach ? 'checked' : ''} /> <span>Approach settings <small>Saved group presets (${presets.filter(isGroupPreset).length}), current group content, mode, beacon and nearby-cap detection</small></span></label>
         <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Proximity thresholds, timing, QR profiles, current greeting, repetitions, speed and logging preference (not log contents)</small></span></label>
         <label><input type="checkbox" id="p-include-settings" ${backupSelection.settings ? 'checked' : ''} /> <span>Display &amp; transport settings <small>Dimensions, brightness, rotation, mirroring and Bluetooth write settings</small></span></label>
+        <label><input type="checkbox" id="p-include-sound" ${backupSelection.sound ? 'checked' : ''} /> <span>Sound settings <small>Room sounds, phrases, language, pocket pause and reaction texts (not your voice sample or browser speech permission)</small></span></label>
       </fieldset>
       <p class="small">Choose at least one category. Importing replaces only the included categories; everything else stays unchanged.</p>
       <p class="small">Importing Scan settings can enable scan logging. Phone identity, cap connections, permissions and running state are not shared.</p>
@@ -501,12 +506,12 @@ async function renderPresets(message = '') {
   const shareOptions = $<HTMLFieldSetElement>('.share-options', root);
   let sharingBackup = false;
   const updateSelection = () => {
-    for (const key of ['creations', 'approach', 'scan', 'settings'] as const) {
+    for (const key of ['creations', 'approach', 'scan', 'settings', 'sound'] as const) {
       backupSelection[key] = $<HTMLInputElement>(`#p-include-${key}`).checked;
     }
     exportButton.disabled = sharingBackup || !Object.values(backupSelection).some(Boolean);
   };
-  for (const key of ['creations', 'approach', 'scan', 'settings'] as const) {
+  for (const key of ['creations', 'approach', 'scan', 'settings', 'sound'] as const) {
     $<HTMLInputElement>(`#p-include-${key}`).onchange = updateSelection;
   }
   updateSelection();
@@ -521,6 +526,7 @@ async function renderPresets(message = '') {
           settings,
           ...(backupSelection.creations ? { createContent: currentContent() } : {}),
           ...(backupSelection.scan ? scanner?.exportSettings() : {}),
+          ...(backupSelection.sound && sound ? { sound: sound.exportPreferences() } : {}),
         });
       const shared = await shareTextFile('led-hat-presets.json', json, 'application/json', 'LED hat presets');
       $('#p-msg').textContent = shared ? 'Selected categories shared.' : '';
@@ -544,7 +550,9 @@ async function renderPresets(message = '') {
       } : undefined;
       const scanSettings = scanner?.prepareImport(data);
       const createContent = data.version === 2 ? data.createContent : undefined;
-      await restoreBackup(merged, data.settings, nextApproach, { ...scanSettings, createContent });
+      const soundSettings = data.version === 2 && data.sound && sound ? sound.prepareImport(data.sound) : undefined;
+      if (soundSettings) await sound?.stop();
+      await restoreBackup(merged, data.settings, nextApproach, { ...scanSettings, createContent, sound: soundSettings });
       if (data.settings) settings = data.settings;
       if (createContent) {
         savedCreateContent = createContent;
@@ -553,6 +561,7 @@ async function renderPresets(message = '') {
       }
       if (nextApproach) applyImportedApproachSettings(nextApproach);
       if (scanSettings) scanner?.applyImportedSettings(scanSettings);
+      if (soundSettings) sound?.applyImported(soundSettings);
       renderDeviceSettings();
       await refreshPreview();
       await renderPresets(data.version === 1
@@ -714,8 +723,9 @@ function showTab(name: string) {
     b.setAttribute('aria-selected', String(selected));
     b.tabIndex = selected ? 0 : -1;
   });
-  for (const v of ['connect', 'approach', 'scan', 'settings']) $(`#view-${v}`).hidden = v !== name;
+  for (const v of ['connect', 'approach', 'scan', 'sound', 'settings']) $(`#view-${v}`).hidden = v !== name;
   if (name !== 'scan') scanner?.stopCamera();
+  if (name !== 'sound') void sound?.stop();
   if (name === 'settings') void renderPresets();
   if (name === 'approach') renderApproach();
   window.scrollTo(0, 0);
@@ -782,6 +792,8 @@ async function main() {
   renderCreate();
   scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
   await scanner.init();
+  sound = new SoundUi({ controller: () => controller, logicalDims, physical });
+  await sound.init();
   $('#tab-approach').hidden = !approachAvailable;
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));
   $('#tab-bar').onkeydown = (event) => {

@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, exportJson, type ContentPreset, type GroupPreset } fr
 import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSelection } from '../src/storage/sharedBackup';
 import { listPresets, loadKv, loadSettings, restoreBackup } from '../src/storage/db';
 import { DEFAULT_GREETING } from '../src/scanner/greeting';
+import { defaultPreferences } from '../src/sound/dictionary';
 
 const creation: ContentPreset = { id: 'creation', name: 'Hello', updatedAt: 1, content: { kind: 'solid', color: '#ffffff' } };
 const group: GroupPreset = { id: 'group', name: 'Party', updatedAt: 2, groups: structuredClone(DEFAULT_APPROACH.tiers) };
@@ -229,5 +230,38 @@ describe('saving an imported backup', () => {
     expect(await listPresets()).toEqual([group, creation]);
     expect(await loadSettings()).toEqual(DEFAULT_SETTINGS);
     expect(await loadKv('approach')).toEqual(DEFAULT_APPROACH);
+  });
+});
+
+describe('sound settings backup', () => {
+  const sound = { ...defaultPreferences(), language: 'de-DE' as const, sounds: false, allowBrowserSpeech: true };
+  sound.reactions.greeting = { enabled: false, text: 'SERVUS' };
+
+  it('round-trips sound settings without browser speech consent and keeps other categories excluded', () => {
+    const json = exportSelectedJson([creation, group], approach, { creations: false, approach: false, scan: false, sound: true }, profiles, { ...features, sound });
+    const raw = JSON.parse(json);
+    expect(Object.keys(raw).sort()).toEqual(['app', 'sound', 'version']);
+    const data = parseSharedBackup(json);
+    if (data.version !== 2) throw new Error('Wrong version');
+    expect(data.sound).toEqual({ ...sound, allowBrowserSpeech: false });
+    expect(mergeSharedPresets([localCreation, localGroup], data)).toEqual([localCreation, localGroup]);
+  });
+
+  it('omits sound settings when unselected and requires them when selected', () => {
+    expect(JSON.parse(exportSelectedJson([creation], approach, all, profiles, { ...features, sound }))).not.toHaveProperty('sound');
+    expect(() => exportSelectedJson([creation], approach, { ...all, sound: true }, profiles, features)).toThrow('Sound settings are unavailable');
+  });
+
+  it('rejects invalid sound settings', () => {
+    const file = (value: unknown) => JSON.stringify({ app: 'iledcolor-app', version: 2, sound: value });
+    expect(() => parseSharedBackup(file({ ...sound, language: 'fr-FR' }))).toThrow('English or German');
+    expect(() => parseSharedBackup(file({ ...sound, reactions: { ...sound.reactions, greeting: { enabled: true, text: 'Grüß' } } }))).toThrow('ASCII');
+    expect(() => parseSharedBackup(file({ ...sound, reactions: {} }))).toThrow('Missing reaction');
+  });
+
+  it('persists imported sound settings atomically with the rest of the import', async () => {
+    await restoreBackup([creation], undefined, undefined, { sound });
+    expect(await loadKv('soundPreferences')).toEqual(sound);
+    expect(await listPresets()).toEqual([creation]);
   });
 });

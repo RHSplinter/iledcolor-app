@@ -62,6 +62,7 @@ export async function restoreBackup(presets: Preset[], settings?: Settings, appr
         presets.forEach((p) => store.put(p));
         if (settings) t.objectStore('kv').put(settings, 'settings');
         if (approach) t.objectStore('kv').put(approach, 'approach');
+        if (features.sound) t.objectStore('kv').put(features.sound, 'soundPreferences');
         for (const key of ['createContent', 'qrProfiles', 'qrGreeting', 'qrScanLogging'] as const) {
           if (features[key] !== undefined) t.objectStore('kv').put(features[key], key === 'qrProfiles' ? 'qrGreetingProfiles' : key);
         }

@@ -92,6 +92,7 @@ test('share categories: scan-only file excludes creations and approach content, 
   await page.getByLabel('Approach settings', { exact: false }).uncheck();
   await page.getByLabel('Scan settings', { exact: false }).uncheck();
   await page.locator('#p-include-settings').uncheck();
+  await page.locator('#p-include-sound').uncheck();
   await expect(page.getByRole('button', { name: 'Share presets' })).toBeDisabled();
   await page.getByLabel('Scan settings', { exact: false }).check();
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);

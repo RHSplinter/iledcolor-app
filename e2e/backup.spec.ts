@@ -42,6 +42,12 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.locator('#qr-speed').fill('8');
   await page.check('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toHaveText('Scan logging enabled.');
+  await page.click('nav [data-tab=sound]');
+  await page.selectOption('#sound-language', 'de-DE');
+  await page.uncheck('#sound-noises');
+  await page.locator('#sound-reactions details').first().locator('summary').click();
+  await page.fill('#sound-text-greeting', 'SERVUS');
+  await page.locator('#sound-text-greeting').dispatchEvent('change');
   await page.click('nav [data-tab=settings]');
   await page.selectOption('#s-rot', '90');
   await page.check('#s-mh');
@@ -58,7 +64,8 @@ test('all categories restore settings from every tab immediately and after reloa
   expect(backup.qrProfiles.profiles[0].template).toBe('Saved {name}!');
   expect(backup.qrScanLogging).toBe(true);
   expect(backup.settings).toMatchObject({ brightness: 2, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90, mirrorH: true } });
-  for (const key of ['phoneId', 'userName', 'approachCaps', 'approachEnabled']) expect(backup).not.toHaveProperty(key);
+  expect(backup.sound).toMatchObject({ language: 'de-DE', sounds: false, allowBrowserSpeech: false, reactions: { greeting: { text: 'SERVUS' } } });
+  for (const key of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'soundVoice']) expect(backup).not.toHaveProperty(key);
 
   await page.selectOption('#s-rot', '0');
   await page.uncheck('#s-mh');
@@ -77,6 +84,11 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.locator('#qr-speed').fill('5');
   await page.uncheck('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toContainText('Scan logging disabled.');
+  await page.click('nav [data-tab=sound]');
+  await page.selectOption('#sound-language', 'en-US');
+  await page.check('#sound-noises');
+  await page.fill('#sound-text-greeting', 'CHANGED');
+  await page.locator('#sound-text-greeting').dispatchEvent('change');
   await page.click('nav [data-tab=settings]');
   await importBackup(page, backup);
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories.');
@@ -100,6 +112,10 @@ test('all categories restore settings from every tab immediately and after reloa
     await expect(page.locator('#qr-repetitions')).toHaveValue('17');
     await expect(page.locator('#qr-speed')).toHaveValue('8');
     await expect(page.locator('#qr-log-enabled')).toBeChecked();
+    await page.click('nav [data-tab=sound]');
+    await expect(page.locator('#sound-language')).toHaveValue('de-DE');
+    await expect(page.locator('#sound-noises')).not.toBeChecked();
+    await expect(page.locator('#sound-text-greeting')).toHaveValue('SERVUS');
     await page.click('nav [data-tab=settings]');
     await expect(page.locator('#s-rot')).toHaveValue('90');
     await expect(page.locator('#brightness')).toHaveValue('2');
@@ -116,8 +132,10 @@ test('display-only backup ignores invalid excluded scanner inputs and preserves 
   await page.fill('#qr-template', 'Keep {name}!');
   await page.fill('#qr-repetitions', '0');
   await page.locator('#qr-repetitions').dispatchEvent('change');
+  await page.click('nav [data-tab=sound]');
+  await page.uncheck('#sound-noises');
   await page.click('nav [data-tab=settings]');
-  for (const key of ['creations', 'approach', 'scan']) await page.uncheck(`#p-include-${key}`);
+  for (const key of ['creations', 'approach', 'scan', 'sound']) await page.uncheck(`#p-include-${key}`);
   const backup = await shareBackup(page);
   expect(Object.keys(backup).sort()).toEqual(['app', 'settings', 'version']);
   backup.settings.transform.rotation = 180;
@@ -127,6 +145,8 @@ test('display-only backup ignores invalid excluded scanner inputs and preserves 
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-template')).toHaveValue('Keep {name}!');
   await expect(page.locator('#qr-repetitions')).toHaveValue('0');
+  await page.click('nav [data-tab=sound]');
+  await expect(page.locator('#sound-noises')).not.toBeChecked();
   await page.click('nav [data-tab=connect]');
   await expect(page.locator('#c-str')).toHaveValue('Keep this draft');
 });
