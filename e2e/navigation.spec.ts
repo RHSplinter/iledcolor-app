@@ -57,6 +57,7 @@ test('four icon tabs keep content on Connect and device controls on Settings', a
 
 test('keyboard tabs, scan-first ordering and every marquee choice are accessible', async ({ page }) => {
   await page.goto('/#mock');
+  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
   const connect = page.getByRole('tab', { name: 'Connect' });
   await connect.focus();
   await page.keyboard.press('ArrowRight');

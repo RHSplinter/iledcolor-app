@@ -68,3 +68,46 @@ repository no longer supplies the legacy `tools` package. The workflow now reque
 installation. A regression test covers that package selection. The failed release tag
 is not moved: after merging the workflow correction, a manual run of the corrected
 workflow from main can build the unchanged `v0.2.1` application sources.
+
+## iOS and web follow-through - 0.2.2
+
+Android, iOS and the PWA consume the same `index.html`, `src/ui/main.ts` and
+`src/ui/style.css`. The native release workflows build that source and run Capacitor
+sync before packaging. No forked iOS layout or hand-edited generated web bundle is
+needed. Safe-area padding now protects the content edges in landscape, in addition
+to the existing status and bottom-tab insets.
+
+The production web app shows Connect, Scan and Settings. Approach remains available
+in both native apps, including every unstable-Marquee warning, and in `#mock` for
+development. The hidden tab is excluded from keyboard traversal and cannot be opened
+programmatically through the shared navigation helper. Web keeps supported BLE
+control, offline editing, all content types, display settings, diagnostics, QR scanning
+and manual entry, storage, JSON sharing/import and profiles. Browser Bluetooth and
+camera prerequisites still apply.
+
+Imported group presets remain stored and exportable on web; their Load buttons are
+disabled with a visible native-app explanation. Backup categories are deliberately
+unchanged so moving a backup through the browser cannot discard native settings.
+The browser never exposes the nearby-phone BLE Share action. Empty-state guidance no
+longer directs web users to a nonexistent Approach destination.
+
+### Native icon direction
+
+The web app's six coloured LEDs are retained as the family resemblance, while a blue
+cap outline and brim distinguish the installed apps. The PWA icon is unchanged.
+`scripts/make-icons.mjs` produces the vector reference and all native PNG sizes from
+one set of shape coordinates, without external fonts, image downloads or dependencies.
+Android adaptive foregrounds have transparency and a separate dark background; the
+artwork is inset into the safe circle. Legacy square and round variants cover older
+launchers. The iOS universal icon is 1024 px RGB with no alpha channel; iOS supplies
+the outer mask.
+
+`e2e/platforms.spec.ts` covers real web navigation/offline editing and the iOS/Android
+shell layout selected through a simulated Capacitor platform. Those shell tests do
+not claim to exercise native hardware. Icon tests verify reproducibility, density
+sizes, all six LED colours, iOS opacity and the Android adaptive safe circle.
+
+Version 0.2.2 uses native build 2003 on both platforms. Both native web bundles were
+built and synchronized successfully on Windows. iOS compilation/signing still requires
+macOS/Xcode and the existing optional Apple signing configuration; no IPA or physical
+iPhone behaviour is claimed from the browser shell checks.

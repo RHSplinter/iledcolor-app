@@ -1,6 +1,6 @@
 {
   "name": "iledcolor-app",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:release": "node --test scripts/release-version.test.mjs",
+    "test:icons": "node --test scripts/icons.test.mjs",
     "version": "node scripts/release-version.mjs",
     "version:check": "node scripts/release-version.mjs --check",
     "e2e": "playwright test",

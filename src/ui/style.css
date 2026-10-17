@@ -7,7 +7,7 @@ header { display:flex; gap:8px; padding:calc(8px + env(safe-area-inset-top)) 12p
 #banner { margin:8px 12px; padding:10px 12px; border-radius:8px; background:#2a2a1a; border:1px solid var(--warn); }
 #share-prompt { position:fixed; left:12px; right:12px; bottom:calc(76px + env(safe-area-inset-bottom)); z-index:3; max-width:536px; max-height:60dvh; overflow:auto; overflow-wrap:anywhere; margin:0 auto; padding:16px; border-radius:12px; background:#14243a; border:1px solid var(--accent); box-shadow:0 4px 24px #000a; }
 #share-prompt p { margin:0 0 8px; }
-main { padding:0 var(--space-3); max-width:560px; margin:0 auto; }
+main { padding:0 max(var(--space-3), env(safe-area-inset-right)) 0 max(var(--space-3), env(safe-area-inset-left)); max-width:560px; margin:0 auto; }
 h1 { margin:var(--space-4) 0; font-size:24px; line-height:1.25; }
 .card { background:var(--card); border-radius:12px; padding:var(--space-4); margin:var(--space-6) 0; min-width:0; }
 .card h2 { margin:0 0 var(--space-3); font-size:18px; line-height:1.3; }

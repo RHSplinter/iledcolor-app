@@ -29,6 +29,7 @@ let controller: DeviceController;
 let deviceName = '';
 const native = isNativeApp();
 let useMock = location.hash === '#mock'; // dev/test only: in-memory hat
+const approachAvailable = native || useMock;
 let lastImage: RgbImage | null = null; // retained across disconnects
 let lastFrames: RgbImage[] | null = null; // set when the content is a marquee
 let lastDelays: number[] = [];
@@ -138,8 +139,8 @@ function renderConnect() {
         <button id="btn-install" hidden>Install app</button>
       </div>
       <p id="conn-msg" class="small"></p>
-      <p class="small">Close other controller apps first. Android will ask for Bluetooth permission the first time you connect.</p>
-      <p class="small" id="install-help" hidden>To install: Chrome menu → Install app / Add to Home screen.</p>
+      <p class="small">Close other controller apps first. ${native ? `${platformName() === 'ios' ? 'iOS' : 'Android'} will ask for Bluetooth permission the first time you connect.` : 'Choose your hat in the browser Bluetooth picker. Connecting requires Web Bluetooth; editing and presets work offline.'}</p>
+      <p class="small" id="install-help" hidden>To install: use your browser's Install app or Add to Home Screen option (in Safari, open the Share menu).</p>
     </div>
     <div id="content-editor"></div>`;
   $('#btn-connect').onclick = onConnect;
@@ -461,7 +462,8 @@ async function renderPresets(message = '') {
     <div class="card">
       <h2>Presets</h2>
       ${err ? `<p class="bad">${esc(err)}</p>` : ''}
-      <ul class="list preset-list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? 'group content' : p.content.kind}</small></span><button data-act="load">Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || '<li class="muted">No presets yet. Save content on Connect or a group preset on Approach to find it here.</li>'}</ul>
+      <ul class="list preset-list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? `group content${approachAvailable ? '' : ' - requires the native app; kept for backup'}` : p.content.kind}</small></span><button data-act="load" ${isGroupPreset(p) && !approachAvailable ? 'disabled' : ''}>Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || `<li class="muted">No presets yet. Save content on Connect${approachAvailable ? ' or a group preset on Approach' : ''} to find it here.</li>`}</ul>
+      ${approachAvailable ? '' : '<p class="small">Nearby Approach detection and phone-to-phone BLE sharing require the Android or iOS app. Imported group presets remain available for backup and export.</p>'}
     </div>
     <div class="card">
       <h2>Backup</h2>
@@ -687,6 +689,7 @@ function setCreateFrom(c: Content) {
 // ---------- tabs, offline, install, updates ---------------------------------------
 
 function showTab(name: string) {
+  if (name === 'approach' && !approachAvailable) return;
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => {
     const selected = b.dataset.tab === name;
     b.setAttribute('aria-selected', String(selected));
@@ -760,9 +763,10 @@ async function main() {
   renderCreate();
   scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
   await scanner.init();
+  $('#tab-approach').hidden = !approachAvailable;
   document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));
   $('#tab-bar').onkeydown = (event) => {
-    const tabs = [...document.querySelectorAll<HTMLButtonElement>('nav button')];
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('nav button:not([hidden])')];
     const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
     if (index < 0) return;
     const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
