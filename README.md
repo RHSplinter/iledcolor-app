@@ -127,11 +127,18 @@ when sensors are unavailable. These sensors cannot locate other caps, so physica
 uses manual local cap order and deterministic phone-ID order across phones.
 
 In **Settings → Backup**, choose what to include before tapping **Share presets**:
-**Creations** (saved text, colors, images and GIFs), **Approach settings** (saved group presets
-and current group content), and **Scan settings** (proximity thresholds, timing and QR greeting profiles).
+**Creations** (saved text, colors, images and GIFs plus current Connect content),
+**Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
+**Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
+repetitions, speed and scan-logging preference), and **Display & transport settings**
+(dimensions, brightness, rotation, mirroring and Bluetooth write settings).
 The system share sheet sends a JSON file. Import replaces only the included categories,
-keeping excluded presets, phone identity, cap connections and device settings unchanged.
-Older full JSON backups remain importable with their original full-replacement behavior.
+keeping excluded presets and settings unchanged. Importing Scan settings can enable
+local scan logging; log contents and scanned QR payloads are never included. Phone
+identity, cap connections, permissions and live running state are not shared.
+Older version-2 files keep newer settings they do not contain. Older full JSON backups
+remain importable with their original full-replacement behavior. Reconnect after importing
+transport settings to apply the new write profile.
 
 ## QR badge greetings
 

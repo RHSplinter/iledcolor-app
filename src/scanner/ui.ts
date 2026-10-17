@@ -10,7 +10,7 @@ import { extractNameSafely } from './extract';
 import { appendScanLog, shareScanLog } from './log';
 import {
   DEFAULT_GREETING, greetingDuration, greetingText, validateGreeting, validateGreetingProfiles,
-  type ExtractedName, type GreetingProfile, type GreetingProfileState, type GreetingSettings,
+  type ExtractedName, type GreetingProfile, type GreetingProfileState, type GreetingSettings, type ScannerBackup,
 } from './greeting';
 
 interface ScannerContext {
@@ -106,9 +106,10 @@ export class GreetingUi {
         <a href="${import.meta.env.BASE_URL}licenses/scanner-credits.txt">Credits and licenses</a>.</p>
       </div>`;
     let settings: GreetingSettings = DEFAULT_GREETING;
+    let restoredSettings = false;
     try {
       const saved = await loadKv('qrGreeting');
-      if (saved !== undefined) settings = validateGreeting(saved);
+      if (saved !== undefined) { settings = validateGreeting(saved); restoredSettings = true; }
     } catch (e) { this.error(`Could not restore scanner settings: ${this.message(e)}`); }
     try {
       const savedProfiles = await loadKv('qrGreetingProfiles');
@@ -117,7 +118,7 @@ export class GreetingUi {
         this.profiles = state.profiles;
         this.selectedProfileId = state.selectedId;
         const selected = this.profiles.find((profile) => profile.id === this.selectedProfileId);
-        if (selected) settings = { ...settings, pattern: selected.pattern, template: selected.template };
+        if (selected && !restoredSettings) settings = { ...settings, pattern: selected.pattern, template: selected.template };
       }
     } catch (e) { this.error(`Could not restore saved QR profiles: ${this.message(e)}`); }
     try {
@@ -205,25 +206,48 @@ export class GreetingUi {
     return validateGreetingProfiles({ profiles: this.profiles, selectedId: this.selectedProfileId });
   }
 
-  async importProfiles(value: GreetingProfileState) {
-    const state = validateGreetingProfiles(value);
-    const active = state.profiles.find((profile) => profile.id === state.selectedId);
-    const settings = validateGreeting({
-      ...this.readSettings(),
-      pattern: active?.pattern ?? DEFAULT_GREETING.pattern,
-      template: active?.template ?? DEFAULT_GREETING.template,
-    });
-    await Promise.all([
-      saveKv('qrGreetingProfiles', state),
-      saveKv('qrGreeting', settings),
-    ]);
-    this.profiles = state.profiles;
-    this.selectedProfileId = state.selectedId;
-    this.renderProfiles();
-    $<HTMLSelectElement>('qr-profile').value = this.selectedProfileId ?? '';
-    $<HTMLInputElement>('qr-note').value = active?.note ?? '';
-    $<HTMLInputElement>('qr-pattern').value = settings.pattern;
-    $<HTMLInputElement>('qr-template').value = settings.template;
+  exportSettings(): ScannerBackup {
+    return { qrGreeting: this.readSettings(), qrScanLogging: this.loggingEnabled };
+  }
+
+  /** Prepare legacy profile-only imports before committing any backup data. */
+  prepareImport(value: ScannerBackup): ScannerBackup {
+    const state = value.qrProfiles === undefined ? undefined : validateGreetingProfiles(value.qrProfiles);
+    const active = state?.profiles.find((profile) => profile.id === state.selectedId);
+    const settings = value.qrGreeting !== undefined ? validateGreeting(value.qrGreeting)
+      : state ? validateGreeting({
+        ...this.readSettings(),
+        pattern: active?.pattern ?? DEFAULT_GREETING.pattern,
+        template: active?.template ?? DEFAULT_GREETING.template,
+      }) : undefined;
+    return {
+      ...(state ? { qrProfiles: state } : {}),
+      ...(settings ? { qrGreeting: settings } : {}),
+      ...(value.qrScanLogging !== undefined ? { qrScanLogging: value.qrScanLogging } : {}),
+    };
+  }
+
+  applyImportedSettings(value: ScannerBackup) {
+    if (value.qrProfiles) {
+      this.profiles = value.qrProfiles.profiles;
+      this.selectedProfileId = value.qrProfiles.selectedId;
+      this.renderProfiles();
+      $<HTMLSelectElement>('qr-profile').value = this.selectedProfileId ?? '';
+      const active = this.profiles.find((profile) => profile.id === this.selectedProfileId);
+      $<HTMLInputElement>('qr-note').value = active?.note ?? '';
+    }
+    if (value.qrGreeting) {
+      const settings = value.qrGreeting;
+      $<HTMLInputElement>('qr-pattern').value = settings.pattern;
+      $<HTMLInputElement>('qr-template').value = settings.template;
+      $<HTMLInputElement>('qr-repetitions').value = String(settings.repetitions);
+      $<HTMLInputElement>('qr-speed').value = String(settings.speed);
+    }
+    if (value.qrScanLogging !== undefined) {
+      this.loggingEnabled = value.qrScanLogging;
+      $<HTMLInputElement>('qr-log-enabled').checked = this.loggingEnabled;
+      $('qr-log-status').textContent = this.loggingEnabled ? 'Scan logging enabled by imported settings.' : 'Scan logging disabled. Existing log kept.';
+    }
   }
 
   private async persistProfiles(profiles = this.profiles, selectedId = this.selectedProfileId) {

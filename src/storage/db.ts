@@ -1,5 +1,6 @@
 import { DEFAULT_SETTINGS, validateSettings, type Preset, type Settings } from './presets';
 import type { ApproachSettings } from '../approach/tiers';
+import type { BackupFeatures } from './sharedBackup';
 
 const DB_NAME = 'iledcolor';
 const DB_VERSION = 1;
@@ -47,7 +48,7 @@ export async function replaceAllPresets(presets: Preset[]): Promise<void> {
 }
 
 /** Commit a validated import together so a storage failure cannot apply only part of it. */
-export async function restoreBackup(presets: Preset[], settings?: Settings, approach?: ApproachSettings): Promise<void> {
+export async function restoreBackup(presets: Preset[], settings?: Settings, approach?: ApproachSettings, features: BackupFeatures = {}): Promise<void> {
   const db = await open();
   try {
     await new Promise<void>((resolve, reject) => {
@@ -61,6 +62,9 @@ export async function restoreBackup(presets: Preset[], settings?: Settings, appr
         presets.forEach((p) => store.put(p));
         if (settings) t.objectStore('kv').put(settings, 'settings');
         if (approach) t.objectStore('kv').put(approach, 'approach');
+        for (const key of ['createContent', 'qrProfiles', 'qrGreeting', 'qrScanLogging'] as const) {
+          if (features[key] !== undefined) t.objectStore('kv').put(features[key], key === 'qrProfiles' ? 'qrGreetingProfiles' : key);
+        }
       } catch (e) {
         t.abort();
         reject(new Error(`Import could not be saved: ${(e as Error).message}`));
