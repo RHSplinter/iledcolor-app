@@ -38,6 +38,7 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined;
 const marqueeDelay = (speed: number) => Math.round(220 / speed);
 let sendNote = '';
 let brightnessNote = '';
+let brightnessTimer: ReturnType<typeof setTimeout> | undefined;
 let displayNote = '';
 let imageDataUrl = '';
 let renderSeq = 0;
@@ -149,6 +150,7 @@ function renderConnect() {
 }
 
 function renderDeviceSettings() {
+  clearTimeout(brightnessTimer);
   const root = $('#settings-device');
   root.innerHTML = `
     <div class="card">
@@ -187,16 +189,15 @@ function renderDeviceSettings() {
   $('#btn-test-corner').onclick = () => sendImage(physical(cornerTest(...logicalDims())));
   $('#btn-disp-on').onclick = () => control('display', () => controller.setDisplay(true), (n) => (displayNote = n), 'dstate', 'On');
   $('#btn-disp-off').onclick = () => control('display', () => controller.setDisplay(false), (n) => (displayNote = n), 'dstate', 'Off');
-  let timer: ReturnType<typeof setTimeout>;
   const slider = $<HTMLInputElement>('#brightness');
   slider.oninput = () => {
     const level = Number(slider.value);
+    settings = { ...settings, brightness: level };
     $('#bval').textContent = String(level);
     $('#bstate').textContent = 'pending…';
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
+    clearTimeout(brightnessTimer);
+    brightnessTimer = setTimeout(async () => {
       await control('brightness', () => controller.setBrightness(level), (n) => (brightnessNote = n), 'bstate', 'confirmed');
-      settings = { ...settings, brightness: level };
       persistSettings();
     }, 300);
   };
@@ -450,7 +451,7 @@ async function savePresetClick() {
 
 // ---------- Presets view ---------------------------------------------------------
 
-const backupSelection: ShareSelection = { creations: true, approach: true, scan: true };
+const backupSelection: ShareSelection = { creations: true, approach: true, scan: true, settings: true };
 
 async function renderPresets(message = '') {
   const root = $('#settings-presets');
@@ -469,11 +470,13 @@ async function renderPresets(message = '') {
       <h2>Backup</h2>
       <fieldset class="share-options">
         <legend>Include in shared file</legend>
-        <label><input type="checkbox" id="p-include-creations" ${backupSelection.creations ? 'checked' : ''} /> <span>Creations <small>Saved text, colors, images and GIFs (${presets.filter((p) => !isGroupPreset(p)).length})</small></span></label>
-        <label><input type="checkbox" id="p-include-approach" ${backupSelection.approach ? 'checked' : ''} /> <span>Approach settings <small>Saved group presets (${presets.filter(isGroupPreset).length}) and current group content</small></span></label>
-        <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Proximity thresholds, timing and QR greeting profiles</small></span></label>
+        <label><input type="checkbox" id="p-include-creations" ${backupSelection.creations ? 'checked' : ''} /> <span>Creations <small>Saved text, colors, images and GIFs (${presets.filter((p) => !isGroupPreset(p)).length}) and current Connect content</small></span></label>
+        <label><input type="checkbox" id="p-include-approach" ${backupSelection.approach ? 'checked' : ''} /> <span>Approach settings <small>Saved group presets (${presets.filter(isGroupPreset).length}), current group content, mode, beacon and nearby-cap detection</small></span></label>
+        <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Proximity thresholds, timing, QR profiles, current greeting, repetitions, speed and logging preference (not log contents)</small></span></label>
+        <label><input type="checkbox" id="p-include-settings" ${backupSelection.settings ? 'checked' : ''} /> <span>Display &amp; transport settings <small>Dimensions, brightness, rotation, mirroring and Bluetooth write settings</small></span></label>
       </fieldset>
       <p class="small">Choose at least one category. Importing replaces only the included categories; everything else stays unchanged.</p>
+      <p class="small">Importing Scan settings can enable scan logging. Phone identity, cap connections, permissions and running state are not shared.</p>
       <div class="row"><button id="btn-export">Share presets</button><label class="row"><span>Import</span><input id="p-import" type="file" accept="application/json,.json" /></label></div>
       <p id="p-msg" class="small" role="status">${esc(message)}</p>
       <p id="p-persist" class="small"></p>
@@ -498,12 +501,12 @@ async function renderPresets(message = '') {
   const shareOptions = $<HTMLFieldSetElement>('.share-options', root);
   let sharingBackup = false;
   const updateSelection = () => {
-    for (const key of ['creations', 'approach', 'scan'] as const) {
+    for (const key of ['creations', 'approach', 'scan', 'settings'] as const) {
       backupSelection[key] = $<HTMLInputElement>(`#p-include-${key}`).checked;
     }
     exportButton.disabled = sharingBackup || !Object.values(backupSelection).some(Boolean);
   };
-  for (const key of ['creations', 'approach', 'scan'] as const) {
+  for (const key of ['creations', 'approach', 'scan', 'settings'] as const) {
     $<HTMLInputElement>(`#p-include-${key}`).onchange = updateSelection;
   }
   updateSelection();
@@ -513,7 +516,12 @@ async function renderPresets(message = '') {
     updateSelection();
     try {
       const all = await listPresets();
-      const json = exportSelectedJson(all, getApproachSettings(), backupSelection, scanner?.exportProfiles());
+      const json = exportSelectedJson(all, getApproachSettings(), backupSelection,
+        backupSelection.scan ? scanner?.exportProfiles() : undefined, {
+          settings,
+          ...(backupSelection.creations ? { createContent: currentContent() } : {}),
+          ...(backupSelection.scan ? scanner?.exportSettings() : {}),
+        });
       const shared = await shareTextFile('led-hat-presets.json', json, 'application/json', 'LED hat presets');
       $('#p-msg').textContent = shared ? 'Selected categories shared.' : '';
     } catch (e) { $('#p-msg').textContent = `Share failed: ${(e as Error).message}`; }
@@ -528,17 +536,28 @@ async function renderPresets(message = '') {
       const merged = mergeSharedPresets(await listPresets(), data);
       const currentApproach = getApproachSettings();
       const nextApproach = data.version === 2 && (data.approach || data.scan) ? {
-        ...currentApproach, ...data.scan, tiers: data.approach?.groups ?? currentApproach.tiers,
+        ...currentApproach, ...data.scan,
+        ...(data.approach?.mode !== undefined ? { mode: data.approach.mode } : {}),
+        ...(data.approach?.beacon !== undefined ? { beacon: data.approach.beacon } : {}),
+        ...(data.approach?.countNearbyCaps !== undefined ? { countNearbyCaps: data.approach.countNearbyCaps } : {}),
+        tiers: data.approach?.groups ?? currentApproach.tiers,
       } : undefined;
-      await restoreBackup(merged, data.version === 1 ? data.settings : undefined, nextApproach);
-      if (data.version === 1) settings = data.settings;
+      const scanSettings = scanner?.prepareImport(data);
+      const createContent = data.version === 2 ? data.createContent : undefined;
+      await restoreBackup(merged, data.settings, nextApproach, { ...scanSettings, createContent });
+      if (data.settings) settings = data.settings;
+      if (createContent) {
+        savedCreateContent = createContent;
+        if (createContent.kind === 'image') imageDataUrl = createContent.dataUrl;
+        setCreateFrom(createContent);
+      }
       if (nextApproach) applyImportedApproachSettings(nextApproach);
-      if (data.qrProfiles) await scanner?.importProfiles(data.qrProfiles);
+      if (scanSettings) scanner?.applyImportedSettings(scanSettings);
       renderDeviceSettings();
       await refreshPreview();
       await renderPresets(data.version === 1
         ? `Imported ${data.presets.length} presets and ${data.qrProfiles.profiles.length} QR profiles. Restart the connection to apply transport settings.`
-        : `Imported shared categories.${data.qrProfiles ? ` Imported ${data.qrProfiles.profiles.length} QR profiles.` : ''} Other presets and settings were kept.`);
+        : `Imported shared categories.${data.qrProfiles ? ` Imported ${data.qrProfiles.profiles.length} QR profiles.` : ''} Excluded presets and settings were kept.${data.settings ? ' Restart the connection to apply transport settings.' : ''}`);
     } catch (e) { $('#p-msg').textContent = `Import failed: ${(e as Error).message}`; }
   };
   const persisted = await navigator.storage?.persisted?.().catch(() => false);
