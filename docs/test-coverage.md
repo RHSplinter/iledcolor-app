@@ -33,7 +33,7 @@ into framework-free helpers that the plugins now call:
 
 | Helper | Used by | Tests |
 | --- | --- | --- |
-| `android/.../UpdatePolicy.java` | `AppUpdaterPlugin` | `UpdatePolicyTest` (10): trusted release URL/checksum/file-name matching, traversal/foreign host/query/other-tag rejection, `SHA256SUMS` parsing (case, `*` binary marker, duplicates, missing entry), SHA-256 digest, semantic version ordering. |
+| `android/.../UpdatePolicy.java` | `AppUpdaterPlugin` | `UpdatePolicyTest` (10): accepted repository release URLs; missing arguments, foreign hosts/repositories, insecure URLs and unexpected file names rejected; checksum parsing (case, `*` binary marker, whitespace, missing/malformed entries); SHA-256 digest including multi-buffer inputs; strictly newer numeric Android version codes. URL traversal/query handling, release-tag and URL/file-name matching, duplicate checksum entries and semantic version ordering are not asserted. |
 | `android/.../BeaconRules.java` | `ApproachBeaconPlugin` | `BeaconRulesTest` (11): content UUID slots, 8-byte header and 512-byte limits, read offsets/MTU-bounded slices, share inbox write acceptance (prepared/offset/oversized), `LH` name payload trimming and 20-byte UTF-8 truncation, motion magnitude, 100 ms sample throttle and 250 ms rotation freshness. |
 | `android/.../SoundRules.java` | `SoundDetectionPlugin` | `SoundRulesTest` (6): supported/installed languages, little-endian PCM16 encoding, sample normalization, proximity “near” threshold. |
 | `ios/NativeRules/.../NativeRules.swift` | iOS `ApproachBeaconPlugin`, `AppUpdaterPlugin`, `SoundDetectionPlugin` | 22 XCTests: `BeaconRulesTests` (9) content UUIDs/decoding/status/share writes/read slices/name/motion; `UpdateRulesTests` (4) itms-services manifest trust; `SoundRulesTests` (9) languages, 16 kHz cap, mono clamping and the fractional box downsampler (integer and 44.1 kHz ratios, frame size/remainder, reset, clamping). |
@@ -76,17 +76,25 @@ These are pre-existing checkout-sensitive test failures, not failures in the
 new adapter regressions. No runtime production defect was exposed by the new
 tests. The existing gates have **not** been reported as passing.
 
+## Subsequent native unit validation, 2026-10-19
+
+These checks followed the Windows web validation above:
+
+| Command | Actual outcome |
+| --- | --- |
+| Gradle `testDebugUnitTest compileDebugJavaWithJavac` after web build and Capacitor Android sync | **28 passed** (27 new JUnit tests and the existing example); Android plugins compiled using JDK 21 and the Android SDK on Windows. |
+| `swift test` for `ios/NativeRules` | **22 passed** using Swift 6.1.2 on Linux through WSL; this compiles the standalone rules and tests, not the iOS App target. |
+| Native unit tests workflow | Android unit tests passed on Ubuntu and the standalone Swift package tests passed on macOS. Neither job runs device integration tests or builds the iOS App target. |
+
 ## Remaining native/device limitations
 
-- No Gradle/JUnit/Android instrumentation, Xcode/XCTest, emulator, simulator or
-  physical-device tests were executed. Android build prerequisites were not
-  established by this work; iOS currently cannot build per the user. No native
-  build repair was attempted on this Windows host.
-- Android's existing `ExampleUnitTest` only checks arithmetic. Its
-  `ExampleInstrumentedTest` expects `com.getcapacitor.app`, while the application
-  ID is `com.harrybin.ledhat`; that stale smoke assertion remains deferred.
-  No iOS XCTest harness was found.
-- Java/Swift plugins and OS integration remain untested here: real BLE
+- The iOS App target, its refactored plugins and the Xcode project reference to
+  `NativeRules.swift` remain build-unverified. Passing standalone XCTest tests
+  does not establish that UIKit, CoreBluetooth or Capacitor integration builds.
+- Android instrumentation, emulator, simulator and physical-device tests were
+  not executed. The instrumented smoke assertion now expects
+  `com.harrybin.ledhat`, but that correction has not been exercised on a device.
+- OS integration remains untested here: real BLE
   permissions, radio/GATT behavior, multiple physical caps, notification timing,
   backgrounding and reconnection; native filesystem/share sheets and permissions;
   Android APK download/checksum/package validation and installer permissions;
