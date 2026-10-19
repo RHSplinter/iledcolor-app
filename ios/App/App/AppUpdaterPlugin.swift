@@ -11,13 +11,9 @@ public class AppUpdaterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "downloadAndInstall", returnType: CAPPluginReturnPromise),
     ]
 
-    private static let manifestPrefix = "https://github.com/harrybin/iledcolor-app-native-added/releases/download/"
-
     @objc func openInstaller(_ call: CAPPluginCall) {
-        guard let raw = call.getString("url"), let url = URL(string: raw), url.scheme == "itms-services",
-              let manifest = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "url" })?.value,
-              manifest.hasPrefix(Self.manifestPrefix), manifest.hasSuffix("-ios.plist") else {
+        guard let raw = call.getString("url"), UpdateRules.isTrustedInstallerUrl(raw),
+              let url = URL(string: raw) else {
             call.reject("Refusing an installer link that is not from this app's GitHub Releases.")
             return
         }

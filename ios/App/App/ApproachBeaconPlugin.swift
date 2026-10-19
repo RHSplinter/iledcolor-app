@@ -24,11 +24,11 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
     private var pendingUuid: CBUUID?
     private var pendingName: String?
     private var pendingCall: CAPPluginCall?
-    private let contentService = CBUUID(string: "4c454448-1000-4000-8000-000000000001")
+    private let contentService = CBUUID(string: BeaconRules.contentServiceUuid)
     private var contentValues: [CBUUID: Data] = [:]
     /// Preset sharing (presetShare.ts): nearby phones write offers/data to the inbox and read the status.
-    private let shareInbox = CBUUID(string: "4c454448-1000-4000-8000-000000000020")
-    private let shareStatusUuid = CBUUID(string: "4c454448-1000-4000-8000-000000000021")
+    private let shareInbox = CBUUID(string: BeaconRules.shareInboxUuid)
+    private let shareStatusUuid = CBUUID(string: BeaconRules.shareStatusUuid)
     private var shareStatus = Data()
     private var contentCall: CAPPluginCall?
     private var contentReady = false
@@ -72,8 +72,8 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
             let a = data.userAcceleration
             let r = data.rotationRate
             self.notifyListeners("motion", data: [
-                "acceleration": sqrt(a.x * a.x + a.y * a.y + a.z * a.z) * 9.80665,
-                "rotation": sqrt(r.x * r.x + r.y * r.y + r.z * r.z),
+                "acceleration": BeaconRules.magnitude(a.x, a.y, a.z) * BeaconRules.standardGravity,
+                "rotation": BeaconRules.magnitude(r.x, r.y, r.z),
             ])
         }
     }
@@ -98,17 +98,14 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
     }
 
     @objc func publishContent(_ call: CAPPluginCall) {
-        guard let values = call.getArray("values", String.self), values.count == 6 else {
+        guard let values = call.getArray("values", String.self), values.count == BeaconRules.contentValueCount else {
             call.reject("Six content values required"); return
         }
-        var next: [CBUUID: Data] = [:]
-        for (i, value) in values.enumerated() {
-            guard let data = Data(base64Encoded: value), data.count <= 512, i != 0 || data.count == 8 else {
-                call.reject("Invalid content value"); return
-            }
-            let suffix = i == 0 ? 2 : 9 + i
-            next[CBUUID(string: String(format: "4c454448-1000-4000-8000-%012d", suffix))] = data
+        guard let decoded = BeaconRules.decodeContentValues(values) else {
+            call.reject("Invalid content value"); return
         }
+        var next: [CBUUID: Data] = [:]
+        for (uuid, data) in decoded { next[CBUUID(string: uuid)] = data }
         DispatchQueue.main.async {
             guard self.contentCall == nil else { call.reject("Content service is starting"); return }
             self.contentValues = next
@@ -155,7 +152,7 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
     }
 
     @objc func setShareStatus(_ call: CAPPluginCall) {
-        guard let raw = call.getString("value"), let data = Data(base64Encoded: raw), data.count <= 512 else {
+        guard let data = BeaconRules.decodeStatus(call.getString("value")) else {
             call.reject("Invalid status"); return
         }
         DispatchQueue.main.async {
@@ -166,8 +163,10 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
 
     public func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
         guard let first = requests.first else { return }
-        // Senders keep every packet within one ATT write; an offset means an unsupported long write.
-        guard requests.allSatisfy({ $0.characteristic.uuid == shareInbox && $0.offset == 0 && ($0.value?.count ?? 0) <= 512 }) else {
+        guard requests.allSatisfy({
+            BeaconRules.isAcceptedShareWrite(isInbox: $0.characteristic.uuid == shareInbox,
+                                             offset: $0.offset, byteCount: $0.value?.count ?? 0)
+        }) else {
             peripheral.respond(to: first, withResult: .requestNotSupported); return
         }
         for request in requests {
@@ -181,10 +180,10 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
         guard let value = uuid == shareStatusUuid ? shareStatus : contentValues[uuid] else {
             peripheral.respond(to: request, withResult: .readNotPermitted); return
         }
-        guard request.offset <= value.count else {
+        guard let slice = BeaconRules.readSlice(value, offset: request.offset) else {
             peripheral.respond(to: request, withResult: .invalidOffset); return
         }
-        request.value = value.subdata(in: request.offset..<value.count)
+        request.value = slice
         peripheral.respond(to: request, withResult: .success)
     }
 
@@ -192,10 +191,10 @@ public class ApproachBeaconPlugin: CAPPlugin, CAPBridgedPlugin, CBPeripheralMana
         guard let raw = call.getString("uuid"), UUID(uuidString: raw) != nil else {
             call.reject("uuid required"); return
         }
-        let name = call.getString("name")?.trimmingCharacters(in: .whitespaces) ?? ""
+        let name = BeaconRules.trimmedName(call.getString("name"))
         DispatchQueue.main.async {
             self.pendingUuid = CBUUID(string: raw)
-            self.pendingName = name.isEmpty ? nil : name
+            self.pendingName = name
             self.pendingCall = call
             if let m = self.manager, m.state == .poweredOn { self.advertise(m) }
             else if self.manager == nil { self.manager = CBPeripheralManager(delegate: self, queue: nil) }

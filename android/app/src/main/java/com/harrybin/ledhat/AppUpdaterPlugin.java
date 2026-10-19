@@ -25,11 +25,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Pattern;
 
 /**
  * Self-update from GitHub Releases: downloads the release APK, verifies it against the published
@@ -38,9 +35,7 @@ import java.util.regex.Pattern;
  */
 @CapacitorPlugin(name = "AppUpdater")
 public class AppUpdaterPlugin extends Plugin {
-    private static final String HOST_PREFIX = "https://github.com/harrybin/iledcolor-app-native-added/releases/download/";
-    private static final Pattern FILE_NAME = Pattern.compile("^led-hat-v\\d+\\.\\d+\\.\\d+-android\\.apk$");
-    private static final long MAX_APK_BYTES = 200L * 1024 * 1024;
+    private static final long MAX_APK_BYTES = UpdatePolicy.MAX_APK_BYTES;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @PluginMethod
@@ -48,8 +43,7 @@ public class AppUpdaterPlugin extends Plugin {
         String url = call.getString("url");
         String checksumUrl = call.getString("checksumUrl");
         String fileName = call.getString("fileName");
-        if (url == null || checksumUrl == null || fileName == null || !FILE_NAME.matcher(fileName).matches()
-            || !url.startsWith(HOST_PREFIX) || !checksumUrl.startsWith(HOST_PREFIX)) {
+        if (!UpdatePolicy.isTrustedRequest(url, checksumUrl, fileName)) {
             call.reject("Refusing an update that is not from this app's GitHub Releases.");
             return;
         }
@@ -126,18 +120,11 @@ public class AppUpdaterPlugin extends Plugin {
             int n;
             while ((n = in.read(buf)) > 0) {
                 out.write(buf, 0, n);
-                if (out.size() > 64 * 1024) throw new IOException("Checksum file is too large.");
+                if (out.size() > UpdatePolicy.MAX_CHECKSUM_BYTES) throw new IOException("Checksum file is too large.");
             }
             text = new String(out.toByteArray(), StandardCharsets.UTF_8);
         } finally { c.disconnect(); }
-        for (String line : text.split("\\r?\\n")) {
-            String[] parts = line.trim().split("\\s+", 2);
-            if (parts.length == 2 && parts[1].replaceFirst("^\\*", "").equals(fileName)
-                && parts[0].matches("(?i)[0-9a-f]{64}")) {
-                return parts[0].toLowerCase(Locale.ROOT);
-            }
-        }
-        throw new IOException("The release has no checksum for " + fileName + ".");
+        return UpdatePolicy.parseChecksum(text, fileName);
     }
 
     private void download(String url, File target) throws IOException {
@@ -178,15 +165,9 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     private static String sha256(File file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
         try (InputStream in = new FileInputStream(file)) {
-            byte[] buf = new byte[64 * 1024];
-            int n;
-            while ((n = in.read(buf)) > 0) digest.update(buf, 0, n);
+            return UpdatePolicy.sha256Hex(in);
         }
-        StringBuilder hex = new StringBuilder();
-        for (byte b : digest.digest()) hex.append(String.format(Locale.ROOT, "%02x", b));
-        return hex.toString();
     }
 
     @SuppressWarnings("deprecation")
@@ -199,7 +180,7 @@ public class AppUpdaterPlugin extends Plugin {
         PackageInfo installed = pm.getPackageInfo(getContext().getPackageName(), 0);
         long archiveCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? archive.getLongVersionCode() : archive.versionCode;
         long installedCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? installed.getLongVersionCode() : installed.versionCode;
-        if (archiveCode <= installedCode) throw new IOException("The downloaded version is not newer than the installed app.");
+        if (!UpdatePolicy.isNewerVersion(archiveCode, installedCode)) throw new IOException("The downloaded version is not newer than the installed app.");
     }
 
     private static void clear(File dir) {
