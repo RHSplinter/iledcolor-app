@@ -19,6 +19,7 @@
 		A1B2C3D41FED000000000001 /* ApproachBeaconPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D41FED000000000002 /* ApproachBeaconPlugin.swift */; };
 		A1B2C3D41FED000000000003 /* AppViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D41FED000000000004 /* AppViewController.swift */; };
 		C3D4E5F61FED000000000001 /* SoundDetectionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F61FED000000000002 /* SoundDetectionPlugin.swift */; };
+		D4E5F6A71FED000000000001 /* AppUpdaterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A71FED000000000002 /* AppUpdaterPlugin.swift */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -36,6 +37,7 @@
 		A1B2C3D41FED000000000002 /* ApproachBeaconPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApproachBeaconPlugin.swift; sourceTree = "<group>"; };
 		A1B2C3D41FED000000000004 /* AppViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewController.swift; sourceTree = "<group>"; };
 		C3D4E5F61FED000000000002 /* SoundDetectionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundDetectionPlugin.swift; sourceTree = "<group>"; };
+		D4E5F6A71FED000000000002 /* AppUpdaterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdaterPlugin.swift; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -78,6 +80,7 @@
 				A1B2C3D41FED000000000002 /* ApproachBeaconPlugin.swift */,
 				A1B2C3D41FED000000000004 /* AppViewController.swift */,
 				C3D4E5F61FED000000000002 /* SoundDetectionPlugin.swift */,
+				D4E5F6A71FED000000000002 /* AppUpdaterPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -176,6 +179,7 @@
 				A1B2C3D41FED000000000001 /* ApproachBeaconPlugin.swift in Sources */,
 				A1B2C3D41FED000000000003 /* AppViewController.swift in Sources */,
 				C3D4E5F61FED000000000001 /* SoundDetectionPlugin.swift in Sources */,
+				D4E5F6A71FED000000000001 /* AppUpdaterPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

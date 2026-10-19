@@ -26,6 +26,7 @@ import { shareTextFile } from './shareFile';
 import { initTabs } from './tabs';
 import { GreetingUi } from '../scanner/ui';
 import { SoundUi } from '../sound/ui';
+import { UpdateUi } from '../update/ui';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -885,6 +886,20 @@ function setupPwa() {
     setTimeout(() => { const h = document.getElementById('install-help'); if (h && !deferred) h.hidden = false; }, 1500);
 }
 
+function setupAppUpdates() {
+  const platform = platformName();
+  const updates = new UpdateUi({
+    root: $('#settings-update'),
+    platform: native && !useMock && (platform === 'android' || platform === 'ios') ? platform : null,
+    currentVersion: __APP_VERSION__,
+    banner,
+    busy: () => controller.state === 'Uploading' || controller.temporaryActive,
+  });
+  updates.render();
+  // Let startup restore state first; the check is optional and must never delay the UI.
+  setTimeout(() => void updates.autoCheck(), 3000);
+}
+
 function approachContext(): Parameters<typeof initApproach>[0] {
   return {
     native, mock: useMock,
@@ -922,6 +937,7 @@ async function main() {
   showTab = initTabs($('#tab-bar'), onTabSelected);
   renderCreate();
   setupPwa();
+  setupAppUpdates();
   void requestPersistence();
   scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
   const scannerReady = scanner.init();
