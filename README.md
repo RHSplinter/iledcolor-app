@@ -39,6 +39,46 @@ but cannot be loaded in the browser. Nearby BLE sharing is native-only; JSON fil
 sharing/download remains available on web. The `#mock` development mode deliberately
 keeps all five tabs for simulated Approach scenarios.
 
+## Web app regression tests
+
+Tab navigation is wired before Scan and Sound restore their settings, so a slow
+optional feature cannot leave all tabs unresponsive. Vitest tests the actual HTML
+tab shell (selection, associated panels, hidden/native tabs, invalid targets and
+keyboard focus). Playwright also reproduces stalled Scan/Sound initialization.
+
+Run unit tests and the complete local browser suite against a production build:
+
+```powershell
+npm ci
+npx playwright install chromium firefox webkit
+npm test
+npm run e2e
+```
+
+The existing hardware-mock/offline tests run in Chromium. Permission-free web
+navigation smoke tests run in Chromium, Firefox and WebKit, with desktop/mobile
+viewports, every visible tab, keyboard wrapping, reload and content retention
+while switching tabs. They do not connect a cap or request camera/microphone access.
+
+To run the same smoke tests against the deployed app, including its subdirectory:
+
+```powershell
+$env:PLAYWRIGHT_BASE_URL = 'https://harrybin.de/iledcolor-app-native-added/'
+npm run e2e:smoke
+Remove-Item Env:\PLAYWRIGHT_BASE_URL
+```
+
+With `PLAYWRIGHT_BASE_URL` set, Playwright does not start a local server and runs
+only the remote-safe navigation suite. Relative test URLs preserve the app's base
+path rather than navigating to the host's root.
+
+The **Web app tests** GitHub Actions workflow runs unit/local browser tests on
+pull requests and main pushes. It checks the deployed URL daily, after a successful
+Pages deployment workflow when `PAGES_ENABLED` is enabled, and through **Run
+workflow**, where `base_url` can target another deployment. Failures retain HTML
+reports, screenshots and browser traces for 14 days. Scheduled runs use the default
+branch's workflow; these checks become active once the workflow is merged.
+
 ## Sound and voice reactions
 
 **Sound** is available on Android, iOS and web. Connect the primary cap and send
