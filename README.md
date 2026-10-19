@@ -10,6 +10,12 @@ tab navigation and responsive controls on Android, iOS and web.
 
 - **Connect:** connect/disconnect your primary cap, then create text, solid colours,
   images or GIFs, preview and send them, or save a content preset. There is no separate Create tab.
+  Under **Sequence**, add the current content or saved presets as steps (up to 20), set how
+  many seconds each step shows (animations play whole cycles for at least that long), reorder
+  or remove steps, and turn on **Play sequence** to preview, send or save all steps as one
+  looping animation. Pausing keeps the steps as a draft. Sequence presets can be shared with
+  nearby phones running a version that supports sequences. Long holds between GIF frames still
+  need verification on the physical hat.
 - **Approach:** configure greetings and group content, compare nearby texts, calibrate
   detection and record/replay walks. Every spanning **Marquee** choice is marked **unstable**:
   physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
@@ -168,7 +174,8 @@ when sensors are unavailable. These sensors cannot locate other caps, so physica
 uses manual local cap order and deterministic phone-ID order across phones.
 
 In **Settings → Backup**, choose what to include before tapping **Share presets**:
-**Creations** (saved text, colors, images and GIFs plus current Connect content),
+**Creations** (saved text, colors, images, GIFs and sequences plus current Connect content
+and sequence steps, including a paused sequence draft),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
 **Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
 repetitions, speed and scan-logging preference), **Display & transport settings**

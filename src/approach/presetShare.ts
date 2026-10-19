@@ -49,7 +49,7 @@ export type SharedPreset = { name: string; content: Content } | { name: string; 
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isU32 = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 0xffffffff;
-const KINDS: ShareKind[] = ['solid', 'text', 'image', 'group'];
+const KINDS: ShareKind[] = ['solid', 'text', 'image', 'sequence', 'group'];
 
 export function encodeSharedPreset(p: Preset): Uint8Array {
   const body: SharedPreset = 'groups' in p ? { name: p.name, groups: p.groups } : { name: p.name, content: p.content };
