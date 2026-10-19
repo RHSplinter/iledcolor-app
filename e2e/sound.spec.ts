@@ -147,6 +147,7 @@ test('voice enrollment, utterance filtering and microphone shutdown work end to 
 });
 
 test('native proximity pauses recognition, drops pocket audio and resumes only when uncovered', async ({ page }) => {
+  await page.route('https://api.github.com/**', (route) => route.fulfill({ json: [] }));
   await page.addInitScript(() => {
     const listeners = new Map<string, { name: string; cb: (value: unknown) => void }>();
     let nextId = 0;

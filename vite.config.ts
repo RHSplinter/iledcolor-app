@@ -1,9 +1,14 @@
 import { defineConfig } from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
+import { readFileSync } from 'node:fs';
+
+// Native versionName/MARKETING_VERSION are kept in sync with package.json by scripts/release-version.mjs.
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 // Relative base so the build works from any subdirectory (e.g. GitHub Pages).
 export default defineConfig({
   base: './',
+  define: { __APP_VERSION__: JSON.stringify(version) },
   build: { target: 'es2022' },
   test: { environment: 'node', include: ['tests/**/*.test.ts'] },
   plugins: [

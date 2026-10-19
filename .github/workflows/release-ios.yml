@@ -232,12 +232,30 @@ jobs:
         run: |
           set -euo pipefail
           IPA="led-hat-$RELEASE_TAG-ios.ipa"
+          MANIFEST="led-hat-$RELEASE_TAG-ios.plist"
           test -s "$IPA"
           sha256sum "$IPA" > SHA256SUMS-ios.txt
+          # Over-the-air manifest used by the in-app updater (itms-services).
+          IPA_URL="https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/$IPA" \
+          VERSION="${RELEASE_TAG#v}" MANIFEST="$MANIFEST" python3 - <<'PY'
+          import os
+          import plistlib
+
+          with open(os.environ["MANIFEST"], "wb") as f:
+              plistlib.dump({"items": [{
+                  "assets": [{"kind": "software-package", "url": os.environ["IPA_URL"]}],
+                  "metadata": {
+                      "bundle-identifier": "com.harrybin.ledhat",
+                      "bundle-version": os.environ["VERSION"],
+                      "kind": "software",
+                      "title": "LED Hat",
+                  },
+              }]}, f)
+          PY
           if ! gh release view "$RELEASE_TAG" --json tagName > /dev/null; then
             gh release create "$RELEASE_TAG" --verify-tag --draft \
               --title "LED Hat $RELEASE_TAG" --generate-notes \
               --notes "Android and iOS are built and uploaded independently. Each successful workflow adds its signed app and platform-specific checksums. iOS requires devices registered in the Ad Hoc provisioning profile. See README for installation."
           fi
-          gh release upload "$RELEASE_TAG" "$IPA" SHA256SUMS-ios.txt --clobber
+          gh release upload "$RELEASE_TAG" "$IPA" "$MANIFEST" SHA256SUMS-ios.txt --clobber
           gh release edit "$RELEASE_TAG" --draft=false --latest

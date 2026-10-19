@@ -273,6 +273,25 @@ TestFlight distribution are not part of this workflow. BLE needs a physical devi
 The IPA embeds the provisioning profile, including registered device UDIDs; anyone with download
 access can inspect it. Account for this before publishing Ad Hoc builds in a public repository.
 
+### In-app update check
+
+The Android and iOS apps check [GitHub Releases](https://github.com/harrybin/iledcolor-app-native-added/releases)
+a few seconds after startup (at most every 6 hours, anonymously via the GitHub API) and show an
+**Update** banner when a newer published, non-prerelease version contains an asset for the
+platform. **Settings > App updates** shows the installed version and offers a manual check.
+Installation never starts during a cap upload or temporary display.
+
+- **Android** downloads `led-hat-vX.Y.Z-android.apk`, verifies it against
+  `SHA256SUMS-android.txt`, checks that it is a newer build of `com.harrybin.ledhat`, then opens
+  the system installer. Android always asks for confirmation; on first use it opens the
+  *Install unknown apps* setting for LED Hat. Updates install only when signed with the same key.
+- **iOS** opens the over-the-air installer (`itms-services`) using `led-hat-vX.Y.Z-ios.plist`,
+  which the iOS release workflow publishes next to the IPA. Only devices registered in the Ad Hoc
+  profile can install it; older releases without the manifest are not offered.
+- The browser PWA keeps updating through its service worker and does not query GitHub.
+
+No setting is stored for this feature, so backups are unaffected.
+
 ### One-time signing setup
 
 In **Settings > Secrets and variables > Actions**, add the four Android repository secrets before
