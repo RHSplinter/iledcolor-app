@@ -43,8 +43,8 @@ import java.util.concurrent.TimeUnit;
     permissions = @Permission(alias = "microphone", strings = Manifest.permission.RECORD_AUDIO)
 )
 public class SoundDetectionPlugin extends Plugin {
-    private static final int SAMPLE_RATE = 16000;
-    private static final int FRAME_SIZE = 2048;
+    private static final int SAMPLE_RATE = SoundRules.SAMPLE_RATE;
+    private static final int FRAME_SIZE = SoundRules.FRAME_SIZE;
     private final Handler main = new Handler(Looper.getMainLooper());
     // All bridge/lifecycle/recognizer state is serialized on the main looper.
     private Session session;
@@ -145,7 +145,7 @@ public class SoundDetectionPlugin extends Plugin {
                 return;
             }
             String language = call.getString("language", "en-US");
-            if (!"en-US".equals(language) && !"de-DE".equals(language)) {
+            if (!SoundRules.isSupportedLanguage(language)) {
                 call.reject("Sound detection supports en-US and de-DE");
                 return;
             }
@@ -257,11 +257,7 @@ public class SoundDetectionPlugin extends Plugin {
                 long at = epoch + now - clock;
                 SpeechStream stream = candidate.stream;
                 if (stream != null && stream.active && stream.acceptingAudio && !stream.ended) {
-                    byte[] bytes = new byte[FRAME_SIZE * 2];
-                    for (int i = 0; i < FRAME_SIZE; i++) {
-                        bytes[i * 2] = (byte) samples[i];
-                        bytes[i * 2 + 1] = (byte) (samples[i] >> 8);
-                    }
+                    byte[] bytes = SoundRules.toPcm16le(samples);
                     if (!stream.frames.offer(new AudioFrame(bytes, at)) && stream.active && !stream.ended) {
                         throw new IOException("On-device recognizer stopped consuming shared microphone audio");
                     }
@@ -269,7 +265,7 @@ public class SoundDetectionPlugin extends Plugin {
                 if (now - lastEmission < 64) continue;
                 lastEmission = now;
                 JSArray normalized = new JSArray();
-                for (short sample : samples) normalized.put(sample / 32768.0);
+                for (short sample : samples) normalized.put(SoundRules.normalize(sample));
                 JSObject event = new JSObject();
                 event.put("samples", normalized);
                 event.put("sampleRate", SAMPLE_RATE);
@@ -299,7 +295,7 @@ public class SoundDetectionPlugin extends Plugin {
             @Override public void onSensorChanged(SensorEvent event) {
                 if (!current(candidate) || event.values.length == 0) return;
                 JSObject value = new JSObject();
-                value.put("near", event.values[0] < Math.min(sensor.getMaximumRange(), 5.0f));
+                value.put("near", SoundRules.isNear(event.values[0], sensor.getMaximumRange()));
                 notifyListeners("proximity", value);
             }
             @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
@@ -381,15 +377,7 @@ public class SoundDetectionPlugin extends Plugin {
             stream.recognizer.checkRecognitionSupport(intent, command -> main.post(command), new RecognitionSupportCallback() {
                 @Override public void onSupportResult(RecognitionSupport support) {
                     if (!current(candidate) || candidate.stream != stream || !stream.active) return;
-                    boolean installed = false;
-                    for (String language : support.getInstalledOnDeviceLanguages()) {
-                        if (candidate.language.equalsIgnoreCase(language) ||
-                            candidate.language.substring(0, 2).equalsIgnoreCase(language)) {
-                            installed = true;
-                            break;
-                        }
-                    }
-                    if (!installed) {
+                    if (!SoundRules.isLanguageInstalled(candidate.language, support.getInstalledOnDeviceLanguages())) {
                         fail(candidate, "The selected on-device speech language is not installed: " + candidate.language);
                         return;
                     }

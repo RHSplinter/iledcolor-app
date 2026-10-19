@@ -32,7 +32,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.Map;
 import java.util.HashMap;
@@ -51,10 +50,6 @@ import java.util.concurrent.ConcurrentHashMap;
     }
 )
 public class ApproachBeaconPlugin extends Plugin implements SensorEventListener {
-    /** Mirrors beaconCodec.ts: user name as manufacturer data (test company id) in the scan response. */
-    private static final int NAME_COMPANY_ID = 0xFFFF;
-    private static final byte[] NAME_PREFIX = { 'L', 'H' };
-    private static final int NAME_MAX_BYTES = 20;
     private BluetoothLeAdvertiser advertiser;
     private AdvertiseCallback callback;
     private static final UUID CONTENT_SERVICE = UUID.fromString("4c454448-1000-4000-8000-000000000001");
@@ -93,13 +88,12 @@ public class ApproachBeaconPlugin extends Plugin implements SensorEventListener 
     private synchronized void doPublishContent(PluginCall call) {
         try {
             com.getcapacitor.JSArray values = call.getArray("values");
-            if (values == null || values.length() != 6) { call.reject("Six content values required"); return; }
+            if (values == null || values.length() != BeaconRules.CONTENT_VALUE_COUNT) { call.reject("Six content values required"); return; }
             Map<UUID, byte[]> next = new HashMap<>();
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < BeaconRules.CONTENT_VALUE_COUNT; i++) {
                 byte[] value = Base64.decode(values.getString(i), Base64.DEFAULT);
-                if (value.length > 512 || (i == 0 && value.length != 8)) { call.reject("Invalid content value"); return; }
-                int suffix = i == 0 ? 2 : 9 + i;
-                next.put(UUID.fromString(String.format(java.util.Locale.ROOT, "4c454448-1000-4000-8000-%012d", suffix)), value);
+                if (!BeaconRules.isValidContentValue(i, value.length)) { call.reject("Invalid content value"); return; }
+                next.put(BeaconRules.contentCharacteristic(i), value);
             }
             contentValues = next;
             BluetoothManager mgr = (BluetoothManager) getContext().getSystemService(Context.BLUETOOTH_SERVICE);
@@ -129,8 +123,8 @@ public class ApproachBeaconPlugin extends Plugin implements SensorEventListener 
                     if (epoch != contentEpoch || server == null) return;
                     byte[] value = SHARE_STATUS.equals(characteristic.getUuid()) ? shareStatus : contentValues.get(characteristic.getUuid());
                     if (value == null) { server.sendResponse(device, requestId, BluetoothGatt.GATT_READ_NOT_PERMITTED, offset, null); return; }
-                    if (offset < 0 || offset > value.length) { server.sendResponse(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset, null); return; }
-                    int end = Math.min(value.length, offset + peerMtus.getOrDefault(device.getAddress(), 23) - 1);
+                    if (!BeaconRules.isValidReadOffset(value.length, offset)) { server.sendResponse(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset, null); return; }
+                    int end = BeaconRules.readEnd(value.length, offset, peerMtus.getOrDefault(device.getAddress(), BeaconRules.DEFAULT_ATT_MTU));
                     server.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, Arrays.copyOfRange(value, offset, end));
                 }
                 @Override public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic,
@@ -138,7 +132,7 @@ public class ApproachBeaconPlugin extends Plugin implements SensorEventListener 
                     BluetoothGattServer server = contentServer;
                     if (epoch != contentEpoch || server == null) return;
                     // Senders keep every packet within one ATT write, so prepared (long) writes are not needed.
-                    boolean ok = SHARE_INBOX.equals(characteristic.getUuid()) && !preparedWrite && offset == 0 && value != null && value.length <= 512;
+                    boolean ok = BeaconRules.isAcceptedShareWrite(SHARE_INBOX.equals(characteristic.getUuid()), preparedWrite, offset, value);
                     if (ok) {
                         JSObject write = new JSObject();
                         write.put("value", Base64.encodeToString(value, Base64.NO_WRAP));
@@ -186,7 +180,7 @@ public class ApproachBeaconPlugin extends Plugin implements SensorEventListener 
         if (value == null) { call.reject("value required"); return; }
         try {
             byte[] bytes = Base64.decode(value, Base64.DEFAULT);
-            if (bytes.length > 512) { call.reject("Status too long"); return; }
+            if (bytes.length > BeaconRules.MAX_VALUE_BYTES) { call.reject("Status too long"); return; }
             shareStatus = bytes;
             call.resolve();
         } catch (IllegalArgumentException e) {
@@ -245,16 +239,15 @@ public class ApproachBeaconPlugin extends Plugin implements SensorEventListener 
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        double magnitude = Math.sqrt((double) event.values[0] * event.values[0]
-            + (double) event.values[1] * event.values[1] + (double) event.values[2] * event.values[2]);
+        double magnitude = BeaconRules.magnitude(event.values[0], event.values[1], event.values[2]);
         if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
             rotation = magnitude;
             rotationTime = event.timestamp;
-        } else if (event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION && event.timestamp - lastMotionEvent >= 100_000_000L) {
+        } else if (event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION && BeaconRules.isMotionSampleDue(event.timestamp, lastMotionEvent)) {
             lastMotionEvent = event.timestamp;
             JSObject sample = new JSObject();
             sample.put("acceleration", magnitude);
-            sample.put("rotation", event.timestamp - rotationTime <= 250_000_000L ? rotation : 0);
+            sample.put("rotation", BeaconRules.recentRotation(event.timestamp, rotationTime, rotation));
             notifyListeners("motion", sample);
         }
     }
@@ -310,14 +303,9 @@ public class ApproachBeaconPlugin extends Plugin implements SensorEventListener 
             .addServiceUuid(new ParcelUuid(UUID.fromString(uuid)))
             .build();
         AdvertiseData scanResponse = null;
-        String name = call.getString("name", "");
-        if (name != null && !name.trim().isEmpty()) {
-            byte[] utf8 = name.trim().getBytes(StandardCharsets.UTF_8);
-            int len = Math.min(utf8.length, NAME_MAX_BYTES);
-            byte[] payload = new byte[NAME_PREFIX.length + len];
-            System.arraycopy(NAME_PREFIX, 0, payload, 0, NAME_PREFIX.length);
-            System.arraycopy(utf8, 0, payload, NAME_PREFIX.length, len);
-            scanResponse = new AdvertiseData.Builder().setIncludeDeviceName(false).addManufacturerData(NAME_COMPANY_ID, payload).build();
+        byte[] payload = BeaconRules.nameScanPayload(call.getString("name", ""));
+        if (payload != null) {
+            scanResponse = new AdvertiseData.Builder().setIncludeDeviceName(false).addManufacturerData(BeaconRules.NAME_COMPANY_ID, payload).build();
         }
         final PluginCall pending = call;
         callback = new AdvertiseCallback() {

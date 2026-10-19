@@ -85,6 +85,32 @@ workflow**, where `base_url` can target another deployment. Failures retain HTML
 reports, screenshots and browser traces for 14 days. Scheduled runs use the default
 branch's workflow; these checks become active once the workflow is merged.
 
+## Native unit tests
+
+Pure Android/iOS plugin rules (update URL/checksum/version policy, approach beacon
+content/read/write/name rules, motion math, sound language/PCM/downsampling and
+proximity) live in framework-free helpers that the plugins call, so they run
+without a device. Android uses JUnit in `android/app/src/test`; iOS uses XCTest in
+the `ios/NativeRules` Swift package, whose `NativeRules.swift` is also compiled into
+the App target. Android needs JDK 21, the Android SDK and a prior Capacitor sync:
+
+```powershell
+npm run build
+npx cap sync android
+cd android
+.\gradlew.bat testDebugUnitTest
+```
+
+On macOS (or Linux with Swift 5.9+), run the iOS rules tests without Xcode:
+
+```powershell
+swift test --package-path ios/NativeRules
+```
+
+The **Native unit tests** workflow runs both on pull requests and main pushes. Real
+Bluetooth, microphone, speech, installer and share-sheet behaviour still requires
+physical devices; see [docs/test-coverage.md](docs/test-coverage.md).
+
 ## Sound and voice reactions
 
 **Sound** is available on Android, iOS and web. Connect the primary cap and send

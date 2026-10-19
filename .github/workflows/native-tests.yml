@@ -1,0 +1,49 @@
+name: Native unit tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      # Capacitor sync generates the Gradle plugin wiring the app module needs.
+      - run: npm run build
+      - run: npx cap sync android
+      - run: bash gradlew --no-daemon testDebugUnitTest
+        working-directory: android
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-unit-test-results
+          path: android/app/build/reports/tests/
+          retention-days: 14
+
+  ios-rules:
+    # The shared Swift rules are Foundation-only, so they run without Xcode or a simulator.
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --package-path ios/NativeRules

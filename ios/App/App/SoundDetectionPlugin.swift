@@ -29,9 +29,7 @@ public class SoundDetectionPlugin: CAPPlugin, CAPBridgedPlugin {
     private var epochOffset = 0.0
     private var inputRate = 0.0
     private var outputRate = 0.0
-    private var samples: [Float] = []
-    private var weightedSample = 0.0
-    private var sampleWeight = 0.0
+    private var downsampler = BoxDownsampler(inputRate: 1, outputRate: 1)
 
     // UIKit state is exclusively accessed on the main queue.
     private var proximityGeneration: UUID?
@@ -79,13 +77,13 @@ public class SoundDetectionPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             let status = SFSpeechRecognizer.authorizationStatus()
             let speech = status != .denied && status != .restricted
-                && ["en-US", "de-DE"].contains { Self.onDeviceRecognizer($0) != nil }
+                && SoundRules.supportedLanguages.contains { Self.onDeviceRecognizer($0) != nil }
             call.resolve(["speech": speech, "proximity": Self.supportsProximity])
         }
     }
 
     @objc func start(_ call: CAPPluginCall) {
-        guard let language = call.getString("language"), ["en-US", "de-DE"].contains(language),
+        guard let language = call.getString("language"), SoundRules.isSupportedLanguage(language),
               let speech = call.getBool("speech") else {
             call.reject("Expected language en-US or de-DE and a speech boolean", "INVALID_ARGUMENT")
             return
@@ -177,11 +175,9 @@ public class SoundDetectionPlugin: CAPPlugin, CAPBridgedPlugin {
                 throw CaptureError("Microphone PCM format is unsupported")
             }
             inputRate = format.sampleRate
-            outputRate = min(16_000, inputRate)
+            outputRate = SoundRules.outputRate(forInputRate: inputRate)
             epochOffset = Date().timeIntervalSince1970 - ProcessInfo.processInfo.systemUptime
-            samples.removeAll(keepingCapacity: true)
-            weightedSample = 0
-            sampleWeight = 0
+            downsampler = BoxDownsampler(inputRate: inputRate, outputRate: outputRate)
             if let language = language {
                 guard let recognizer = Self.onDeviceRecognizer(language) else {
                     throw CaptureError("On-device speech recognition is unavailable for \(language)")
@@ -240,32 +236,17 @@ public class SoundDetectionPlugin: CAPPlugin, CAPBridgedPlugin {
         if requestStart == nil { requestStart = start }
         requestEnd = start + Double(buffer.frameLength) / inputRate * 1000
         request?.append(buffer)
-        let width = inputRate / outputRate
-        // Fractional box integration low-pass filters before downsampling and preserves
-        // the exact output rate, including 44.1 kHz inputs and tap-boundary remainders.
+        let inputRate = self.inputRate
+        let outputRate = self.outputRate
         for frame in 0..<Int(buffer.frameLength) {
             var mono = 0.0
             for channel in 0..<Int(buffer.format.channelCount) {
                 mono += Double(channels[channel][frame]) / Double(buffer.format.channelCount)
             }
-            mono = mono.isFinite ? max(-1, min(1, mono)) : 0
-            var remaining = 1.0
-            while remaining > 0.0000001 {
-                let portion = min(remaining, width - sampleWeight)
-                weightedSample += mono * portion
-                sampleWeight += portion
-                remaining -= portion
-                if sampleWeight >= width - 0.0000001 {
-                    samples.append(Float(max(-1, min(1, weightedSample / width))))
-                    weightedSample = 0
-                    sampleWeight = 0
-                    if samples.count == 2048 {
-                        let end = start + (Double(frame + 1) - remaining) / inputRate * 1000
-                        emit("audio", ["samples": samples.map { Double($0) },
-                                       "sampleRate": outputRate, "at": end])
-                        samples.removeAll(keepingCapacity: true)
-                    }
-                }
+            downsampler.push(SoundRules.clampMono(mono)) { samples, remaining in
+                let end = start + (Double(frame + 1) - remaining) / inputRate * 1000
+                emit("audio", ["samples": samples.map { Double($0) },
+                               "sampleRate": outputRate, "at": end])
             }
         }
     }
@@ -388,7 +369,7 @@ public class SoundDetectionPlugin: CAPPlugin, CAPBridgedPlugin {
         task = nil
         recognizer = nil
         requestStart = nil
-        samples.removeAll()
+        downsampler.reset()
         if ownsAudioSession {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             ownsAudioSession = false
