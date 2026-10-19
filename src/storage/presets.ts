@@ -3,10 +3,20 @@ import type { Transform } from '../render/matrix';
 import { TIER_IDS, type TierConfig, type TierId } from '../approach/tiers';
 import { validateGreetingProfiles, type GreetingProfileState } from '../scanner/greeting';
 
-export type Content =
+export type SingleContent =
   | { kind: 'solid'; color: string }
   | { kind: 'text'; text: string; fg: string; bg: string; speed?: number }
   | { kind: 'image'; dataUrl: string; fit: Fit; bg: string };
+/** One step of a sequence. Static content is shown for `seconds`; animations play whole cycles for at least `seconds`. */
+export interface SequenceStep { content: SingleContent; seconds: number }
+export type SequenceContent = { kind: 'sequence'; steps: SequenceStep[] };
+export type Content = SingleContent | SequenceContent;
+
+export const MAX_SEQUENCE_STEPS = 20;
+export const MAX_STEP_SECONDS = 60;
+export const DEFAULT_STEP_SECONDS = 3;
+/** Same budget as one stored image, so sequence presets stay shareable and backups stay within the import limit. */
+export const MAX_SEQUENCE_IMAGE_CHARS = 1_500_000;
 
 export interface ContentPreset { id: string; name: string; content: Content; updatedAt: number }
 /** Approach-mode content for every group size (Approach tab → "Content per group size"). */
@@ -51,6 +61,32 @@ export const DEFAULT_SPEED = 5;
 function speedOf(v: unknown): number { if (!isInt(v, 1, 10)) throw new Error('invalid speed'); return v; }
 
 export function validateContent(c: unknown): Content {
+  if (isObj(c) && c.kind === 'sequence') {
+    const steps = validateSequenceSteps(c.steps);
+    if (!steps.length) throw new Error('sequence needs at least one step');
+    return { kind: 'sequence', steps };
+  }
+  return validateSingleContent(c);
+}
+
+/** Validates a (possibly empty) step list, e.g. the Connect tab's sequence draft. */
+export function validateSequenceSteps(raw: unknown): SequenceStep[] {
+  if (!Array.isArray(raw) || raw.length > MAX_SEQUENCE_STEPS) throw new Error(`a sequence has at most ${MAX_SEQUENCE_STEPS} steps`);
+  let imageChars = 0;
+  const steps = raw.map((s: unknown, i: number): SequenceStep => {
+    if (!isObj(s)) throw new Error(`invalid sequence step ${i + 1}`);
+    if (isObj(s.content) && s.content.kind === 'sequence') throw new Error('sequences cannot be nested');
+    if (!isInt(s.seconds, 1, MAX_STEP_SECONDS)) throw new Error(`invalid duration in sequence step ${i + 1}`);
+    let content: SingleContent;
+    try { content = validateSingleContent(s.content); } catch (e) { throw new Error(`sequence step ${i + 1}: ${(e as Error).message}`); }
+    if (content.kind === 'image') imageChars += content.dataUrl.length;
+    return { content, seconds: s.seconds };
+  });
+  if (imageChars > MAX_SEQUENCE_IMAGE_CHARS) throw new Error('sequence images are too large; use fewer or smaller images');
+  return steps;
+}
+
+function validateSingleContent(c: unknown): SingleContent {
   if (!isObj(c)) throw new Error('content must be an object');
   const color = (v: unknown, n: string) => { if (typeof v !== 'string' || !HEX.test(v)) throw new Error(`invalid ${n}`); return v; };
   if (c.kind === 'solid') return { kind: 'solid', color: color(c.color, 'color') };

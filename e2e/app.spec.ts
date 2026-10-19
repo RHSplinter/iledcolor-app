@@ -305,3 +305,78 @@ test('nearby cap texts: automatic most-common selection is marked, ties preserve
   await expect(ownText).toHaveValue('MINE');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test('sequence: compose, send, save, reload, add preset and back up', async ({ page }) => {
+  await page.goto('/#mock');
+  await page.click('#btn-connect');
+  await expect(page.locator('#status')).toContainText('Ready');
+  const steps = page.locator('#c-seq-list li[data-index]');
+  await expect(page.locator('#c-seq-on')).toBeDisabled();
+
+  await page.fill('#c-str', 'A');
+  await page.click('#btn-seq-add');
+  await page.selectOption('#c-kind', 'solid');
+  await page.click('#btn-seq-add');
+  await expect(steps).toHaveCount(2);
+  await expect(steps.nth(0)).toContainText('Text "A"');
+  await expect(steps.nth(1)).toContainText('Solid #ffffff');
+  await expect(page.locator('#c-seq-on')).toBeChecked();
+
+  await page.getByLabel('Seconds for step 2').fill('5');
+  await page.getByLabel('Seconds for step 2').dispatchEvent('change');
+  await page.getByLabel('Move step 2 up').click();
+  await expect(steps.nth(0)).toContainText('Solid');
+  await expect(page.getByLabel('Seconds for step 1')).toHaveValue('5');
+
+  await page.click('#btn-send');
+  await expect(page.locator('#send-note')).toHaveText('Animation upload confirmed.');
+
+  await page.fill('#c-name', 'Show');
+  await page.click('#btn-save');
+  await page.reload();
+  await expect(steps).toHaveCount(2);
+  await expect(page.locator('#c-seq-on')).toBeChecked();
+  await expect(page.getByLabel('Seconds for step 1')).toHaveValue('5');
+
+  // Adding a sequence preset appends its steps.
+  await page.selectOption('#c-seq-preset', { label: 'Show' });
+  await page.click('#btn-seq-add-preset');
+  await expect(steps).toHaveCount(4);
+  await page.getByLabel('Remove step 4').click();
+  await page.getByLabel('Remove step 3').click();
+  await expect(steps).toHaveCount(2);
+
+  await page.click('nav [data-tab=settings]');
+  const item = page.locator('ul.list li', { hasText: 'Show' });
+  await expect(item).toContainText('sequence (2 steps)');
+  const fs = await import('node:fs/promises');
+  const [playing] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
+  const json = JSON.parse(await fs.readFile((await playing.path())!, 'utf-8'));
+  expect(json.createContent.kind).toBe('sequence');
+  expect(json.createContent.steps).toHaveLength(2);
+  expect(json.createSequence).toBeUndefined();
+  expect(json.creations.find((p: { name: string }) => p.name === 'Show').content.steps[0].seconds).toBe(5);
+
+  // Pausing keeps the draft; single content is sent and the draft is backed up separately.
+  await page.click('nav [data-tab=connect]');
+  await page.uncheck('#c-seq-on');
+  await expect(page.locator('#c-seq-help')).toContainText('paused');
+  await page.click('nav [data-tab=settings]');
+  const [paused] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
+  const pausedJson = JSON.parse(await fs.readFile((await paused.path())!, 'utf-8'));
+  expect(pausedJson.createContent.kind).not.toBe('sequence');
+  expect(pausedJson.createSequence).toHaveLength(2);
+
+  // Importing restores the shared sequence and plays it.
+  await page.setInputFiles('#p-import', { name: 's.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
+  await expect(page.locator('#p-msg')).toContainText('Imported');
+  await page.click('nav [data-tab=connect]');
+  await expect(page.locator('#c-seq-on')).toBeChecked();
+  await expect(steps).toHaveCount(2);
+
+  // Loading the sequence preset plays it again after pausing.
+  await page.uncheck('#c-seq-on');
+  await page.click('nav [data-tab=settings]');
+  await page.locator('ul.list li', { hasText: 'Show' }).locator('[data-act=load]').click();
+  await expect(page.locator('#c-seq-on')).toBeChecked();
+});
