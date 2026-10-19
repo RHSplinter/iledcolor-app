@@ -19,6 +19,7 @@ import { applyGroupContent, applyImportedApproachSettings, getApproachSettings, 
 import { listenForShares, withShareLink } from '../approach/contentExchange';
 import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
 import { shareTextFile } from './shareFile';
+import { initTabs } from './tabs';
 import { GreetingUi } from '../scanner/ui';
 import { SoundUi } from '../sound/ui';
 
@@ -716,14 +717,9 @@ function setCreateFrom(c: Content) {
 
 // ---------- tabs, offline, install, updates ---------------------------------------
 
-function showTab(name: string) {
-  if (name === 'approach' && !approachAvailable) return;
-  document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => {
-    const selected = b.dataset.tab === name;
-    b.setAttribute('aria-selected', String(selected));
-    b.tabIndex = selected ? 0 : -1;
-  });
-  for (const v of ['connect', 'approach', 'scan', 'sound', 'settings']) $(`#view-${v}`).hidden = v !== name;
+let showTab: (name: string) => boolean;
+
+function onTabSelected(name: string) {
   if (name !== 'scan') scanner?.stopCamera();
   if (name !== 'sound') void sound?.stop();
   if (name === 'settings') void renderPresets();
@@ -789,26 +785,18 @@ async function main() {
   initShareReceiver();
   renderConnect();
   renderDeviceSettings();
-  renderCreate();
-  scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
-  await scanner.init();
-  sound = new SoundUi({ controller: () => controller, logicalDims, physical });
-  await sound.init();
+  // Navigation must not wait for optional features to restore storage or query native capabilities.
   $('#tab-approach').hidden = !approachAvailable;
-  document.querySelectorAll<HTMLButtonElement>('nav button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));
-  $('#tab-bar').onkeydown = (event) => {
-    const tabs = [...document.querySelectorAll<HTMLButtonElement>('nav button:not([hidden])')];
-    const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
-    if (index < 0) return;
-    const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
-      : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
-      : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
-    if (next < 0) return;
-    event.preventDefault();
-    showTab(tabs[next]!.dataset.tab!);
-    tabs[next]!.focus();
-  };
+  showTab = initTabs($('#tab-bar'), onTabSelected);
+  renderCreate();
   setupPwa();
   void requestPersistence();
+  scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
+  const scannerReady = scanner.init();
+  sound = new SoundUi({ controller: () => controller, logicalDims, physical });
+  await Promise.all([scannerReady, sound.init()]);
 }
-void main();
+void main().catch((error: unknown) => {
+  console.error('App initialization failed', error);
+  banner(`<b>App initialization failed:</b> ${esc(error instanceof Error ? error.message : String(error))}. Reload the app to try again.`);
+});

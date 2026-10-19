@@ -1,0 +1,80 @@
+name: Web app tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Deployed app URL (including its subdirectory)
+        required: true
+        default: https://harrybin.de/iledcolor-app-native-added/
+        type: string
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_run:
+    workflows: [Build and deploy to GitHub Pages]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-tests-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local:
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx playwright install --with-deps chromium firefox webkit
+      # Playwright builds and serves production assets, including the service worker.
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-web-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  deployed:
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       vars.PAGES_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_BASE_URL: ${{ inputs.base_url || 'https://harrybin.de/iledcolor-app-native-added/' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run e2e:smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deployed-web-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
