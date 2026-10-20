@@ -201,7 +201,8 @@ uses manual local cap order and deterministic phone-ID order across phones.
 
 In **Settings → Backup**, choose what to include before tapping **Share presets**:
 **Creations** (saved text, colors, images, GIFs and sequences plus current Connect content
-and sequence steps, including a paused sequence draft),
+and sequence steps, including a paused sequence draft, plus the current GitHub handle,
+prefix and postfix text),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
 **Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
 repetitions, speed and scan-logging preference), **Display & transport settings**
@@ -217,6 +218,36 @@ identity, cap connections, permissions and live running state are not shared.
 Older version-2 files keep newer settings they do not contain. Older full JSON backups
 remain importable with their original full-replacement behavior. Reconnect after importing
 transport settings to apply the new write profile.
+
+## GitHub contribution graph
+
+At the bottom of **Connect**, enter a public GitHub handle (without `@`), choose
+**Load graph**, then **Show on hat** once connected. The preview and hat scroll the
+past year (53 calendar weeks, including the current partial week) from right to left
+as a looping marquee at the default text scroll speed: oldest week first, Sunday at the
+top, with five green-only intensity levels (no red or blue,
+which the hat's LEDs would otherwise shift toward blue). Each day
+uses 2 x 2 LEDs, centered vertically, giving a 106-LED-wide strip that the hat plays
+itself as a GIF animation. Future days and missing data
+remain black. **Prefix text** and **Postfix text** configure what scrolls before and
+after the graph. Their defaults are `2026 contributions by {handle}: ` and two
+full-colour party-popper emojis (`🎉🎉`). Use `{handle}` in either field to insert
+the loaded user's handle. Both fields accept up to 200 characters of printable ASCII
+and emoji; leave a field empty to omit that caption. Spaces are preserved. Editing
+captions immediately updates a loaded preview without fetching contributions again;
+choose **Show on hat** to upload the updated animation. Very long captions can exceed
+the hat's upload-size limit; shorten them if an upload reports that limit.
+Emoji appearance follows the device's system emoji font. Loading or uploading a graph
+does not change the content editor.
+
+Loading requires internet and sends the entered public handle to the third-party
+[GitHub Contributions API](https://github.com/grubersjoe/github-contributions-api).
+No token is needed; results may be cached for an hour. Errors are shown without
+uploading a placeholder graph. Reload the graph to refresh it; there is no background
+polling. The handle and both caption fields are saved locally and included in **Creations** backups,
+not fetched data or a live display state. Import updates the field immediately
+without fetching or uploading; older backups that omit these fields preserve their
+local values, including handle-only backups from earlier versions.
 
 ## QR badge greetings
 

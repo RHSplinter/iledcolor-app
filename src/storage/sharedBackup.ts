@@ -1,4 +1,5 @@
 import type { ApproachSettings } from '../approach/tiers';
+import { validateGitHubSettings, type GitHubSettings } from '../github/contributions';
 import { validatePreferences as validateSoundPreferences, type SoundPreferences } from '../sound/dictionary';
 import { validateGreeting, validateGreetingProfiles, type GreetingProfileState, type ScannerBackup } from '../scanner/greeting';
 import {
@@ -9,7 +10,7 @@ import {
 export interface ShareSelection { creations: boolean; approach: boolean; scan: boolean; settings?: boolean; sound?: boolean }
 export type ScanSettings = Pick<ApproachSettings, 'enterDbm' | 'leaveDbm' | 'settleMs' | 'confirmMs' | 'staleMs'>;
 type ApproachOptions = Pick<ApproachSettings, 'mode' | 'beacon' | 'countNearbyCaps'>;
-export interface BackupFeatures extends ScannerBackup { settings?: Settings; createContent?: Content; createSequence?: SequenceStep[]; sound?: SoundPreferences }
+export interface BackupFeatures extends ScannerBackup { settings?: Settings; createContent?: Content; createSequence?: SequenceStep[]; sound?: SoundPreferences; github?: GitHubSettings }
 export interface SharedBackup extends BackupFeatures {
   app: 'iledcolor-app';
   version: 2;
@@ -27,6 +28,7 @@ export function exportSelectedJson(presets: Preset[], approach: ApproachSettings
     app: 'iledcolor-app', version: 2,
     ...(selection.creations ? { creations: presets.filter((p): p is ContentPreset => !isGroupPreset(p)) } : {}),
     ...(selection.creations && features.createContent ? { createContent: validateContent(features.createContent) } : {}),
+    ...(selection.creations && features.github ? { github: validateGitHubSettings(features.github) } : {}),
     // A playing sequence already carries its steps in createContent; only a paused draft is stored separately.
     ...(selection.creations && features.createSequence && features.createContent?.kind !== 'sequence'
       ? { createSequence: validateSequenceSteps(features.createSequence) } : {}),
@@ -105,6 +107,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
   if (['qrProfiles', 'qrGreeting', 'qrScanLogging'].some((key) => key in raw) && !('scan' in raw))
     throw new Error('QR profiles and greeting preferences must be included with scan settings.');
   if ('createContent' in raw && !('creations' in raw)) throw new Error('Connect content must be included with creations.');
+  if ('github' in raw && !('creations' in raw)) throw new Error('GitHub settings must be included with creations.');
   if ('createSequence' in raw && !('creations' in raw)) throw new Error('The Connect sequence must be included with creations.');
   if ('createSequence' in raw && isObj(raw.createContent) && raw.createContent.kind === 'sequence')
     throw new Error('The Connect sequence is stored twice.');
@@ -130,6 +133,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
     ...('qrGreeting' in raw ? { qrGreeting: validateGreeting(raw.qrGreeting) } : {}),
     ...('qrScanLogging' in raw ? { qrScanLogging: validateLogging(raw.qrScanLogging) } : {}),
     ...('createContent' in raw ? { createContent: validateContent(raw.createContent) } : {}),
+    ...('github' in raw ? { github: validateGitHubSettings(raw.github) } : {}),
     ...('createSequence' in raw ? { createSequence: validateCreateSequence(raw.createSequence) } : {}),
     ...('settings' in raw ? { settings: validateSettings(raw.settings) } : {}),
     ...('sound' in raw ? { sound: validateSoundPreferences(raw.sound) } : {}),
