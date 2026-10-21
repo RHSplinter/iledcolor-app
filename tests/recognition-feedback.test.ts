@@ -7,6 +7,7 @@ import { verifyUtterance } from '../src/sound/analysis';
 import { defaultPreferences } from '../src/sound/dictionary';
 import type { DeviceController } from '../src/controller/deviceController';
 import { solid } from '../src/render/matrix';
+import { ensureFont } from '../src/render/text';
 
 vi.mock('../src/feedback', () => ({ vibrateFeedback: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../src/storage/db', () => ({ loadKv: vi.fn(), saveKv: vi.fn() }));
@@ -32,6 +33,7 @@ const context = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  Object.assign(target, { state: 'Ready', canRestoreContent: true, temporaryActive: false });
   document.body.innerHTML = '<section id="view-sound"></section><section id="view-scan"></section>';
   playback.mockResolvedValue('completed');
   vi.mocked(verifyUtterance).mockReturnValue(true);
@@ -84,6 +86,43 @@ it('does not vibrate for manual tests, room sounds or a busy cap', async () => {
   ui['rendering'] = true;
   ui['phrase'](phrase('hello'));
   expect(vibrateFeedback).not.toHaveBeenCalled();
+});
+
+for (const manual of [false, true]) {
+  it.each([
+    ['upload starts', { state: 'Uploading' }],
+    ['cap disconnects', { state: 'Disconnected' }],
+    ['temporary playback starts', { temporaryActive: true }],
+    ['restorable content disappears', { canRestoreContent: false }],
+  ])(`rejects ${manual ? 'manual' : 'detected'} reactions when %s during frame rendering`, async (_reason, change) => {
+    const ui = await listening();
+    let finish!: () => void;
+    vi.mocked(ensureFont).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const reaction = ui['react']('greeting', manual);
+    expect(ensureFont).toHaveBeenCalledOnce();
+    expect(playback).not.toHaveBeenCalled();
+    expect(vibrateFeedback).not.toHaveBeenCalled();
+    Object.assign(target, change);
+    finish();
+    await reaction;
+    expect(playback).not.toHaveBeenCalled();
+    expect(vibrateFeedback).not.toHaveBeenCalled();
+    expect(ui['playing']).toBeUndefined();
+    expect(ui['rendering']).toBe(false);
+  });
+}
+
+it('plays and vibrates once after deferred frame rendering when the cap remains ready', async () => {
+  const ui = await listening();
+  let finish!: () => void;
+  vi.mocked(ensureFont).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+  const reaction = ui['react']('greeting');
+  expect(playback).not.toHaveBeenCalled();
+  expect(vibrateFeedback).not.toHaveBeenCalled();
+  finish();
+  await reaction;
+  expect(playback).toHaveBeenCalledOnce();
+  expect(vibrateFeedback).toHaveBeenCalledOnce();
 });
 
 it.each(['camera', 'manual'] as const)('vibrates once after a successful %s scan greeting completes, not while it plays', async (source) => {

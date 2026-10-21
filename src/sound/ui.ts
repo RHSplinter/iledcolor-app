@@ -378,7 +378,8 @@ export class SoundUi {
     const token = this.generation;
     try {
       const frames = (await this.frames(id)).map((frame) => this.ctx.physical(frame));
-      if (target !== this.ctx.controller() || (!manual && (token !== this.generation
+      if (target !== this.ctx.controller() || target.state !== 'Ready' || target.temporaryActive
+        || !target.canRestoreContent || (!manual && (token !== this.generation
         || this.mode !== 'listening' || (this.near && this.preferences.pauseInPocket)))) return;
       this.playing = target; this.updateStatus(); this.error('');
       if (!manual && REACTIONS.find((r) => r.id === id)!.en.length) void vibrateFeedback();
