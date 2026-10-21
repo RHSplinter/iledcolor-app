@@ -2,7 +2,7 @@ import { DeviceController, DeviceError } from '../controller/deviceController';
 import type { RgbImage } from '../protocol/framing';
 import { encodeGif, gifNonce } from '../render/gif';
 import { drawPreview, parseHexColor } from '../render/matrix';
-import { ensureFont, renderSpanMarquee } from '../render/text';
+import { ensureFont, getTextFont, renderSpanMarquee } from '../render/text';
 import { gifDelayMs, msUntilLoopStart } from '../render/span';
 import { loadKv, savePreset, saveKv } from '../storage/db';
 import type { Content, GroupContent } from '../storage/presets';
@@ -509,7 +509,7 @@ async function applyPlan(plan: Plan) {
     let r: { frames: RgbImage[]; delays: number[]; periodMs?: number } | { image: RgbImage };
     try {
       const content = a.kind === 'create' ? ctx.createContent() : undefined;
-      sig = JSON.stringify(content ?? a);
+      sig = JSON.stringify([getTextFont(), content ?? a]);
       if (sig === c.lastSig) return;
       r = await renderAssignment(a, content);
     } catch (e) { c.note = `render failed: ${(e as Error).message}`; return; }
@@ -787,6 +787,11 @@ export function applyImportedApproachSettings(s: ApproachSettings): void {
 
 export function createContentChanged(): void {
   if (settings.tiers.solo.useCreate) engine?.invalidate();
+}
+
+export function textFontChanged(): void {
+  caps.forEach((c) => (c.lastSig = undefined));
+  engine?.invalidate();
 }
 
 /** Loads a group preset; a running approach mode resends the new content. */
