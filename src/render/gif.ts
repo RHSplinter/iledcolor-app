@@ -55,7 +55,7 @@ export function encodeGif(frames: RgbImage[], delayMs: number | number[], opts: 
     return encodeExact(frames, delayMs, opts.nonce, opts.plays);
   } catch (e) {
     if (!(e instanceof RangeError) || !/256 colors/.test(e.message)) throw e;
-    return encodeExact(frames.map(quantize), delayMs, opts.nonce, opts.plays);
+    return encodeExact(frames.map(quantizeGifFrame), delayMs, opts.nonce, opts.plays);
   }
 }
 
@@ -78,7 +78,7 @@ export function renewGif(gif: Uint8Array): Uint8Array {
 }
 
 /** Snap to a fixed 6x7x6 colour cube (252 colours) so photographic frames fit a GIF palette. */
-function quantize(f: RgbImage): RgbImage {
+export function quantizeGifFrame(f: RgbImage): RgbImage {
   const px = new Uint8Array(f.pixels.length);
   const lv = [5, 6, 5];
   for (let i = 0; i < px.length; i++) px[i] = Math.round((Math.round((f.pixels[i]! / 255) * lv[i % 3]!) / lv[i % 3]!) * 255);

@@ -18,6 +18,7 @@ const features = {
   createContent: { kind: 'text' as const, text: 'Current draft', fg: '#123456', bg: '#654321', speed: 9 },
   qrGreeting: { pattern: 'name=(.+)', template: 'Welcome {name}!', repetitions: 17, speed: 8 },
   qrScanLogging: true,
+  github: { handle: 'octocat', prefix: 'Saved {handle}: ', postfix: '\u{1f389}' },
 };
 const approach = { ...DEFAULT_APPROACH, mode: 'hub' as const, beacon: false, countNearbyCaps: false, enterDbm: -62, settleMs: 4500 };
 
@@ -38,6 +39,7 @@ describe('selected backup categories', () => {
       } : undefined);
       expect(data.settings).toEqual(selection.settings ? features.settings : undefined);
       expect(data.createContent).toEqual(selection.creations ? features.createContent : undefined);
+      expect(data.github).toEqual(selection.creations ? features.github : undefined);
       expect(data.qrProfiles).toEqual(selection.scan ? profiles : undefined);
       expect(data.qrGreeting).toEqual(selection.scan ? features.qrGreeting : undefined);
       expect(data.qrScanLogging).toEqual(selection.scan ? true : undefined);
@@ -68,10 +70,61 @@ describe('selected backup categories', () => {
     if (data.version !== 2) throw new Error('Wrong version');
     expect(data.approach).toEqual({ groups: DEFAULT_APPROACH.tiers, presets: [group] });
     expect(data.createContent).toBeUndefined();
+    expect(data.github).toBeUndefined();
     expect(data.settings).toBeUndefined();
     expect(data.qrGreeting).toBeUndefined();
     expect(data.qrScanLogging).toBeUndefined();
     expect(data.qrProfiles).toBeUndefined();
+  });
+
+  describe('GitHub settings backup', () => {
+    it('rejects invalid and misplaced handles while preserving absent handles in older backups', () => {
+      for (const github of [null, {}, { handle: '@octocat' }, { handle: 123 },
+        { handle: 'octocat', prefix: null }, { handle: 'octocat', postfix: 123 },
+        { handle: 'octocat', prefix: 'x'.repeat(201) }, { handle: 'octocat', postfix: '\n' }]) {
+        expect(() => parseSharedBackup(JSON.stringify({ app: 'iledcolor-app', version: 2, creations: [], github }))).toThrow();
+      }
+      expect(() => parseSharedBackup(JSON.stringify({
+        app: 'iledcolor-app', version: 2, scan: {}, github: features.github,
+      }))).toThrow(/with creations/);
+      const data = parseSharedBackup(exportSelectedJson([], approach, all, undefined, { ...features, github: { handle: '' } }));
+      if (data.version !== 2) throw new Error('Wrong version');
+      expect(data.github).toEqual({ handle: '' });
+    });
+
+    it('persists the handle and captions atomically and preserves them when absent from an import', async () => {
+      await restoreBackup([creation], features.settings, undefined, { github: features.github });
+      expect(await loadKv('github')).toEqual(features.github);
+      await restoreBackup([group]);
+      expect(await loadKv('github')).toEqual(features.github);
+      const original = IDBObjectStore.prototype.put;
+      const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+        if (key === 'github') throw new DOMException('GitHub write failed', 'DataCloneError');
+        return original.call(this, value, key);
+      });
+      try {
+        await expect(restoreBackup([localCreation], DEFAULT_SETTINGS, undefined, { github: { handle: 'changed', prefix: '', postfix: '' } }))
+          .rejects.toThrow(/GitHub write failed/);
+      } finally { put.mockRestore(); }
+      expect(await loadKv('github')).toEqual(features.github);
+      expect(await listPresets()).toEqual([group]);
+      expect(await loadSettings()).toEqual(features.settings);
+    });
+
+    it('round-trips empty captions and preserves absent fields in handle-only backups', () => {
+      for (const github of [{ handle: 'octocat' }, { handle: 'octocat', prefix: '', postfix: '' }]) {
+        const data = parseSharedBackup(exportSelectedJson([], approach, all, undefined, { ...features, github }));
+        if (data.version !== 2) throw new Error('Wrong version');
+        expect(data.github).toEqual(github);
+      }
+    });
+
+    it('ignores invalid captions when Creations is excluded', () => {
+      const json = exportSelectedJson([], approach, { creations: false, approach: false, scan: true }, undefined,
+        { github: { handle: 'octocat', prefix: 'x'.repeat(201), postfix: '\n' } });
+      expect(JSON.parse(json)).not.toHaveProperty('github');
+      expect(parseSharedBackup(json).version).toBe(2);
+    });
   });
 
   it('preserves an explicitly disabled logging preference', () => {

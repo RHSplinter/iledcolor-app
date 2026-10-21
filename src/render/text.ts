@@ -17,7 +17,7 @@ export async function ensureFont(): Promise<void> {
 export interface TextRender { image: RgbImage; unsupported: string[]; clipped: boolean }
 
 /** One-line strip at natural width: hard-pixel ASCII text plus colour emoji. */
-function renderStrip(text: string, height: number, fg: Rgb, bg: Rgb): { strip: RgbImage; unsupported: string[] } {
+export function renderStrip(text: string, height: number, fg: Rgb, bg: Rgb): { strip: RgbImage; unsupported: string[] } {
   const { runs, unsupported } = splitRuns(text);
   const emojiPx = Math.max(8, height - 2);
   const probe = document.createElement('canvas').getContext('2d')!;

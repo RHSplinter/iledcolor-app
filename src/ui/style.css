@@ -47,7 +47,7 @@ button:not(:disabled):active { filter:brightness(.85); }
 summary { min-height:44px; padding:10px 0; cursor:pointer; font-weight:600; }
 details.card > summary { font-size:16px; }
 details.card[open] > summary { margin-bottom:var(--space-3); }
-canvas#preview { display:block; max-width:100%; background:#000; border:1px solid #333; margin:8px auto; }
+canvas#preview, canvas#github-preview { display:block; max-width:100%; background:#000; border:1px solid #333; margin:8px auto; }
 .warn { color:var(--warn); } .bad { color:var(--bad); } .small { font-size:13px; color:#aaa; }
 nav { position:fixed; bottom:0; left:0; right:0; z-index:2; display:flex; background:#000; padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); border-top:1px solid #333; }
 nav button { flex:1; border-radius:0; background:none; min-height:64px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; font-size:12px; }
