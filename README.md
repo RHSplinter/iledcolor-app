@@ -237,7 +237,9 @@ and emoji; leave a field empty to omit that caption. Spaces are preserved. Editi
 captions immediately updates a loaded preview without fetching contributions again;
 choose **Show on hat** to upload the updated animation. Very long captions can exceed
 the hat's upload-size limit; shorten them if an upload reports that limit.
-Emoji appearance follows the device's system emoji font. Loading or uploading a graph
+Emoji appearance follows the device's system emoji font. Caption colors are reduced
+to a GIF-safe palette before preview and upload so all five graph intensities remain exact.
+Loading or uploading a graph
 does not change the content editor.
 
 Loading requires internet and sends the entered public handle to the third-party

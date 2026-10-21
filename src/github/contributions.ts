@@ -2,6 +2,7 @@ import type { RgbImage } from '../protocol/framing';
 import { solid, type Rgb } from '../render/matrix';
 import { sliceSpan } from '../render/span';
 import { splitRuns } from '../render/segments';
+import { quantizeGifFrame } from '../render/gif';
 
 export interface GitHubSettings { handle: string; prefix?: string; postfix?: string }
 export const DEFAULT_GITHUB_PREFIX = '2026 contributions by {handle}: ';
@@ -100,7 +101,8 @@ export function renderContributionMarquee(
   caption?: { before: RgbImage; after: RgbImage },
 ): RgbImage[] {
   const graph = renderContributionStrip(days, height, now);
-  const parts = caption ? [caption.before, graph, caption.after] : [graph];
+  // The 252-color caption cube plus the graph's three off-cube greens fits in 255 entries.
+  const parts = caption ? [quantizeGifFrame(caption.before), graph, quantizeGifFrame(caption.after)] : [graph];
   const strip = solid(parts.reduce((sum, part) => sum + part.width, 0), height, [0, 0, 0]);
   let offset = 0;
   for (const part of parts) {

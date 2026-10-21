@@ -160,4 +160,31 @@ describe('GitHub contributions', () => {
     expect(() => renderContributionMarquee(days, 32, 16, now, 2, { before: solid(12, 8, [255, 255, 255]), after }))
       .toThrow(/height must match/);
   });
+
+  it('preserves encoded graph colors when captions exceed 256 distinct colors', () => {
+    const now = new Date('2026-10-20T12:00:00Z');
+    const days = [0, 1, 2, 3, 4].map((level) => ({ date: `2026-10-${14 + level}`, count: level, level }));
+    const caption = solid(32, 16, [0, 0, 0]);
+    const inputColors = new Set<string>();
+    for (let i = 0; i < 512; i++) {
+      const color = [i & 255, i >> 8, (i * 37) & 255];
+      caption.pixels.set(color, i * 3);
+      inputColors.add(color.join(','));
+    }
+    expect(inputColors.size).toBeGreaterThan(256);
+    const original = caption.pixels.slice();
+    const frames = renderContributionMarquee(days, 32, 16, now, 2, { before: caption, after: caption });
+    expect(caption.pixels).toEqual(original);
+    const gif = encodeGif(frames, 44, { nonce: gifNonce() });
+    const tableSize = 1 << ((gif[10]! & 7) + 1);
+    const palette = new Set<string>();
+    for (let i = 0; i < tableSize; i++) palette.add([...gif.subarray(13 + i * 3, 16 + i * 3)].join(','));
+    for (const green of [0, 8, 48, 100, 170, 255]) expect(palette.has(`0,${green},0`)).toBe(true);
+    const graphOnly = renderContributionMarquee(days, 32, 16, now);
+    const graphStart = caption.width / 2;
+    // Once the prefix leaves the display, every graph pixel must still match the preview.
+    for (let i = 16; i <= 53; i++) {
+      expect(frames[i + graphStart]!.pixels).toEqual(graphOnly[i]!.pixels);
+    }
+  });
 });
