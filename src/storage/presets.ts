@@ -1,5 +1,6 @@
 import type { Fit } from '../render/image';
 import type { Transform } from '../render/matrix';
+import { DEFAULT_TEXT_FONT, isTextFont, type TextFont } from '../render/fonts';
 import { TIER_IDS, type TierConfig, type TierId } from '../approach/tiers';
 import { validateGreetingProfiles, type GreetingProfileState } from '../scanner/greeting';
 
@@ -27,12 +28,14 @@ export const isGroupPreset = (p: Preset): p is GroupPreset => 'groups' in p;
 
 export interface Settings {
   width: number; height: number; transform: Transform; brightness: number;
+  textFont?: TextFont;
   /** True only after the compatibility spike confirmed these dimensions on the real hat. */
   dimensionsVerified: boolean;
   chunkSize: number; interWriteDelayMs: number;
 }
 export const DEFAULT_SETTINGS: Settings = {
   width: 32, height: 16, transform: { rotation: 0, mirrorH: false, mirrorV: false }, brightness: 8,
+  textFont: DEFAULT_TEXT_FONT,
   dimensionsVerified: true, chunkSize: 492, interWriteDelayMs: 1,
 };
 
@@ -122,6 +125,8 @@ export function validateGroups(g: unknown): GroupContent {
 
 export function validateSettings(s: unknown): Settings {
   if (!isObj(s) || !isObj(s.transform)) throw new Error('invalid settings');
+  const textFont = s.textFont;
+  if (textFont !== undefined && !isTextFont(textFont)) throw new Error('invalid text font');
   const t = s.transform;
   if (![0, 90, 180, 270].includes(t.rotation as number) || typeof t.mirrorH !== 'boolean' || typeof t.mirrorV !== 'boolean')
     throw new Error('invalid transform');
@@ -131,6 +136,7 @@ export function validateSettings(s: unknown): Settings {
   return {
     width: s.width, height: s.height, brightness: s.brightness, dimensionsVerified: s.dimensionsVerified === true,
     chunkSize: s.chunkSize, interWriteDelayMs: s.interWriteDelayMs,
+    ...(textFont === undefined ? {} : { textFont }),
     transform: { rotation: t.rotation as 0 | 90 | 180 | 270, mirrorH: t.mirrorH, mirrorV: t.mirrorV },
   };
 }

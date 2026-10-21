@@ -6,6 +6,7 @@ import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSe
 import { listPresets, loadKv, loadSettings, restoreBackup } from '../src/storage/db';
 import { DEFAULT_GREETING } from '../src/scanner/greeting';
 import { defaultPreferences } from '../src/sound/dictionary';
+import { TEXT_FONTS } from '../src/render/fonts';
 
 const creation: ContentPreset = { id: 'creation', name: 'Hello', updatedAt: 1, content: { kind: 'solid', color: '#ffffff' } };
 const group: GroupPreset = { id: 'group', name: 'Party', updatedAt: 2, groups: structuredClone(DEFAULT_APPROACH.tiers) };
@@ -14,7 +15,7 @@ const localCreation = { ...creation, id: 'local-creation' };
 const localGroup = { ...group, id: 'local-group' };
 const profiles = { selectedId: '1', profiles: [{ id: '1', note: 'Conference', pattern: '^(.+)$', template: 'Hello {name}!' }] };
 const features = {
-  settings: { ...DEFAULT_SETTINGS, brightness: 3, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90 as const, mirrorH: true, mirrorV: true } },
+  settings: { ...DEFAULT_SETTINGS, textFont: 'dotgothic' as const, brightness: 3, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90 as const, mirrorH: true, mirrorV: true } },
   createContent: { kind: 'text' as const, text: 'Current draft', fg: '#123456', bg: '#654321', speed: 9 },
   qrGreeting: { pattern: 'name=(.+)', template: 'Welcome {name}!', repetitions: 17, speed: 8 },
   qrScanLogging: true,
@@ -23,6 +24,27 @@ const features = {
 const approach = { ...DEFAULT_APPROACH, mode: 'hub' as const, beacon: false, countNearbyCaps: false, enterDbm: -62, settleMs: 4500 };
 
 describe('selected backup categories', () => {
+  for (const { id } of TEXT_FONTS) {
+    it(`round-trips the ${id} LED font with display settings`, () => {
+      const settings = { ...DEFAULT_SETTINGS, textFont: id };
+      const data = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH,
+        { creations: false, approach: false, scan: false, settings: true }, undefined, { settings }));
+      expect(data.settings).toEqual(settings);
+    });
+  }
+
+  it('rejects invalid font IDs without inventing a font for older display settings', () => {
+    for (const version of [1, 2]) {
+      const file = version === 1 ? JSON.parse(exportJson(DEFAULT_SETTINGS, []))
+        : { app: 'iledcolor-app', version: 2, settings: { ...DEFAULT_SETTINGS } };
+      for (const textFont of ['Arial', '', null, 3, {}, ['tiny5']]) {
+        expect(() => parseSharedBackup(JSON.stringify({ ...file, settings: { ...file.settings, textFont } }))).toThrow(/text font/);
+      }
+      delete file.settings.textFont;
+      expect(parseSharedBackup(JSON.stringify(file)).settings).not.toHaveProperty('textFont');
+    }
+  });
+
   for (let flags = 1; flags < 16; flags++) {
     const selection: ShareSelection = { creations: !!(flags & 1), approach: !!(flags & 2), scan: !!(flags & 4), settings: !!(flags & 8) };
     it(`round-trips selection ${JSON.stringify(selection)} without excluded categories`, () => {
@@ -219,6 +241,33 @@ describe('selected backup categories', () => {
 });
 
 describe('saving an imported backup', () => {
+  it('preserves the selected font when version-1 or older version-2 settings omit it', async () => {
+    await restoreBackup([creation], features.settings);
+    const { textFont: _font, ...oldSettings } = DEFAULT_SETTINGS;
+    for (const version of [1, 2]) {
+      const file = version === 1 ? JSON.parse(exportJson(oldSettings, [creation]))
+        : { app: 'iledcolor-app', version: 2, creations: [creation], settings: oldSettings };
+      const data = parseSharedBackup(JSON.stringify(file));
+      await restoreBackup([creation], data.settings);
+      expect(await loadSettings()).toEqual({ ...oldSettings, textFont: 'dotgothic' });
+    }
+  });
+
+  it('rolls back font, settings and presets if merging older settings fails', async () => {
+    await restoreBackup([creation], features.settings);
+    const { textFont: _font, ...oldSettings } = DEFAULT_SETTINGS;
+    const original = IDBObjectStore.prototype.put;
+    const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+      if (key === 'settings') throw new DOMException('Settings write failed', 'DataCloneError');
+      return original.call(this, value, key);
+    });
+    try {
+      await expect(restoreBackup([localCreation], oldSettings)).rejects.toThrow(/Settings write failed/);
+    } finally { put.mockRestore(); }
+    expect(await listPresets()).toEqual([creation]);
+    expect(await loadSettings()).toEqual(features.settings);
+  });
+
   it('persists all feature preferences together and retains omitted preferences', async () => {
     await restoreBackup([creation, group], features.settings, approach, { ...features, qrProfiles: profiles });
     expect(await loadSettings()).toEqual(features.settings);
