@@ -1,6 +1,7 @@
 import { DEFAULT_SETTINGS, validateSettings, type Preset, type Settings } from './presets';
 import type { ApproachSettings } from '../approach/tiers';
 import type { BackupFeatures } from './sharedBackup';
+import { isTextFont } from '../render/fonts';
 
 const DB_NAME = 'iledcolor';
 const DB_VERSION = 1;
@@ -60,7 +61,24 @@ export async function restoreBackup(presets: Preset[], settings?: Settings, appr
         const store = t.objectStore('presets');
         store.clear();
         presets.forEach((p) => store.put(p));
-        if (settings) t.objectStore('kv').put(settings, 'settings');
+        if (settings) {
+          const kv = t.objectStore('kv');
+          if (settings.textFont !== undefined) kv.put(settings, 'settings');
+          else {
+            const request = kv.get('settings');
+            request.onsuccess = () => {
+              try {
+                const saved: unknown = request.result;
+                const textFont = typeof saved === 'object' && saved !== null && 'textFont' in saved && isTextFont(saved.textFont)
+                  ? saved.textFont : undefined;
+                kv.put({ ...settings, ...(textFont === undefined ? {} : { textFont }) }, 'settings');
+              } catch (e) {
+                t.abort();
+                reject(new Error(`Import could not be saved: ${(e as Error).message}`));
+              }
+            };
+          }
+        }
         if (approach) t.objectStore('kv').put(approach, 'approach');
         if (features.sound) t.objectStore('kv').put(features.sound, 'soundPreferences');
         for (const key of ['createContent', 'createSequence', 'qrProfiles', 'qrGreeting', 'qrScanLogging', 'github'] as const) {

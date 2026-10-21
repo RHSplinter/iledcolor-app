@@ -24,8 +24,21 @@ tab navigation and responsive controls on Android, iOS and web.
 - **Sound:** opt-in applause/whistle detection, wearer voice sampling, English/German
   phrase reactions, pocket-pause settings, dictionary and editable animation text.
 - **Settings:** saved presets and category-based sharing/import, then display brightness/on/off,
-  expandable test patterns and protocol log, and rotation/mirroring/transport settings.
+  LED text font, expandable test patterns and protocol log, and rotation/mirroring/transport settings.
   Loading a content preset opens Connect; loading a group preset opens Approach.
+
+Choose **Settings → Display → LED text font** for all text on the LED matrix:
+**Silkscreen** (compact, the default), **Tiny5** (large), **Press Start 2P** (arcade),
+**DotGothic16** (tall), or **Bitcount** (full height). All five are bundled for offline use and rendered at their
+native pixel sizes, except Tiny5 and Bitcount Prop Single, which use crisp 2x sizes for readability on the
+16-row display. Bitcount's ascenders and descenders use all 16 rows. Glyphs have trimmed side bearings and a one-pixel gap between letters;
+emoji get a two-pixel gap on each side so they never touch neighbouring letters.
+Emoji retain their system colour appearance and reserve their actual
+rendered width rather than an assumed square. The sample
+and Connect preview update immediately; send again to replace content already on the
+hat. Running Approach content updates automatically; subsequent Scan greetings and
+Sound reactions use the chosen font. The app remembers the choice after reload.
+Font copyright and SIL Open Font License notices are bundled in [public/licenses](public/licenses/).
 
 The UI retains its dark theme and blue accent, with larger touch targets, visible keyboard
 focus, arrow/Home/End tab navigation, a non-colour selected-tab marker, responsive form
@@ -206,7 +219,8 @@ prefix and postfix text),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
 **Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
 repetitions, speed and scan-logging preference), **Display & transport settings**
-(dimensions, brightness, rotation, mirroring and Bluetooth write settings), and
+(LED text font, dimensions, brightness, rotation, mirroring and Bluetooth write settings;
+older backups without a font keep your current choice), and
 **Sound settings** (room sounds, phrases, language, pocket pause, enabled reactions and
 their cap texts). Importing Sound settings stops active listening; the voice sample and
 the browser speech permission stay on each device, so record a voice sample on the

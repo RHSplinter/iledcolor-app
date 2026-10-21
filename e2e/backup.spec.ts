@@ -49,6 +49,7 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.fill('#sound-text-greeting', 'SERVUS');
   await page.locator('#sound-text-greeting').dispatchEvent('change');
   await page.click('nav [data-tab=settings]');
+  await page.selectOption('#s-font', 'tiny5');
   await page.selectOption('#s-rot', '90');
   await page.check('#s-mh');
   await page.fill('#s-chunk', '128');
@@ -63,11 +64,12 @@ test('all categories restore settings from every tab immediately and after reloa
   expect(backup.qrGreeting).toEqual({ pattern: 'name=(.+)', template: 'Current {name}!', repetitions: 17, speed: 8 });
   expect(backup.qrProfiles.profiles[0].template).toBe('Saved {name}!');
   expect(backup.qrScanLogging).toBe(true);
-  expect(backup.settings).toMatchObject({ brightness: 2, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90, mirrorH: true } });
+  expect(backup.settings).toMatchObject({ textFont: 'tiny5', brightness: 2, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90, mirrorH: true } });
   expect(backup.sound).toMatchObject({ language: 'de-DE', sounds: false, allowBrowserSpeech: false, reactions: { greeting: { text: 'SERVUS' } } });
   for (const key of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'soundVoice']) expect(backup).not.toHaveProperty(key);
 
   await page.selectOption('#s-rot', '0');
+  await page.selectOption('#s-font', 'dotgothic');
   await page.uncheck('#s-mh');
   await page.locator('#brightness').fill('9');
   await page.fill('#s-chunk', '492');
@@ -117,6 +119,7 @@ test('all categories restore settings from every tab immediately and after reloa
     await expect(page.locator('#sound-noises')).not.toBeChecked();
     await expect(page.locator('#sound-text-greeting')).toHaveValue('SERVUS');
     await page.click('nav [data-tab=settings]');
+    await expect(page.locator('#s-font')).toHaveValue('tiny5');
     await expect(page.locator('#s-rot')).toHaveValue('90');
     await expect(page.locator('#brightness')).toHaveValue('2');
     await expect(page.locator('#s-mh')).toBeChecked();
