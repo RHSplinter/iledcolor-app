@@ -9,6 +9,11 @@ async function setup(page: Page) {
       abort() {}
     }
     Object.assign(window, { SpeechRecognition: Speech, microphoneRequests: 0 });
+    Object.assign(window, { feedbackVibrations: [] as number[] });
+    Object.defineProperty(navigator, 'vibrate', { configurable: true, value: (duration: number) => {
+      (window as Window & { feedbackVibrations: number[] }).feedbackVibrations.push(duration);
+      return true;
+    } });
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true, value: async () => {
       const scope = window as Window & { microphoneRequests: number };
       scope.microphoneRequests++;
@@ -40,6 +45,11 @@ test('sound tab is opt-in, shows bilingual dictionary, and requires a wearer sam
   await page.locator('#sound-reactions summary').first().click();
   await expect(page.locator('#sound-reactions details').first()).toContainText('good morning');
   await expect(page.locator('#sound-reactions details').first()).toContainText('guten morgen');
+  await expect(page.locator('#sound-reactions details').first()).toContainText('nice to meet you');
+  await expect(page.locator('#sound-text-greeting')).toHaveValue('HELLO! 👋');
+  await page.click('#sound-preview-button');
+  await expect(page.locator('#sound-error')).toBeEmpty();
+  expect(await page.locator('#sound-preview').evaluate((node: HTMLCanvasElement) => node.width)).toBeGreaterThan(0);
   await page.selectOption('#sound-language', 'de-DE');
   await expect(page.locator('#sound-language')).toBeEnabled();
   await page.fill('#sound-text-greeting', 'MOIN!');
@@ -76,6 +86,7 @@ test('test reaction uses temporary cap playback and restores content without mic
   await expect(page.locator('#sound-status')).toContainText('Previous content restored', { timeout: 15000 });
   await expect(page.locator('#sound-error')).toBeEmpty();
   expect(await page.evaluate(() => (window as Window & { microphoneRequests: number }).microphoneRequests)).toBe(0);
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([]);
 });
 
 test('voice enrollment, utterance filtering and microphone shutdown work end to end with simulated audio', async ({ page }) => {
@@ -104,7 +115,7 @@ test('voice enrollment, utterance filtering and microphone shutdown work end to 
       lang = ''; continuous = true; interimResults = false;
       onresult: ((event: { resultIndex: number; results: { isFinal: boolean; 0: { transcript: string } }[] }) => void) | null = null;
       onerror = null; onend = null;
-      emit = () => this.onresult?.({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'hello' } }] });
+      emit = () => this.onresult?.({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'Well, nice to meet you, everyone!' } }] });
       start() { window.addEventListener('test-phrase', this.emit); }
       abort() { window.removeEventListener('test-phrase', this.emit); }
     }
@@ -132,12 +143,16 @@ test('voice enrollment, utterance filtering and microphone shutdown work end to 
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('test-pitch', { detail: 180 })));
   await page.clock.runFor(300);
   await expect(page.locator('#sound-status')).toContainText('Phrase ignored');
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([]);
   await page.clock.runFor(1200);
   await page.evaluate(() => window.dispatchEvent(new Event('test-phrase')));
   await page.clock.runFor(300);
   await expect(page.locator('#sound-status')).toContainText('Playing Greeting');
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
+  await page.evaluate(() => window.dispatchEvent(new Event('test-phrase')));
   await page.clock.runFor(10000);
   await expect(page.locator('#sound-status')).toContainText('Previous content restored');
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
   await page.getByRole('tab', { name: 'Connect', exact: true }).click();
   await page.getByRole('tab', { name: 'Sound', exact: true }).click();
   await expect(page.locator('#sound-status')).toContainText('Microphone is off');

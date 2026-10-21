@@ -46,7 +46,7 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.selectOption('#sound-language', 'de-DE');
   await page.uncheck('#sound-noises');
   await page.locator('#sound-reactions details').first().locator('summary').click();
-  await page.fill('#sound-text-greeting', 'SERVUS');
+  await page.fill('#sound-text-greeting', 'SERVUS 👋');
   await page.locator('#sound-text-greeting').dispatchEvent('change');
   await page.click('nav [data-tab=settings]');
   await page.selectOption('#s-rot', '90');
@@ -64,7 +64,7 @@ test('all categories restore settings from every tab immediately and after reloa
   expect(backup.qrProfiles.profiles[0].template).toBe('Saved {name}!');
   expect(backup.qrScanLogging).toBe(true);
   expect(backup.settings).toMatchObject({ brightness: 2, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90, mirrorH: true } });
-  expect(backup.sound).toMatchObject({ language: 'de-DE', sounds: false, allowBrowserSpeech: false, reactions: { greeting: { text: 'SERVUS' } } });
+  expect(backup.sound).toMatchObject({ language: 'de-DE', sounds: false, allowBrowserSpeech: false, reactions: { greeting: { text: 'SERVUS 👋' } } });
   for (const key of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'soundVoice']) expect(backup).not.toHaveProperty(key);
 
   await page.selectOption('#s-rot', '0');
@@ -115,7 +115,7 @@ test('all categories restore settings from every tab immediately and after reloa
     await page.click('nav [data-tab=sound]');
     await expect(page.locator('#sound-language')).toHaveValue('de-DE');
     await expect(page.locator('#sound-noises')).not.toBeChecked();
-    await expect(page.locator('#sound-text-greeting')).toHaveValue('SERVUS');
+    await expect(page.locator('#sound-text-greeting')).toHaveValue('SERVUS 👋');
     await page.click('nav [data-tab=settings]');
     await expect(page.locator('#s-rot')).toHaveValue('90');
     await expect(page.locator('#brightness')).toHaveValue('2');
