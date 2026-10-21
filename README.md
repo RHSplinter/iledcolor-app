@@ -21,6 +21,8 @@ tab navigation and responsive controls on Android, iOS and web.
   physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
 - **Scan:** the scan/stop/end-greeting actions, camera and status come first, followed by
   the profile selector, QR profile editor, greeting settings, manual entry, and scan-log/privacy controls.
+  A completed QR greeting (camera or manual entry) vibrates once after the previous cap
+  content is restored; stopping the camera, ending a greeting early or a failure does not vibrate.
 - **Sound:** opt-in applause/whistle detection, wearer voice sampling, English/German
   phrase reactions, pocket-pause settings, dictionary and editable animation text.
 - **Settings:** saved presets and category-based sharing/import, then display brightness/on/off,
@@ -123,12 +125,22 @@ and restoration without listening. Reactions use the existing temporary-content
 controller, restore the previous content, skip busy/QR-greeting periods and apply
 a 10-second cooldown. **End reaction** restores early. Firmware playback timing
 and physical display behaviour still require real-cap verification.
+New voice-reaction defaults include emoji, such as **HELLO! 👋**, **THANK YOU! 🙏**
+and **COFFEE? ☕**. Cap texts accept printable ASCII and supported emoji (up to
+40 characters); emoji appearance depends on the phone's system font. Existing
+saved texts, including customized and older plain-text defaults, are kept unchanged.
+Accepted wearer phrases vibrate once when their reaction starts, after voice
+verification and the normal busy/pocket/cooldown checks. Rejected or duplicate
+detections, room sounds, previews and manual reaction tests do not vibrate.
 
 Phrases are off by default. First record a **12-second voice sample** in a quiet
 place, then enable phrases and select **English** or **Deutsch** for the conversation.
 The editable reaction list includes a built-in bilingual dictionary, including
-“hello / guten Morgen”, “bye / tschüss”, “awesome / toll”, “food / Frühstück”
-and conference phrases. Matching uses whole words and prefers longer phrases.
+“hello / guten Morgen”, “nice to meet you / schön dich kennenzulernen”,
+“bye / tschüss”, “awesome / toll”, “food / Frühstück” and conference phrases.
+Phrases also match within sentences, for example “Well, nice to meet you, everyone!”.
+Matching normalizes case, accents, punctuation and whitespace, uses whole-word
+boundaries (not substrings such as “hi” in “shipment”), and prefers longer phrases.
 The recognizer listens in one selected language at a time; it does not switch
 languages automatically.
 
@@ -167,6 +179,10 @@ Native plugins are registered directly in MainActivity/AppViewController, so the
 do not appear as npm plugins in `cap ls`; rebuild the native app after synchronizing.
 Native permissions, language-service support, proximity screen-off behaviour and
 speaker/noise accuracy must still be verified on physical phones.
+Vibration uses the Capacitor 8 Haptics plugin on Android/iOS and the Vibration API
+where supported on web; unsupported hardware/browsers or denied feedback do not
+interrupt recognition or scanning. Rebuild native apps after sync to include Haptics.
+Actual vibration strength and delivery require physical-device verification.
 
 ### App icons
 
@@ -208,7 +224,8 @@ prefix and postfix text),
 repetitions, speed and scan-logging preference), **Display & transport settings**
 (dimensions, brightness, rotation, mirroring and Bluetooth write settings), and
 **Sound settings** (room sounds, phrases, language, pocket pause, enabled reactions and
-their cap texts). Importing Sound settings stops active listening; the voice sample and
+their cap texts, including emoji and custom texts). No new vibration setting is required.
+Importing Sound settings stops active listening; the voice sample and
 the browser speech permission stay on each device, so record a voice sample on the
 receiving phone before using phrases.
 The system share sheet sends a JSON file. Import replaces only the included categories,

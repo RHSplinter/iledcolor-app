@@ -5,6 +5,7 @@ import { drawPreview, parseHexColor } from '../render/matrix';
 import { ensureFont, renderMarquee } from '../render/text';
 import { loadKv, saveKv } from '../storage/db';
 import { isNativeApp } from '../platform';
+import { vibrateFeedback } from '../feedback';
 import { analyseFrames, detectSound, enrollVoice, validateVoiceProfile, verifyUtterance, type AudioFeatures, type VoiceProfile } from './analysis';
 import { SoundCapture, type Phrase, type SoundCapabilities } from './capture';
 import { defaultPreferences, matchPhrase, REACTIONS, validatePreferences, type ReactionId, type SoundPreferences } from './dictionary';
@@ -87,7 +88,7 @@ export class SoundUi {
       </div>
       <div class="card">
         <h2>Reactions &amp; dictionary</h2>
-        <p class="small">Choose active categories and edit the scrolling cap animation text (up to 40 ASCII characters).
+        <p class="small">Choose active categories and edit the scrolling cap animation text (up to 40 characters: ASCII and emoji).
         Reactions play once, then restore the previous cap content. A 10-second cooldown prevents repeated interruptions.
         Applause and whistle detection uses experimental acoustic rules; music and other sounds can trigger them.</p>
         <div id="sound-reactions"></div>
@@ -380,6 +381,7 @@ export class SoundUi {
       if (target !== this.ctx.controller() || (!manual && (token !== this.generation
         || this.mode !== 'listening' || (this.near && this.preferences.pauseInPocket)))) return;
       this.playing = target; this.updateStatus(); this.error('');
+      if (!manual && REACTIONS.find((r) => r.id === id)!.en.length) void vibrateFeedback();
       this.status(`Playing ${REACTIONS.find((r) => r.id === id)!.label}. Previous content will be restored.`);
       await target.playTemporary(encodeGif(frames, 60, { nonce: gifNonce(), plays: 1 }), frames[0]!, frames.length * 60);
       this.status(this.mode === 'listening' ? 'Previous content restored. Listening.'

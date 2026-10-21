@@ -12,6 +12,11 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   for (let y = 0; y < qr.getHeight(); y++)
     for (let x = 0; x < qr.getWidth(); x++) if (qr.get(x, y)) pixels.push(x, y);
   await page.addInitScript(({ pixels }) => {
+    Object.assign(window, { feedbackVibrations: [] as number[] });
+    Object.defineProperty(navigator, 'vibrate', { value: (duration: number) => {
+      (window as Window & { feedbackVibrations: number[] }).feedbackVibrations.push(duration);
+      return true;
+    } });
     const getUserMedia = async () => {
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 256;
@@ -47,7 +52,9 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   await page.click('#qr-start');
   await expect(page.locator('#qr-status')).toContainText('Hi Rob!', { timeout: 15000 });
   await expect(page.locator('#qr-video')).toBeHidden();
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([]);
   await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 25000 });
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
   await expect(page.locator('#qr-error')).toBeEmpty();
   await expect(page.locator('#qr-start')).toBeEnabled();
   await expect(page.locator('#qr-log-status')).toHaveText('Scan saved to qr-scan-log.jsonl.');
@@ -62,6 +69,13 @@ test('camera decodes a QR code offline and greets the primary cap before restori
 });
 
 test('a greeting pauses only the primary cap while approach updates keep reaching other caps', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.assign(window, { feedbackVibrations: [] as number[] });
+    Object.defineProperty(navigator, 'vibrate', { value: (duration: number) => {
+      (window as Window & { feedbackVibrations: number[] }).feedbackVibrations.push(duration);
+      return true;
+    } });
+  });
   await page.goto('/#mock');
   await page.click('#btn-connect');
   await page.click('nav [data-tab=approach]');
@@ -87,6 +101,7 @@ test('a greeting pauses only the primary cap while approach updates keep reachin
   await page.click('nav [data-tab=scan]');
   await page.click('#qr-cancel');
   await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15000 });
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([]);
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-caps .cap-note').first()).toContainText('span ', { timeout: 15000 });
 });

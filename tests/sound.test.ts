@@ -4,6 +4,7 @@ import {
   type AudioFeatures,
 } from '../src/sound/analysis';
 import { defaultPreferences, matchPhrase, REACTIONS, validatePreferences } from '../src/sound/dictionary';
+import { splitRuns } from '../src/render/segments';
 
 const ids = REACTIONS.map((r) => r.id);
 function tone(pitch: number, at: number, gain = 0.12, sampleRate = 16000) {
@@ -23,12 +24,32 @@ describe('bilingual sound dictionary', () => {
     ['Großartig!', 'de-DE', 'approval'], ['Ich habe eine Frage!', 'de-DE', 'question'],
     ['Vielen Dank!', 'de-DE', 'thanks'], ['Shall we grab a coffee?', 'en-US', 'coffee'],
     ['Herzlichen Glückwunsch!', 'de-DE', 'celebration'],
+    ['Well, NICE to meet you, everyone!', 'en-US', 'greeting'],
+    ['It is lovely to meet you today.', 'en-US', 'greeting'],
+    ['Oh, schön dich kennenzulernen!', 'de-DE', 'greeting'],
+    ['So, nice—to   meet you!', 'en-US', 'greeting'],
+    ['Heute: GU\u0308TEN MORGEN zusammen!', 'de-DE', 'greeting'],
   ] as const)('matches %s', (text, language, id) => expect(matchPhrase(text, language, ids)).toBe(id));
   it('does not match substrings or disabled categories, and prefers specific phrases', () => {
     expect(matchPhrase('this shipment is high', 'en-US', ids)).toBeUndefined();
     expect(matchPhrase('hello', 'en-US', ['applause'])).toBeUndefined();
     expect(matchPhrase('guten morgen', 'en-US', ids)).toBeUndefined();
     expect(matchPhrase('nice, how does it work', 'en-US', ids)).toBe('question');
+    expect(matchPhrase('shelloworld highlighter coffeehouse', 'en-US', ids)).toBeUndefined();
+    expect(matchPhrase('nice to meet yourself', 'en-US', ['greeting'])).toBeUndefined();
+    expect(matchPhrase('nice to meet you', 'en-US', ['approval'])).toBe('approval');
+  });
+  it('provides renderable emoji defaults without replacing existing customized or legacy text', () => {
+    const defaults = defaultPreferences();
+    for (const reaction of REACTIONS.filter((r) => r.en.length)) {
+      expect(splitRuns(defaults.reactions[reaction.id].text).runs.some((run) => run.kind === 'emoji')).toBe(true);
+    }
+    const saved = defaultPreferences();
+    saved.reactions.greeting.text = 'MY HELLO!';
+    saved.reactions.thanks.text = 'THANK YOU!';
+    saved.reactions.coffee.text = 'COFFEE ☕';
+    expect(validatePreferences(saved)).toEqual(saved);
+    expect(validatePreferences(defaults)).toEqual(defaults);
   });
   it('validates preferences, cap text and missing categories without silent defaults', () => {
     expect(validatePreferences(defaultPreferences())).toEqual(defaultPreferences());
