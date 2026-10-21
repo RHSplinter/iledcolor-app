@@ -63,7 +63,7 @@ export async function restoreBackup(presets: Preset[], settings?: Settings, appr
         if (settings) t.objectStore('kv').put(settings, 'settings');
         if (approach) t.objectStore('kv').put(approach, 'approach');
         if (features.sound) t.objectStore('kv').put(features.sound, 'soundPreferences');
-        for (const key of ['createContent', 'createSequence', 'qrProfiles', 'qrGreeting', 'qrScanLogging'] as const) {
+        for (const key of ['createContent', 'createSequence', 'qrProfiles', 'qrGreeting', 'qrScanLogging', 'github'] as const) {
           if (features[key] !== undefined) t.objectStore('kv').put(features[key], key === 'qrProfiles' ? 'qrGreetingProfiles' : key);
         }
       } catch (e) {

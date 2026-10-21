@@ -333,6 +333,7 @@ test('sequence: compose, send, save, reload, add preset and back up', async ({ p
 
   await page.fill('#c-name', 'Show');
   await page.click('#btn-save');
+  await expect(page.locator('#send-note')).toHaveText('Saved "Show".');
   await page.reload();
   await expect(steps).toHaveCount(2);
   await expect(page.locator('#c-seq-on')).toBeChecked();
