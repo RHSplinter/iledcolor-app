@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APPROACH } from '../src/approach/tiers';
 import { DEFAULT_SETTINGS, exportJson, type ContentPreset, type GroupPreset } from '../src/storage/presets';
 import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSelection } from '../src/storage/sharedBackup';
-import { listPresets, loadKv, loadSettings, restoreBackup } from '../src/storage/db';
+import { listPresets, loadKv, loadSettings, restoreBackup, saveSettings } from '../src/storage/db';
 import { DEFAULT_GREETING } from '../src/scanner/greeting';
 import { defaultPreferences } from '../src/sound/dictionary';
 import { TEXT_FONTS } from '../src/render/fonts';
@@ -42,6 +42,24 @@ describe('selected backup categories', () => {
       }
       delete file.settings.textFont;
       expect(parseSharedBackup(JSON.stringify(file)).settings).not.toHaveProperty('textFont');
+    }
+  });
+
+  it('round-trips keepBlack and rejects non-boolean values without inventing keepBlack for older backups', () => {
+    for (const keepBlack of [true, false]) {
+      const settings = { ...DEFAULT_SETTINGS, keepBlack };
+      const data = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH,
+        { creations: false, approach: false, scan: false, settings: true }, undefined, { settings }));
+      expect(data.settings).toEqual(settings);
+    }
+    for (const version of [1, 2]) {
+      const file = version === 1 ? JSON.parse(exportJson(DEFAULT_SETTINGS, []))
+        : { app: 'iledcolor-app', version: 2, settings: { ...DEFAULT_SETTINGS } };
+      for (const keepBlack of ['true', 1, null, {}, []]) {
+        expect(() => parseSharedBackup(JSON.stringify({ ...file, settings: { ...file.settings, keepBlack } }))).toThrow(/keepBlack/);
+      }
+      delete file.settings.keepBlack;
+      expect(parseSharedBackup(JSON.stringify(file)).settings).not.toHaveProperty('keepBlack');
     }
   });
 
@@ -251,6 +269,21 @@ describe('saving an imported backup', () => {
       await restoreBackup([creation], data.settings);
       expect(await loadSettings()).toEqual({ ...oldSettings, textFont: 'dotgothic' });
     }
+  });
+
+  it('preserves keepBlack when version-1 or older version-2 settings omit it', async () => {
+    await restoreBackup([creation], { ...features.settings, keepBlack: true });
+    const { textFont: _font, ...oldSettings } = DEFAULT_SETTINGS;
+    for (const version of [1, 2]) {
+      const file = version === 1 ? JSON.parse(exportJson(oldSettings, [creation]))
+        : { app: 'iledcolor-app', version: 2, creations: [creation], settings: oldSettings };
+      const data = parseSharedBackup(JSON.stringify(file));
+      await restoreBackup([creation], data.settings);
+      expect(await loadSettings()).toEqual({ ...oldSettings, textFont: 'dotgothic', keepBlack: true });
+    }
+    await restoreBackup([creation], { ...features.settings, keepBlack: false });
+    expect(await loadSettings()).toEqual({ ...features.settings, keepBlack: false });
+    await saveSettings(features.settings);
   });
 
   it('rolls back font, settings and presets if merging older settings fails', async () => {

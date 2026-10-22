@@ -211,6 +211,16 @@ export class SoundUi {
   }
 
   updateStatus() {
+    const pill = document.getElementById('status-listening');
+    if (pill) {
+      const paused = this.mode === 'listening' && this.near && this.preferences.pauseInPocket;
+      pill.className = this.mode === 'idle' ? 'pill muted' : this.mode === 'listening' && !paused ? 'pill ok' : 'pill busy';
+      pill.textContent = this.mode === 'idle' ? 'Listening: off'
+        : this.mode === 'starting' ? 'Listening: starting…'
+        : this.mode === 'enrolling' ? 'Listening: voice sample'
+        : this.mode === 'stopping' ? 'Listening: stopping…'
+        : paused ? 'Listening: paused' : 'Listening: on';
+    }
     if (!document.getElementById('sound-start')) return;
     const busy = this.mode !== 'idle' || this.saving;
     const target = this.ctx.controller();
@@ -300,6 +310,7 @@ export class SoundUi {
       this.error('Voice sample cancelled: proximity sensor is covered. Uncover the phone and record again.');
       void this.stop();
     }
+    this.updateStatus();
   }
   private phrase(event: Phrase) {
     if (this.mode !== 'listening' || !this.preferences.phrases || !this.profile
