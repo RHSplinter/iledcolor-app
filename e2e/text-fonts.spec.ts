@@ -91,19 +91,21 @@ test('emoji keep their full bitmap and two blank columns on both sides in every 
       const image = await readText(emoji);
       const emojiWidth = widthOf(image);
       expect(emojiWidth).toBeGreaterThan(0);
-      const fullWidth = letterWidth * 2 + emojiWidth + 4;
+      const fullWidth = letterWidth + emojiWidth + 2;
       expect(fullWidth).toBeLessThanOrEqual(32);
-      const expected = Array<string>(32 * 16).fill(background);
-      for (let y = 0; y < 16; y++) {
-        for (let x = 0; x < letterWidth; x++) {
-          expected[y * 32 + x] = letter[y * 32 + x]!;
-          expected[y * 32 + letterWidth + emojiWidth + 4 + x] = letter[y * 32 + x]!;
+      // Check each gutter separately: system emoji fonts can make i + emoji + i wider than the panel.
+      for (const emojiFirst of [false, true]) {
+        const letterOffset = emojiFirst ? emojiWidth + 2 : 0;
+        const emojiOffset = emojiFirst ? 0 : letterWidth + 2;
+        const expected = Array<string>(32 * 16).fill(background);
+        for (let y = 0; y < 16; y++) {
+          for (let x = 0; x < letterWidth; x++) expected[y * 32 + letterOffset + x] = letter[y * 32 + x]!;
+          for (let x = 0; x < emojiWidth; x++) expected[y * 32 + emojiOffset + x] = image[y * 32 + x]!;
         }
-        for (let x = 0; x < emojiWidth; x++) expected[y * 32 + letterWidth + 2 + x] = image[y * 32 + x]!;
+        await page.fill('#c-str', emojiFirst ? `${emoji}i` : `i${emoji}`);
+        await expect.poll(() => pixels(page, '#preview')).toEqual(expected);
+        await expect(page.locator('#c-warn')).toBeEmpty();
       }
-      await page.fill('#c-str', `i${emoji}i`);
-      await expect.poll(() => pixels(page, '#preview')).toEqual(expected);
-      await expect(page.locator('#c-warn')).toBeEmpty();
     }
   }
 });
