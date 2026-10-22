@@ -5,6 +5,7 @@ import { parseHexColor, solid } from '../render/matrix';
 import { ensureFont, renderSpanMarquee } from '../render/text';
 import { gifDelayMs } from '../render/span';
 import { loadKv, saveKv } from '../storage/db';
+import { vibrateFeedback } from '../feedback';
 import { QrCamera } from './camera';
 import { extractNameSafely } from './extract';
 import { appendScanLog, shareScanLog } from './log';
@@ -396,6 +397,7 @@ export class GreetingUi {
       this.updateStatus();
       this.status(`Playing "${text}" ${settings.repetitions} time(s), then restoring the previous content.`);
       const result = await target.playTemporary(encodeGif(frames, delay, { nonce: gifNonce(), plays: settings.repetitions }), frames[0]!, duration);
+      if (result === 'completed') void vibrateFeedback();
       this.status(result === 'cancelled' ? 'Greeting ended early. Previous content restored.' : 'Greeting finished. Previous content restored.');
       $<HTMLTextAreaElement>('qr-raw').value = '';
     } catch (e) {

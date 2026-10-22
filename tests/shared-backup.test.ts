@@ -366,4 +366,35 @@ describe('sound settings backup', () => {
     expect(await loadKv('soundPreferences')).toEqual(sound);
     expect(await listPresets()).toEqual([creation]);
   });
+
+  it('round-trips emoji cap texts and preserves them when importing older files without sound settings', async () => {
+    const emoji = defaultPreferences();
+    emoji.reactions.greeting.text = 'WELCOME 👋';
+    const json = exportSelectedJson([], approach, { creations: false, approach: false, scan: false, sound: true }, undefined, { sound: emoji });
+    const imported = parseSharedBackup(json);
+    if (imported.version !== 2) throw new Error('Wrong version');
+    expect(imported.sound).toEqual(emoji);
+    await restoreBackup([creation], undefined, undefined, { sound: imported.sound });
+    const older = parseSharedBackup(exportJson(DEFAULT_SETTINGS, [localCreation]));
+    await restoreBackup(older.version === 1 ? older.presets : [], undefined);
+    expect(await loadKv('soundPreferences')).toEqual(emoji);
+    await restoreBackup([], undefined, undefined, {});
+    expect(await loadKv('soundPreferences')).toEqual(emoji);
+  });
+
+  it('rolls back emoji sound preferences and presets if the sound write fails', async () => {
+    await restoreBackup([creation], undefined, undefined, { sound });
+    const original = IDBObjectStore.prototype.put;
+    const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+      if (key === 'soundPreferences') throw new DOMException('Sound write failed', 'DataCloneError');
+      return original.call(this, value, key);
+    });
+    const emoji = defaultPreferences();
+    emoji.reactions.greeting.text = 'WELCOME 👋';
+    try {
+      await expect(restoreBackup([localCreation], undefined, undefined, { sound: emoji })).rejects.toThrow('Sound write failed');
+    } finally { put.mockRestore(); }
+    expect(await loadKv('soundPreferences')).toEqual(sound);
+    expect(await listPresets()).toEqual([creation]);
+  });
 });
