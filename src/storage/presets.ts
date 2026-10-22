@@ -29,6 +29,7 @@ export const isGroupPreset = (p: Preset): p is GroupPreset => 'groups' in p;
 export interface Settings {
   width: number; height: number; transform: Transform; brightness: number;
   textFont?: TextFont;
+  keepBlack?: boolean;
   /** True only after the compatibility spike confirmed these dimensions on the real hat. */
   dimensionsVerified: boolean;
   chunkSize: number; interWriteDelayMs: number;
@@ -127,6 +128,8 @@ export function validateSettings(s: unknown): Settings {
   if (!isObj(s) || !isObj(s.transform)) throw new Error('invalid settings');
   const textFont = s.textFont;
   if (textFont !== undefined && !isTextFont(textFont)) throw new Error('invalid text font');
+  const keepBlack = s.keepBlack;
+  if (keepBlack !== undefined && typeof keepBlack !== 'boolean') throw new Error('invalid keepBlack');
   const t = s.transform;
   if (![0, 90, 180, 270].includes(t.rotation as number) || typeof t.mirrorH !== 'boolean' || typeof t.mirrorV !== 'boolean')
     throw new Error('invalid transform');
@@ -137,6 +140,7 @@ export function validateSettings(s: unknown): Settings {
     width: s.width, height: s.height, brightness: s.brightness, dimensionsVerified: s.dimensionsVerified === true,
     chunkSize: s.chunkSize, interWriteDelayMs: s.interWriteDelayMs,
     ...(textFont === undefined ? {} : { textFont }),
+    ...(keepBlack === undefined ? {} : { keepBlack }),
     transform: { rotation: t.rotation as 0 | 90 | 180 | 270, mirrorH: t.mirrorH, mirrorV: t.mirrorV },
   };
 }

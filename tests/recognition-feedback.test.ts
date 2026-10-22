@@ -2,22 +2,33 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { SoundUi } from '../src/sound/ui';
 import { GreetingUi } from '../src/scanner/ui';
+import { connectAsPrimary, initApproach, keepBlackChanged, renderApproach } from '../src/approach/ui';
 import { vibrateFeedback } from '../src/feedback';
 import { verifyUtterance } from '../src/sound/analysis';
 import { defaultPreferences } from '../src/sound/dictionary';
 import type { DeviceController } from '../src/controller/deviceController';
 import { solid } from '../src/render/matrix';
 import { ensureFont } from '../src/render/text';
+import { SPIKE_PROFILE } from '../src/transport/types';
 
 vi.mock('../src/feedback', () => ({ vibrateFeedback: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('../src/storage/db', () => ({ loadKv: vi.fn(), saveKv: vi.fn() }));
+vi.mock('../src/storage/db', () => ({
+  loadKv: vi.fn().mockResolvedValue(undefined),
+  saveKv: vi.fn().mockResolvedValue(undefined),
+  savePreset: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../src/sound/capture', () => ({ SoundCapture: class { capabilities = async () => ({ speech: true, proximity: false }); } }));
 vi.mock('../src/sound/analysis', async (original) => ({
   ...await original<typeof import('../src/sound/analysis')>(), verifyUtterance: vi.fn(),
 }));
 vi.mock('../src/scanner/extract', () => ({ extractNameSafely: vi.fn().mockResolvedValue({ firstname: 'Rob' }) }));
+vi.mock('../src/render/matrix', async (original) => ({
+  ...await original<typeof import('../src/render/matrix')>(),
+  drawPreview: vi.fn(),
+}));
 vi.mock('../src/render/text', () => ({
   ensureFont: vi.fn().mockResolvedValue(undefined),
+  getTextFont: () => 'silkscreen',
   renderMarquee: () => ({ frames: [solid(8, 8, [0, 0, 0])], unsupported: [] }),
   renderSpanMarquee: () => ({ frames: [solid(8, 8, [0, 0, 0])], unsupported: [], step: 2 }),
 }));
@@ -34,7 +45,14 @@ const context = {
 beforeEach(() => {
   vi.clearAllMocks();
   Object.assign(target, { state: 'Ready', canRestoreContent: true, temporaryActive: false });
-  document.body.innerHTML = '<section id="view-sound"></section><section id="view-scan"></section>';
+  document.body.innerHTML = `
+    <header>
+      <div id="status-approach" class="pill muted" role="status" aria-live="polite">Approach: off</div>
+      <div id="status-listening" class="pill muted" role="status" aria-live="polite">Listening: off</div>
+    </header>
+    <section id="view-approach"></section>
+    <section id="view-sound"></section>
+    <section id="view-scan"></section>`;
   playback.mockResolvedValue('completed');
   vi.mocked(verifyUtterance).mockReturnValue(true);
 });
@@ -125,28 +143,113 @@ it('plays and vibrates once after deferred frame rendering when the cap remains 
   expect(vibrateFeedback).toHaveBeenCalledOnce();
 });
 
-it.each(['camera', 'manual'] as const)('vibrates once after a successful %s scan greeting completes, not while it plays', async (source) => {
+it.each(['camera', 'manual'] as const)('vibrates once when a recognized %s scan greeting starts playing, before completion', async (source) => {
   const ui = new GreetingUi(context);
   await ui.init();
   let finish!: (result: string) => void;
   playback.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
   const greeting = ui['greet']('Rob', target, source);
   await vi.waitFor(() => expect(playback).toHaveBeenCalledOnce());
+  expect(vibrateFeedback).toHaveBeenCalledOnce();
   await ui['greet']('Rob', target, source);
-  expect(vibrateFeedback).not.toHaveBeenCalled();
+  expect(vibrateFeedback).toHaveBeenCalledOnce();
   finish('completed');
   await greeting;
   expect(vibrateFeedback).toHaveBeenCalledOnce();
 });
 
-it.each(['cancelled', 'failed'])('does not vibrate for a %s scan greeting or camera stop', async (result) => {
+it.each([
+  ['upload starts', { state: 'Uploading' }],
+  ['cap disconnects', { state: 'Disconnected' }],
+  ['temporary playback starts', { temporaryActive: true }],
+  ['restorable content disappears', { canRestoreContent: false }],
+])('does not vibrate for a scan greeting when %s before playback or on camera stop', async (_reason, change) => {
   const ui = new GreetingUi(context);
   await ui.init();
-  if (result === 'failed') playback.mockRejectedValueOnce(new Error('Disconnected'));
-  else playback.mockResolvedValueOnce('cancelled');
+  Object.assign(target, change);
   await ui['greet']('Rob', target, 'camera');
   ui.stopCamera();
+  expect(playback).not.toHaveBeenCalled();
   expect(vibrateFeedback).not.toHaveBeenCalled();
+});
+
+it('updates the #status-listening header pill across idle, starting, enrolling, active, paused, and stopping states', async () => {
+  const ui = new SoundUi(context);
+  await ui.init();
+  const pill = document.getElementById('status-listening')!;
+  expect(pill.textContent).toBe('Listening: off');
+  expect(pill.className).toBe('pill muted');
+  ui['mode'] = 'starting';
+  ui.updateStatus();
+  expect(pill.textContent).toBe('Listening: starting…');
+  expect(pill.className).toBe('pill busy');
+  ui['mode'] = 'enrolling';
+  ui.updateStatus();
+  expect(pill.textContent).toBe('Listening: voice sample');
+  expect(pill.className).toBe('pill busy');
+  ui['mode'] = 'listening';
+  ui.updateStatus();
+  expect(pill.textContent).toBe('Listening: on');
+  expect(pill.className).toBe('pill ok');
+  ui['preferences'].pauseInPocket = true;
+  ui['setPocket'](true);
+  expect(pill.textContent).toBe('Listening: paused');
+  expect(pill.className).toBe('pill busy');
+  ui['setPocket'](false);
+  expect(pill.textContent).toBe('Listening: on');
+  expect(pill.className).toBe('pill ok');
+  ui['mode'] = 'stopping';
+  ui.updateStatus();
+  expect(pill.textContent).toBe('Listening: stopping…');
+  expect(pill.className).toBe('pill busy');
+});
+
+it('updates #status-approach, vibrates when a group approach tier starts uploading, and keeps solo cap black when keepBlack is enabled', async () => {
+  vi.useFakeTimers();
+  try {
+    let keepBlack = true;
+    await initApproach({
+      native: false, mock: true,
+      profile: () => ({ ...SPIKE_PROFILE, interWriteDelayMs: 0 }),
+      logicalDims: () => [8, 8],
+      physical: (img) => img,
+      renderContent: async () => ({ image: solid(8, 8, [255, 255, 255]) }),
+      createContent: () => ({ kind: 'solid', color: '#ffffff' }),
+      keepBlack: () => keepBlack,
+      marqueeDelay: () => 60,
+      trace: () => {},
+      chooseCap: async () => ({ deviceId: 'mock-1', name: 'iledcolor-1' }),
+      connectCap: async () => { throw new Error('unused'); },
+      readRssi: async () => -55,
+      startScan: async () => {},
+      stopScan: async () => {},
+      onPrimaryChange: () => {},
+    });
+    renderApproach();
+    const pill = document.getElementById('status-approach')!;
+    expect(pill.textContent).toBe('Approach: off');
+    expect(pill.className).toBe('pill muted');
+    await connectAsPrimary('mock-1', 'iledcolor-1');
+    expect(vibrateFeedback).not.toHaveBeenCalled();
+    expect(document.querySelector('#ap-caps .cap-note')?.textContent).toBe('keep black (idle)');
+    (document.getElementById('ap-sim-peer') as HTMLButtonElement).click();
+    const toggle = document.getElementById('ap-start') as HTMLInputElement;
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+    for (let i = 0; i < 6; i++) await vi.advanceTimersByTimeAsync(1000);
+    expect(pill.className).toBe('pill ok');
+    expect(pill.textContent).toMatch(/^Approach: on/);
+    expect(vibrateFeedback).toHaveBeenCalledOnce();
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(pill.textContent).toBe('Approach: off');
+    expect(pill.className).toBe('pill muted');
+    keepBlack = false;
+    await keepBlackChanged();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('refreshes imported emoji reaction text immediately without replacing device speech consent', async () => {

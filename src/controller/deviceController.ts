@@ -4,6 +4,7 @@ import {
 } from '../protocol/framing';
 import { SelectionCancelledError, SPIKE_PROFILE, type Transport, type TransportProfile } from '../transport/types';
 import { renewGif } from '../render/gif';
+import { solid } from '../render/matrix';
 
 type DisplayContent =
   | { image: RgbImage }
@@ -41,6 +42,8 @@ export interface DeviceControllerOptions {
   profile?: TransportProfile;
   timeouts?: Timeouts;
   sleep?: (ms: number) => Promise<void>;
+  keepBlack?: boolean;
+  blackImage?: RgbImage;
   /** Raw byte trace for diagnostics: tx = written frame, rx = notification, ev = lifecycle event. */
   onTrace?: (dir: 'tx' | 'rx' | 'ev', label: string, data?: Uint8Array) => void;
 }
@@ -59,6 +62,8 @@ export class DeviceController {
   private displayed?: DisplayContent;
   private temporary = false;
   private displayEnabled?: boolean;
+  private keepBlack = false;
+  private blackImage: RgbImage = solid(32, 16, [0, 0, 0]);
   readonly profile: TransportProfile;
   readonly timeouts: Timeouts;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -70,13 +75,31 @@ export class DeviceController {
     this.timeouts = opts.timeouts ?? DEFAULT_TIMEOUTS;
     this.trace = opts.onTrace ?? (() => {});
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.keepBlack = Boolean(opts.keepBlack);
+    if (opts.blackImage) this.blackImage = structuredClone(opts.blackImage);
   }
 
   get state() { return this._state; }
   get error() { return this._error; }
   get temporaryActive() { return this.temporary; }
-  get canRestoreContent() { return !!this.displayed; }
+  get isKeepBlack() { return this.keepBlack; }
+  get displayOff() { return this.displayEnabled === false; }
+  get canRestoreContent() { return !!this.displayed || this.keepBlack; }
   subscribe(cb: () => void) { this.listeners.add(cb); return () => this.listeners.delete(cb); }
+
+  setKeepBlack(on: boolean, blackImage?: RgbImage): void {
+    this.keepBlack = on;
+    if (blackImage) this.blackImage = structuredClone(blackImage);
+    this.listeners.forEach((cb) => cb());
+  }
+
+  async applyKeepBlackIdle(blackImage?: RgbImage): Promise<UploadResult> {
+    if (blackImage) this.blackImage = structuredClone(blackImage);
+    const img = structuredClone(this.blackImage);
+    const uploadRes = await this.upload(img);
+    const dispRes = await this.setDisplay(false);
+    return uploadRes === 'confirmed' && dispRes === 'confirmed' ? 'confirmed' : 'sent-unconfirmed';
+  }
 
   private setState(s: DeviceState, error: string | null = null) {
     this._state = s;
@@ -194,7 +217,7 @@ export class DeviceController {
   async playTemporary(gif: Uint8Array, still: RgbImage, durationMs: number): Promise<'completed' | 'cancelled'> {
     if (this.temporary) throw new DeviceError('A greeting is already playing', 'busy');
     if (this.state !== 'Ready') throw new DeviceError('Connect the primary cap first', 'disconnected');
-    if (!this.displayed) throw new DeviceError('Send content to the cap first so it can be restored after the greeting', 'invalid');
+    if (!this.displayed && !this.keepBlack) throw new DeviceError('Send content to the cap first so it can be restored after the greeting', 'invalid');
     if (!Number.isFinite(durationMs) || durationMs <= 0) throw new DeviceError('Invalid greeting duration', 'invalid');
     const greeting = { gif: gif.slice(), width: still.width, height: still.height, still: structuredClone(still) };
     // Validate before taking the queue or changing the display.
@@ -205,16 +228,21 @@ export class DeviceController {
     try {
       return await this.exclusive(async () => {
         if (epoch !== this.epoch) throw new DeviceError('Connection changed before greeting', 'disconnected');
-        const previous = this.displayed;
+        const previous: DisplayContent | undefined = this.keepBlack
+          ? { image: solid(still.width, still.height, [0, 0, 0]) }
+          : this.displayed;
         if (!previous) throw new DeviceError('Previous content is no longer available', 'disconnected');
         const restored = 'gif' in previous ? { ...previous, gif: renewGif(previous.gif), still: previous.still ?? greeting.still } : previous;
         if ('gif' in restored) buildGifStream(restored.gif, restored.width, restored.height, this.profile.maxStreamBytes);
-        const wasOff = this.displayEnabled === false;
+        const wasOff = this.keepBlack || this.displayEnabled === false;
         let playbackError: unknown;
         try {
           if (await this.sendContent(greeting, {}, true) !== 'confirmed')
             throw new DeviceError('Greeting upload was not confirmed', 'protocol');
-          if (wasOff) await this.request(buildDisplayEnable(true), 'cmd', Cmd.DISPLAY_ENABLE, this.timeouts.controlMs);
+          if (wasOff) {
+            await this.request(buildDisplayEnable(true), 'cmd', Cmd.DISPLAY_ENABLE, this.timeouts.controlMs);
+            this.displayEnabled = true;
+          }
           const deadline = Date.now() + durationMs;
           while (Date.now() < deadline) {
             this.checkCancel(epoch);
@@ -225,8 +253,10 @@ export class DeviceController {
         if (epoch !== this.epoch) throw new DeviceError(`Previous content could not be restored: ${errMsg(playbackError ?? 'connection lost')}. Reconnect and send it again.`, 'disconnected');
         let displayError: unknown;
         if (wasOff) {
-          try { await this.request(buildDisplayEnable(false), 'cmd', Cmd.DISPLAY_ENABLE, this.timeouts.controlMs); }
-          catch (e) { displayError = e; }
+          try {
+            await this.request(buildDisplayEnable(false), 'cmd', Cmd.DISPLAY_ENABLE, this.timeouts.controlMs);
+            this.displayEnabled = false;
+          } catch (e) { displayError = e; }
         }
         if (await this.sendContent(restored, {}, true) !== 'confirmed')
           throw new DeviceError('Previous content was sent, but restoration was not confirmed', 'protocol');

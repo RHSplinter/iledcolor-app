@@ -5,10 +5,14 @@
 The native apps have five icon tabs: **Connect**, **Approach**, **Scan**, **Sound**, and
 **Settings** (the gear icon at the far right). The web app has **Connect**, **Scan**, **Sound**
 and **Settings**; native-only Approach detection is not offered in the browser.
+The top status bar shows live pills across every tab for primary cap connection,
+**Approach** (`Approach: off`, `Approach: on`, or `Approach: on (N)` with the nearby group count),
+**Listening** (`Listening: off`, `Listening: starting…`, `Listening: voice sample`, `Listening: on`,
+`Listening: paused`, or `Listening: stopping…`), and offline readiness.
 The same source supplies the content editor, scan-first layout, settings, accessible
 tab navigation and responsive controls on Android, iOS and web.
 
-- **Connect:** connect/disconnect your primary cap, then create text, solid colours,
+- **Connect:** connect/disconnect your primary cap, optionally enable **Keep cap black unless an approach, scan or sound event is active** (keep cap black when idle), then create text, solid colours,
   images or GIFs, preview and send them, or save a content preset. There is no separate Create tab.
   Under **Sequence**, add the current content or saved presets as steps (up to 20), set how
   many seconds each step shows (animations play whole cycles for at least that long), reorder
@@ -17,16 +21,18 @@ tab navigation and responsive controls on Android, iOS and web.
   nearby phones running a version that supports sequences. Long holds between GIF frames still
   need verification on the physical hat.
 - **Approach:** configure greetings and group content, compare nearby texts, calibrate
-  detection and record/replay walks. Every spanning **Marquee** choice is marked **unstable**:
+  detection and record/replay walks. When approach mode is running and transitions into a
+  multi-cap group greeting on a connected cap, the phone vibrates once as the group upload starts.
+  Every spanning **Marquee** choice is marked **unstable**:
   physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
 - **Scan:** the scan/stop/end-greeting actions, camera and status come first, followed by
   the profile selector, QR profile editor, greeting settings, manual entry, and scan-log/privacy controls.
-  A completed QR greeting (camera or manual entry) vibrates once after the previous cap
-  content is restored; stopping the camera, ending a greeting early or a failure does not vibrate.
+  A recognized QR greeting (camera or manual entry) vibrates once immediately when the greeting
+  starts on the primary cap; stopping the camera or a failure does not vibrate.
 - **Sound:** opt-in applause/whistle detection, wearer voice sampling, English/German
   phrase reactions, pocket-pause settings, dictionary and editable animation text.
 - **Settings:** saved presets and category-based sharing/import, then display brightness/on/off,
-  LED text font, expandable test patterns and protocol log, and rotation/mirroring/transport settings.
+  **Keep cap black unless an approach, scan or sound event is active**, LED text font, expandable test patterns and protocol log, and rotation/mirroring/transport settings.
   Loading a content preset opens Connect; loading a group preset opens Approach.
 
 Choose **Settings → Display → LED text font** for all text on the LED matrix:
@@ -128,14 +134,15 @@ physical devices; see [docs/test-coverage.md](docs/test-coverage.md).
 
 ## Sound and voice reactions
 
-**Sound** is available on Android, iOS and web. Connect the primary cap and send
-content first, then tap **Start listening**. Applause and whistles trigger coloured
+**Sound** is available on Android, iOS and web. Connect the primary cap and either send
+content first or enable **Keep cap black when idle**, then tap **Start listening**. Applause and whistles trigger coloured
 scrolling-text GIF animations on that cap only. Phrase categories cover greetings,
 farewells, approval, food, thanks, questions, coffee breaks and celebrations.
 Each category can be disabled and its animation text edited; **Preview animation**
 works offline without a microphone or cap, and **Test on cap** exercises playback
 and restoration without listening. Reactions use the existing temporary-content
-controller, restore the previous content, skip busy/QR-greeting periods and apply
+controller, restore the previous content (or the black, display-off idle state when
+**Keep cap black when idle** is enabled), skip busy/QR-greeting periods and apply
 a 10-second cooldown. **End reaction** restores early. Firmware playback timing
 and physical display behaviour still require real-cap verification.
 New voice-reaction defaults include emoji, such as **HELLO! 👋**, **THANK YOU! 🙏**
@@ -235,8 +242,9 @@ prefix and postfix text),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
 **Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
 repetitions, speed and scan-logging preference), **Display & transport settings**
-(LED text font, dimensions, brightness, rotation, mirroring and Bluetooth write settings;
-older backups without a font keep your current choice), and
+(LED text font, keep-cap-black-when-idle preference, dimensions, brightness, rotation,
+mirroring and Bluetooth write settings; older backups without a font or keep-black
+preference keep your current choice), and
 **Sound settings** (room sounds, phrases, language, pocket pause, enabled reactions and
 their cap texts, including emoji and custom texts). No new vibration setting is required.
 Importing Sound settings stops active listening; the voice sample and
@@ -305,10 +313,12 @@ Unmatched/invalid patterns show an error without changing the cap. Regex extract
 runs in a worker with a timeout so a pathological pattern cannot block the UI.
 Manual QR-data entry is available when a camera cannot be used.
 
-Send content to the cap once before scanning: the protocol cannot read back content
-that was installed by another app or before the current connection. The app retains the
-last successfully sent image or GIF, including content sent by Approach mode. The greeting
-always scrolls, even when it would fit as static text. It uses a finite-loop GIF and the
+Send content to the cap once before scanning, or enable **Keep cap black when idle**:
+the protocol cannot read back content that was installed by another app or before the
+current connection. The app retains the last successfully sent image or GIF, including
+content sent by Approach mode; when **Keep cap black when idle** is enabled, the cap stays
+black with the display off until an approach, scan or sound event plays and restores the
+black, display-off state afterwards. The greeting always scrolls, even when it would fit as static text. It uses a finite-loop GIF and the
 GIF's actual frame timings to restore the previous content after the requested count.
 Approach updates for the primary cap wait during the greeting; afterwards the current
 approach plan resumes (with span timing resynchronized). Other caps are not paused.

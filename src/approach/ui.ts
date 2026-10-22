@@ -1,11 +1,12 @@
 import { DeviceController, DeviceError } from '../controller/deviceController';
 import type { RgbImage } from '../protocol/framing';
 import { encodeGif, gifNonce } from '../render/gif';
-import { drawPreview, parseHexColor } from '../render/matrix';
+import { drawPreview, parseHexColor, solid } from '../render/matrix';
 import { ensureFont, getTextFont, renderSpanMarquee } from '../render/text';
 import { gifDelayMs, msUntilLoopStart } from '../render/span';
 import { loadKv, savePreset, saveKv } from '../storage/db';
 import type { Content, GroupContent } from '../storage/presets';
+import { vibrateFeedback } from '../feedback';
 import { MockTransport } from '../transport/mock';
 import type { Transport, TransportProfile } from '../transport/types';
 import { ApproachBeacon } from './beacon';
@@ -29,6 +30,7 @@ export interface ApproachContext {
   physical(img: RgbImage): RgbImage;
   renderContent(c: Content): Promise<{ image: RgbImage; frames?: RgbImage[]; delays?: number[] }>;
   createContent(): Content;
+  keepBlack?(): boolean;
   marqueeDelay(speed: number): number;
   trace(dir: 'tx' | 'rx' | 'ev', label: string, data?: Uint8Array): void;
   chooseCap(): Promise<{ deviceId: string; name: string }>;
@@ -152,6 +154,7 @@ export async function initApproach(c: ApproachContext): Promise<void> {
     note('approach mode was on; resuming');
     void (async () => { if (!ctx.mock) await onConnectSaved(); await start(); })();
   }
+  renderStatus();
 }
 
 /** The approach switch: starts/stops scanning, beacon and uploads and remembers the choice. */
@@ -199,7 +202,12 @@ function notifyPrimary() {
 // ---------- cap management ------------------------------------------------------
 
 function makeController(): DeviceController {
-  const ctl = new DeviceController({ profile: ctx.profile(), onTrace: ctx.trace });
+  const ctl = new DeviceController({
+    profile: ctx.profile(),
+    onTrace: ctx.trace,
+    keepBlack: Boolean(ctx.keepBlack?.()),
+    blackImage: ctx.physical(solid(...ctx.logicalDims(), [0, 0, 0])),
+  });
   let temporary = false;
   ctl.subscribe(() => {
     if (temporary && !ctl.temporaryActive) {
@@ -269,7 +277,13 @@ async function connectEntry(c: CapEntry) {
   });
   c.note = c.controller.state === 'Ready' ? '' : c.controller.error ?? '';
   note(`${c.label}: ${c.controller.state}${c.note ? ` (${c.note})` : ''}`);
-  if (c.controller.state === 'Ready') engine.invalidate();
+  if (c.controller.state === 'Ready') {
+    engine.invalidate();
+    if (!running && ctx.keepBlack?.()) {
+      schedule(planFor([], engine.getLocalCaps(), settings));
+      await applying;
+    }
+  }
   renderCaps(); renderStatus();
 }
 
@@ -501,10 +515,31 @@ async function applyPlan(plan: Plan) {
   lastPlan = plan;
   note(`group of ${plan.count} → ${TIER_LABELS[plan.tier]} (${plan.members.map((m) => m.label).join(', ') || 'no near caps'})`);
   await ensureFont();
+  const keepBlack = Boolean(ctx.keepBlack?.());
+  const black = ctx.physical(solid(...ctx.logicalDims(), [0, 0, 0]));
+  let vibrated = false;
   const jobs = caps.map(async (c) => {
+    c.controller.setKeepBlack(keepBlack, black);
     const a = plan.perCap.get(c.key);
     if (!a) return;
     if (c.controller.temporaryActive) { greetingDeferred.add(c.controller); engine.invalidate(); return; }
+    if (keepBlack && plan.tier === 'solo') {
+      const sig = JSON.stringify(['keepBlack', black.width, black.height]);
+      if (sig === c.lastSig) return;
+      c.preview = { frames: [black], delays: [1000] };
+      if (c.controller.temporaryActive) { greetingDeferred.add(c.controller); engine.invalidate(); return; }
+      if (c.controller.state !== 'Ready') { c.note = 'not connected; will update after reconnect'; return; }
+      try {
+        c.note = 'updating…'; renderCapsSoon();
+        await c.controller.applyKeepBlackIdle(black);
+        c.lastSig = sig;
+        c.note = 'keep black (idle)';
+      } catch (e) {
+        c.note = `upload failed: ${e instanceof DeviceError ? e.message : (e as Error).message}`;
+        engine.invalidate();
+      }
+      return;
+    }
     let sig: string;
     let r: { frames: RgbImage[]; delays: number[]; periodMs?: number } | { image: RgbImage };
     try {
@@ -518,12 +553,17 @@ async function applyPlan(plan: Plan) {
     if (c.controller.state !== 'Ready') { c.note = 'not connected; will update after reconnect'; return; }
     try {
       c.note = 'updating…'; renderCapsSoon();
+      if (running && plan.tier !== 'solo' && !vibrated) {
+        vibrated = true;
+        void vibrateFeedback();
+      }
       if ('frames' in r) {
         // A slice only reads as one marquee when all caps loop in phase: start playback on a shared clock boundary.
         const period = r.periodMs;
         const beforeEnd = period ? () => new Promise<void>((res) => setTimeout(res, msUntilLoopStart(Date.now(), period))) : undefined;
         await c.controller.uploadGif(encodeGif(r.frames, r.delays, { nonce: gifNonce() }), r.frames[0]!.width, r.frames[0]!.height, r.frames[0], { beforeEnd });
       } else await c.controller.upload(r.image);
+      if (keepBlack || c.controller.displayOff) await c.controller.setDisplay(true);
       c.lastSig = sig;
       c.note = describe(a);
     } catch (e) {
@@ -794,6 +834,35 @@ export function textFontChanged(): void {
   engine?.invalidate();
 }
 
+export async function keepBlackChanged(): Promise<void> {
+  if (!ctx) return;
+  const on = Boolean(ctx.keepBlack?.());
+  const black = ctx.physical(solid(...ctx.logicalDims(), [0, 0, 0]));
+  caps.forEach((c) => {
+    c.controller.setKeepBlack(on, black);
+    c.lastSig = undefined;
+  });
+  if (!engine) return;
+  engine.invalidate();
+  if (running) {
+    schedule(planFor(engine.members(Date.now()), engine.getLocalCaps(), settings));
+    await applying;
+  } else if (caps.length) {
+    if (on) {
+      schedule(planFor([], engine.getLocalCaps(), settings));
+      await applying;
+    } else {
+      await Promise.all(caps.map(async (c) => {
+        if (c.controller.state === 'Ready' && !c.controller.temporaryActive && c.controller.displayOff) {
+          await c.controller.setDisplay(true).catch(() => undefined);
+        }
+      }));
+    }
+  }
+  renderCaps();
+  renderStatus();
+}
+
 /** Loads a group preset; a running approach mode resends the new content. */
 export function applyGroupContent(groups: GroupContent): void {
   updateSettings({ ...settings, tiers: structuredClone(groups) });
@@ -833,10 +902,15 @@ function tierEditor(id: TierId): string {
 }
 
 function renderStatus() {
+  const now = Date.now();
+  const members: Member[] = running && engine ? engine.members(now) : [];
+  const pill = document.getElementById('status-approach');
+  if (pill) {
+    pill.className = running ? 'pill ok' : 'pill muted';
+    pill.textContent = running ? (members.length ? `Approach: on (${members.length})` : 'Approach: on') : 'Approach: off';
+  }
   const el = document.getElementById('ap-status');
   if (!el) return;
-  const now = Date.now();
-  const members: Member[] = running ? engine.members(now) : [];
   const count = Math.max(1, members.length);
   el.innerHTML = running
     ? `<p><b>Group: ${members.length}</b> cap${members.length === 1 ? '' : 's'} near → <b>${esc(TIER_LABELS[tierFor(count)])}</b></p>
