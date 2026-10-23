@@ -428,6 +428,43 @@ GitHub Actions must be enabled, and repository/organization policy must allow th
 
 ### Versioning and publishing
 
+#### One-click new version (GitHub Actions)
+
+After these workflow changes are on the default branch, open **Actions > Release new app
+version > Run workflow**. Select the branch containing the app you want to release, choose
+**patch** (default), **minor**, or **major**, and select **android** (default) or
+**android-and-ios**. This is a real publishing operation, not a preview.
+
+The [workflow](.github/workflows/release.yml) runs the same `npm run release:patch/minor/major`
+scripts used locally, checks the synchronized metadata and release tests, commits the four
+version files to the selected branch, and atomically pushes that commit and its `vX.Y.Z` tag.
+It then calls the existing Android/iOS workflows directly: each runs tests, builds the web
+assets, performs Capacitor sync, signs its native package, and publishes its downloads and
+checksums to the same GitHub Release. iOS also publishes its OTA `.plist`. Android can publish
+even if the optional iOS build fails. This does not deploy Pages, produce an AAB, or submit
+to Google Play, TestFlight, or the App Store.
+
+**Required setup:** enable Actions, allow `GITHUB_TOKEN` **contents: write**, and configure
+the signing secrets listed above. Android secrets are always required; selecting iOS also
+requires all three iOS secrets. Missing secrets fail before any version commit/tag is pushed.
+The selected branch and `v*` tag rules must permit the Actions bot's direct updates; this
+workflow does not bypass protected branches or approval rules. No PAT is needed. Only run
+from trusted branches: their code executes with release credentials. A configured but invalid
+certificate/key can still fail later during signing.
+
+Concurrent new-version runs are serialized. If the selected branch has moved since dispatch,
+the atomic push fails rather than overwriting work; start a fresh run from the updated branch.
+Once preparation succeeds, a build/signing failure leaves the version commit and tag in place.
+Fix the setup and use **Re-run failed jobs** (or the individual platform workflow with that tag)
+to finish the same release. Re-running all jobs in the same run reuses its tag; a **new**
+dispatch increments the version again. No force pushes or tag replacement are performed.
+Tags pushed with `GITHUB_TOKEN` do not trigger the tag-push workflow, so the reusable workflow
+calls are intentional and do not depend on an extra token or duplicate Android runs.
+Only the new orchestration workflow makes version commits; the standalone platform workflows
+retain their existing manual/tag behavior.
+
+#### Local preparation and standalone platform builds
+
 `package.json` is the version source, with `package-lock.json` kept in sync.
 The npm `version` hook updates Android's `versionName` and iOS's `MARKETING_VERSION`, plus both
 native build numbers. Only stable `MAJOR.MINOR.PATCH` versions are supported (no prerelease/build
