@@ -14,7 +14,7 @@ test('stable versions map to increasing native build numbers', () => {
 });
 
 test('Android publishing creates and verifies the tag at the validated build commit', (t) => {
-  const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8');
+  const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(workflow.includes('commit: ${{ steps.version.outputs.commit }}'));
   assert.ok(workflow.includes('echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"'));
   assert.ok(workflow.includes('RELEASE_COMMIT: ${{ needs.android.outputs.commit }}'));
@@ -69,7 +69,7 @@ test('Android publishing creates and verifies the tag at the validated build com
     assert.equal(result.stdout.includes('release create'), !scenario.releaseExists);
     assert.match(result.stdout, /release upload v0.2.0 led-hat-v0.2.0-android.apk SHA256SUMS-android.txt --clobber/);
     assert.match(result.stdout, /release edit v0.2.0 --draft=false --latest/);
-    assert.match(readFileSync(join(root, 'SHA256SUMS-android.txt'), 'utf8'), /^[a-f0-9]{64}  led-hat-v0.2.0-android.apk\n$/);
+    assert.match(readFileSync(join(root, 'SHA256SUMS-android.txt'), 'utf8'), /^[a-f0-9]{64} [ *]led-hat-v0.2.0-android.apk\n$/);
   }
   const mismatch = spawnSync('bash', ['-c', `
     gh() {
@@ -153,11 +153,52 @@ test('CLI checks the tag, lockfile and native metadata and synchronizes a versio
   assert.equal(run('--check', '--tag', 'v1.2.3').status, 0);
 });
 
+for (const bump of ['patch', 'minor', 'major']) {
+  test(`release:${bump} prepares synchronized local files without staging, committing or tagging`, (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'led-hat-prepare-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    for (const path of [
+      'scripts/release-version.mjs', 'package.json', 'package-lock.json',
+      'android/app/build.gradle', 'ios/App/App.xcodeproj/project.pbxproj',
+    ]) {
+      const destination = join(root, path);
+      mkdirSync(dirname(destination), { recursive: true });
+      copyFileSync(new URL('../' + path, import.meta.url), destination);
+    }
+    const git = (...args) => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout;
+    };
+    git('init', '--quiet');
+    git('add', '.');
+    git('-c', 'user.name=Release test', '-c', 'user.email=release@example.invalid',
+      '-c', 'core.hooksPath=nonexistent-hooks', 'commit', '--quiet', '-m', 'Initial fixture');
+    const head = git('rev-parse', 'HEAD');
+    const before = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+    const [major, minor, patch] = before.split('.').map(Number);
+    const expected = bump === 'major' ? `${major + 1}.0.0`
+      : bump === 'minor' ? `${major}.${minor + 1}.0` : `${major}.${minor}.${patch + 1}`;
+    const result = spawnSync(`npm run release:${bump}`, {
+      cwd: root,
+      encoding: 'utf8',
+      shell: true,
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version, expected);
+    const check = spawnSync(process.execPath, [join(root, 'scripts/release-version.mjs'),
+      '--check', '--tag', `v${expected}`], { cwd: root, encoding: 'utf8' });
+    assert.equal(check.status, 0, check.stderr);
+    assert.equal(git('rev-parse', 'HEAD'), head);
+    assert.equal(git('tag', '--list'), '');
+    assert.equal(git('diff', '--cached', '--name-only'), '');
+  });
+}
+
 test('Android manual releases derive the tag from validated project files', (t) => {
-  const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8');
+  const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(workflow.includes('  workflow_dispatch:\n\npermissions:'));
-  assert.ok(!workflow.includes('inputs.tag'));
-  assert.ok(workflow.includes('ref: ${{ github.sha }}'));
+  assert.ok(workflow.includes("ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}"));
   const validation = workflow.match(/      - name: Resolve manual release tag\n([\s\S]*?)      - uses: actions\/checkout@v4/);
   assert.ok(validation);
   assert.ok(workflow.indexOf('uses: actions/checkout@v4') < validation.index);
@@ -167,7 +208,7 @@ test('Android manual releases derive the tag from validated project files', (t) 
   assert.ok(validation[1].includes('RELEASE_COMMIT: ${{ github.sha }}'));
   assert.ok(validation[1].includes('id: release_tag'));
   assert.ok(workflow.includes('ref: ${{ steps.release_tag.outputs.ref }}'));
-  assert.ok(workflow.includes('RELEASE_TAG: ${{ steps.release_tag.outputs.tag || github.ref_name }}'));
+  assert.ok(workflow.includes('RELEASE_TAG: ${{ inputs.tag || steps.release_tag.outputs.tag || github.ref_name }}'));
   const script = validation[1].split('        run: |\n')[1].replace(/^          /gm, '');
   const root = mkdtempSync(join(tmpdir(), 'led-hat-release-tag-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

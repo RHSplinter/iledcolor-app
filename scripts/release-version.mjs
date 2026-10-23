@@ -67,7 +67,8 @@ function main() {
     writeFileSync(file.fullPath, file.expected);
   }
   // npm version commits its own manifests, but native files must be staged by the hook.
-  if (!check && process.env.npm_command === 'version' && process.env.npm_config_git_tag_version !== 'false') {
+  const gitTagVersion = process.env.npm_config_git_tag_version;
+  if (!check && process.env.npm_command === 'version' && gitTagVersion !== 'false' && gitTagVersion !== '') {
     execFileSync('git', ['add', '--', ...files.map((file) => file.path)], { cwd: root, stdio: 'inherit' });
   }
   console.log(`Version ${release.version}, native build ${release.build}${check ? ' verified' : ' synchronized'}.`);

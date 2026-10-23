@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Android: Build and install on device",
+      "type": "npm",
+      "script": "android:install",
+      "problemMatcher": []
+    },
+    {
+      "label": "Release: Prepare new version locally",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "release:${input:releaseType}"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "releaseType",
+      "type": "pickString",
+      "description": "Version increment (local files only; no commit, tag, or push)",
+      "options": ["patch", "minor", "major"],
+      "default": "patch"
+    }
+  ]
+}

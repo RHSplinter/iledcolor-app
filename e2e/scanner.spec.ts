@@ -52,7 +52,7 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   await page.click('#qr-start');
   await expect(page.locator('#qr-status')).toContainText('Hi Rob!', { timeout: 15000 });
   await expect(page.locator('#qr-video')).toBeHidden();
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([]);
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
   await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 25000 });
   expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
   await expect(page.locator('#qr-error')).toBeEmpty();
@@ -86,6 +86,7 @@ test('a greeting pauses only the primary cap while approach updates keep reachin
   await page.locator('#ap-settle').dispatchEvent('change');
   await page.check('#ap-start');
   await expect(page.locator('#ap-caps .cap-note').first()).toContainText('Hi ', { timeout: 15000 });
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
   await page.click('nav [data-tab=scan]');
   await page.fill('#qr-template', 'Hello {name}!');
   await page.fill('#qr-repetitions', '30');
@@ -93,15 +94,17 @@ test('a greeting pauses only the primary cap while approach updates keep reachin
   await page.fill('#qr-raw', 'Rob');
   await page.click('#qr-submit');
   await expect(page.locator('#qr-status')).toContainText('Hello Rob!');
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200]);
   await expect(page.locator('#status')).toContainText('Ready', { timeout: 15000 });
   await page.click('nav [data-tab=approach]');
   await page.click('#ap-sim-peer');
   await expect(page.locator('#ap-caps .cap-note').nth(1)).toContainText('span ', { timeout: 15000 });
   await expect(page.locator('#ap-caps .cap-note').first()).not.toContainText('span ');
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200, 200]);
   await page.click('nav [data-tab=scan]');
   await page.click('#qr-cancel');
   await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15000 });
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([]);
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200, 200]);
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-caps .cap-note').first()).toContainText('span ', { timeout: 15000 });
 });
@@ -110,10 +113,9 @@ test('regex errors leave content alone and settings persist without badge data',
   await page.goto('/#mock');
   await page.click('#btn-connect');
   await page.click('nav [data-tab=connect]');
-  await page.selectOption('#c-kind', 'solid');
-  await page.click('#btn-send');
-  await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
+  await page.check('#c-keep-black');
   await page.click('nav [data-tab=scan]');
+  await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
   await page.fill('#qr-pattern', '([^|]+)\\|([^|]+)\\|([^|]+)');
   await page.fill('#qr-template', 'Hello {name} {lastname} from {company}!');
   await page.fill('#qr-repetitions', '1');
@@ -124,6 +126,9 @@ test('regex errors leave content alone and settings persist without badge data',
   await expect(page.locator('#qr-status')).toContainText('Hello Rob Bos from Xebia!', { timeout: 10000 });
   await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 20000 });
   await expect(page.locator('#qr-error')).toBeEmpty();
+  await page.click('nav [data-tab=approach]');
+  await expect(page.locator('#ap-caps .cap-note').first()).toHaveText('keep black (idle)');
+  await page.click('nav [data-tab=scan]');
   await page.fill('#qr-pattern', 'name=(?<name>[^;]+)');
   await page.fill('#qr-template', 'Welcome {name}!');
   await page.fill('#qr-raw', 'id=123;');

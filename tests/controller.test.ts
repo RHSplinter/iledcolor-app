@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DeviceController, DEFAULT_TIMEOUTS } from '../src/controller/deviceController';
+import { buildImageStream, Cmd } from '../src/protocol/framing';
+import { encodeGif } from '../src/render/gif';
+import { solid } from '../src/render/matrix';
 import { defaultAck, makeAck, makeContinueAck, MockTransport, type MockOptions } from '../src/transport/mock';
 import { SelectionCancelledError, SPIKE_PROFILE } from '../src/transport/types';
 
@@ -209,5 +212,30 @@ describe('controls', () => {
   });
   it('defaults match the documented timeouts', () => {
     expect(DEFAULT_TIMEOUTS).toEqual({ handshakeMs: 2000, startMs: 2000, chunkMs: 500, endMs: 1000, controlMs: 500 });
+  });
+  it('supports keepBlack idle mode and restores black + display off after temporary playback', async () => {
+    const { t, c } = setup();
+    await c.connect(async () => t);
+    expect(c.canRestoreContent).toBe(false);
+    c.setKeepBlack(true, solid(4, 2, [0, 0, 0]));
+    expect(c.isKeepBlack).toBe(true);
+    expect(c.canRestoreContent).toBe(true);
+    expect(await c.applyKeepBlackIdle(solid(4, 2, [0, 0, 0]))).toBe('confirmed');
+    expect(c.displayOff).toBe(true);
+    const start = t.writes.length;
+    const still = solid(4, 2, [255, 255, 255]);
+    const gif = encodeGif([still], 40, { plays: 1 });
+    expect(await c.playTemporary(gif, still, 10)).toBe('completed');
+    const controls = t.writes.slice(start).filter(({ frame }) => frame[1] === Cmd.DISPLAY_ENABLE);
+    expect(controls).toHaveLength(2);
+    expect(controls[0]!.frame[4]).toBe(1);
+    expect(controls[1]!.frame[4]).toBe(0);
+    expect(c.displayOff).toBe(true);
+    const streams: number[][] = [];
+    for (const { frame } of t.writes.slice(start)) {
+      if (frame[1] === 0x06) streams.push([]);
+      if (frame[1] === 0x00) streams[streams.length - 1]!.push(...frame.subarray(10, -2));
+    }
+    expect(Uint8Array.from(streams.at(-1)!)).toEqual(buildImageStream(solid(4, 2, [0, 0, 0])).bytes);
   });
 });

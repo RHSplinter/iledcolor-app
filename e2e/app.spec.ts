@@ -114,6 +114,7 @@ test('share categories: scan-only file excludes creations and approach content, 
 });
 
 test('solo uses Connect content, restores it after approaching, and remembers the choice', async ({ page }) => {
+  test.setTimeout(60000);
   await page.goto('/#mock');
   await page.click('#btn-connect');
   await page.click('nav [data-tab=connect]');
@@ -152,7 +153,16 @@ test('solo uses Connect content, restores it after approaching, and remembers th
 });
 
 test('approach mode (mock): two caps greet each other, peers grow the group', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.assign(window, { feedbackVibrations: [] as number[] });
+    Object.defineProperty(navigator, 'vibrate', { configurable: true, value: (duration: number) => {
+      (window as Window & { feedbackVibrations: number[] }).feedbackVibrations.push(duration);
+      return true;
+    } });
+  });
   await page.goto('/#mock');
+  await expect(page.locator('#status-approach')).toHaveText('Approach: off');
+  await expect(page.locator('#status-approach')).toHaveClass('pill muted');
   await page.click('nav button[data-tab=approach]');
   await expect(page.locator('#ap-beacon')).toHaveCount(0); // P2P is the default: multi-cap settings hidden
   await page.check('input[name=ap-mode][value=hub]');
@@ -165,19 +175,74 @@ test('approach mode (mock): two caps greet each other, peers grow the group', as
   await page.locator('#ap-settle').dispatchEvent('change');
   await page.click('#ap-start');
   await expect(page.locator('#ap-status')).toContainText('2 caps', { timeout: 15_000 });
+  await expect(page.locator('#status-approach')).toHaveText('Approach: on (2)');
+  await expect(page.locator('#status-approach')).toHaveClass('pill ok');
   await expect(page.locator('#ap-caps')).toContainText('Hi ', { timeout: 15_000 });
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
   await page.click('#ap-sim-peer');
   await page.click('#ap-sim-peer');
   await expect(page.locator('#ap-status')).toContainText('4 caps', { timeout: 15_000 });
+  await expect(page.locator('#status-approach')).toHaveText('Approach: on (4)');
   await expect(page.locator('#ap-caps')).toContainText('span', { timeout: 15_000 });
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200]);
   await page.getByRole('switch').click();
   await expect(page.getByRole('switch')).toBeEnabled({ timeout: 15_000 });
   await expect(page.locator('#ap-status')).toContainText('Stopped');
+  await expect(page.locator('#status-approach')).toHaveText('Approach: off');
+  await expect(page.locator('#status-approach')).toHaveClass('pill muted');
   await expect(page.locator('#ap-caps')).not.toContainText('span');
   await expect(page.locator('#ap-caps')).not.toContainText('Hi ');
   await expect(page.locator('#ap-caps .cap-note')).toHaveText(['"SOLO"', '"SOLO"']);
   await page.waitForTimeout(2500);
   await expect(page.locator('#ap-caps')).not.toContainText('span');
+});
+
+test('keepBlack keeps cap black when idle while displaying approach, sound and scan events', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.goto('/#mock');
+  await page.click('#btn-connect');
+  await expect(page.locator('#status')).toContainText('Ready');
+  await page.check('#c-keep-black');
+  await page.click('nav [data-tab=settings]');
+  await expect(page.locator('#s-keep-black')).toBeChecked();
+
+  await page.click('nav [data-tab=approach]');
+  await page.fill('#ap-settle', '0');
+  await page.locator('#ap-settle').dispatchEvent('change');
+  await page.check('#ap-start');
+  await expect(page.locator('#status-approach')).toHaveText('Approach: on (1)', { timeout: 15_000 });
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('keep black (idle)', { timeout: 15_000 });
+  const pixel = () => page.locator('#ap-caps canvas').evaluate((cv: HTMLCanvasElement) =>
+    Array.from(cv.getContext('2d')!.getImageData(1, 1, 1, 1).data).slice(0, 3));
+  await expect.poll(pixel).toEqual([0, 0, 0]);
+
+  await page.click('#ap-sim-peer');
+  await expect(page.locator('#status-approach')).toHaveText('Approach: on (2)', { timeout: 15_000 });
+  await expect(page.locator('#ap-caps .cap-note')).toContainText('Hi ', { timeout: 15_000 });
+  await page.locator('#ap-peers [data-act=rssi]').fill('-100');
+  await expect(page.locator('#status-approach')).toHaveText('Approach: on (1)', { timeout: 15_000 });
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('keep black (idle)', { timeout: 15_000 });
+  await expect.poll(pixel).toEqual([0, 0, 0]);
+
+  await page.click('nav [data-tab=sound]');
+  await expect(page.locator('#sound-ready')).toHaveText('Primary cap ready. Other caps are not interrupted.');
+  await page.click('#sound-test');
+  await expect(page.locator('#sound-status')).toContainText('Playing Greeting');
+  await page.click('#sound-end');
+  await expect(page.locator('#sound-status')).toContainText('Previous content restored', { timeout: 15_000 });
+
+  await page.click('nav [data-tab=scan]');
+  await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
+  await page.locator('#view-scan summary').click();
+  await page.fill('#qr-raw', 'Ada');
+  await page.click('#qr-submit');
+  await expect(page.locator('#qr-status')).toContainText('Hi Ada!');
+  await expect(page.locator('#status')).toContainText('Ready', { timeout: 15_000 });
+  await page.click('#qr-cancel');
+  await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15_000 });
+
+  await page.click('nav [data-tab=approach]');
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('keep black (idle)');
 });
 
 test('approach calibration and walk record/replay (mock)', async ({ page }) => {

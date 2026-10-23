@@ -63,15 +63,23 @@ export async function restoreBackup(presets: Preset[], settings?: Settings, appr
         presets.forEach((p) => store.put(p));
         if (settings) {
           const kv = t.objectStore('kv');
-          if (settings.textFont !== undefined) kv.put(settings, 'settings');
+          if (settings.textFont !== undefined && settings.keepBlack !== undefined) kv.put(settings, 'settings');
           else {
             const request = kv.get('settings');
             request.onsuccess = () => {
               try {
                 const saved: unknown = request.result;
-                const textFont = typeof saved === 'object' && saved !== null && 'textFont' in saved && isTextFont(saved.textFont)
+                const textFont = settings.textFont !== undefined ? settings.textFont
+                  : typeof saved === 'object' && saved !== null && 'textFont' in saved && isTextFont(saved.textFont)
                   ? saved.textFont : undefined;
-                kv.put({ ...settings, ...(textFont === undefined ? {} : { textFont }) }, 'settings');
+                const keepBlack = settings.keepBlack !== undefined ? settings.keepBlack
+                  : typeof saved === 'object' && saved !== null && 'keepBlack' in saved && typeof saved.keepBlack === 'boolean'
+                  ? saved.keepBlack : undefined;
+                kv.put({
+                  ...settings,
+                  ...(textFont === undefined ? {} : { textFont }),
+                  ...(keepBlack === undefined ? {} : { keepBlack }),
+                }, 'settings');
               } catch (e) {
                 t.abort();
                 reject(new Error(`Import could not be saved: ${(e as Error).message}`));

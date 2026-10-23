@@ -20,7 +20,7 @@ import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
-import { applyGroupContent, applyImportedApproachSettings, getApproachSettings, approachRunning, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, renderApproach, sharePeers, shareIdentity, textFontChanged, type PrimaryCap } from '../approach/ui';
+import { applyGroupContent, applyImportedApproachSettings, getApproachSettings, approachRunning, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, keepBlackChanged, renderApproach, sharePeers, shareIdentity, textFontChanged, type PrimaryCap } from '../approach/ui';
 import { listenForShares, withShareLink } from '../approach/contentExchange';
 import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
 import { shareTextFile } from './shareFile';
@@ -71,7 +71,12 @@ function trace(dir: 'tx' | 'rx' | 'ev', label: string, data?: Uint8Array) {
   if (el) { el.textContent = traceLog.join('\n'); el.scrollTop = el.scrollHeight; }
 }
 function newController() {
-  controller = new DeviceController({ profile: profileFor(settings), onTrace: trace });
+  controller = new DeviceController({
+    profile: profileFor(settings),
+    onTrace: trace,
+    keepBlack: Boolean(settings.keepBlack),
+    blackImage: physical(solid(...logicalDims(), [0, 0, 0])),
+  });
   controller.subscribe(renderStatus);
 }
 /** In the app (and mock mode) the Connect tab's cap is cap 1 of approach mode: one shared connection. */
@@ -83,6 +88,7 @@ function onPrimaryChange(p: PrimaryCap | null) {
   if (p) {
     controller = p.controller;
     deviceName = p.name;
+    controller.setKeepBlack(Boolean(settings.keepBlack), physical(solid(...logicalDims(), [0, 0, 0])));
     if (!watched.has(controller)) { watched.add(controller); controller.subscribe(renderStatus); }
   } else {
     newController();
@@ -157,6 +163,7 @@ function renderConnect() {
         <button id="btn-install" hidden>Install app</button>
       </div>
       <p id="conn-msg" class="small"></p>
+      <label><input type="checkbox" id="c-keep-black" ${settings.keepBlack ? 'checked' : ''} /> Keep cap black unless an approach, scan or sound event is active</label>
       <p class="small">Close other controller apps first. ${native ? `${platformName() === 'ios' ? 'iOS' : 'Android'} will ask for Bluetooth permission the first time you connect.` : 'Choose your hat in the browser Bluetooth picker. Connecting requires Web Bluetooth; editing and presets work offline.'}</p>
       <p class="small" id="install-help" hidden>To install: use your browser's Install app or Add to Home Screen option (in Safari, open the Share menu).</p>
     </div>
@@ -164,6 +171,7 @@ function renderConnect() {
     <div id="github-section"></div>`;
   $('#btn-connect').onclick = onConnect;
   $('#btn-disconnect').onclick = () => (sharedCap() ? disconnectPrimary() : controller.disconnect());
+  $<HTMLInputElement>('#c-keep-black').onchange = (e) => void applyKeepBlack((e.target as HTMLInputElement).checked);
   renderStatus();
 }
 
@@ -181,6 +189,8 @@ function renderDeviceSettings() {
       <input id="brightness" type="range" min="0" max="10" step="1" value="${settings.brightness}" />
       <p class="small">Mapping and "dimmest ≠ off" are unverified on this hat. Start dim for the first tests.</p>
       <div class="row"><button id="btn-disp-on">Display on</button><button id="btn-disp-off">Display off</button><span id="dstate" class="small">${esc(displayNote)}</span></div>
+      <label><input type="checkbox" id="s-keep-black" ${settings.keepBlack ? 'checked' : ''} /> Keep cap black unless an approach, scan or sound event is active</label>
+      <p class="small">Turns the cap display off and keeps a black frame while idle or alone, waking it only for multi-cap approach greetings, QR badge greetings and sound reactions.</p>
     </div>
     <details class="card">
       <summary>Test patterns (dim, static)</summary>
@@ -247,7 +257,30 @@ function renderDeviceSettings() {
     void refreshPreview();
     github?.refreshPreview();
   };
+  $<HTMLInputElement>('#s-keep-black').onchange = (e) => void applyKeepBlack((e.target as HTMLInputElement).checked);
   root.querySelectorAll('#s-font,#s-rot,#s-mh,#s-mv,#s-chunk,#s-delay').forEach((e) => e.addEventListener('change', readSettings));
+  renderStatus();
+}
+
+function syncKeepBlackControls() {
+  const on = Boolean(settings.keepBlack);
+  const sBox = document.getElementById('s-keep-black') as HTMLInputElement | null;
+  if (sBox) sBox.checked = on;
+  const cBox = document.getElementById('c-keep-black') as HTMLInputElement | null;
+  if (cBox) cBox.checked = on;
+}
+
+async function applyKeepBlack(on: boolean, persist = true) {
+  settings = { ...settings, keepBlack: on };
+  syncKeepBlackControls();
+  if (persist) persistSettings();
+  const black = physical(solid(...logicalDims(), [0, 0, 0]));
+  controller.setKeepBlack(on, black);
+  await keepBlackChanged();
+  if (!sharedCap() && controller.state === 'Ready' && !controller.temporaryActive) {
+    if (on) await controller.applyKeepBlackIdle(black).catch(() => undefined);
+    else if (controller.displayOff) await controller.setDisplay(true).catch(() => undefined);
+  }
   renderStatus();
 }
 
@@ -286,6 +319,9 @@ async function onConnect() {
     deviceName = r.deviceName;
     return r.transport;
   });
+  if (settings.keepBlack && controller.state === 'Ready') {
+    await controller.applyKeepBlackIdle(physical(solid(...logicalDims(), [0, 0, 0]))).catch(() => undefined);
+  }
   renderStatus();
 }
 
@@ -665,7 +701,7 @@ async function renderPresets(message = '') {
       const all = await listPresets();
       const json = exportSelectedJson(all, getApproachSettings(), backupSelection,
         backupSelection.scan ? scanner?.exportProfiles() : undefined, {
-          settings,
+          settings: { ...settings, keepBlack: Boolean(settings.keepBlack) },
           ...(backupSelection.creations ? { createContent: currentContent(), createSequence: sequence } : {}),
           ...(backupSelection.creations && github ? { github: github.exportSettings() } : {}),
           ...(backupSelection.scan ? scanner?.exportSettings() : {}),
@@ -695,7 +731,12 @@ async function renderPresets(message = '') {
       const createContent = data.version === 2 ? data.createContent : undefined;
       const createSequence = data.version === 2 ? data.createSequence : undefined;
       const soundSettings = data.version === 2 && data.sound && sound ? sound.prepareImport(data.sound) : undefined;
-      const nextSettings = data.settings ? { ...data.settings, textFont: data.settings.textFont ?? settings.textFont ?? DEFAULT_TEXT_FONT } : undefined;
+      const nextSettings = data.settings ? {
+        ...data.settings,
+        textFont: data.settings.textFont ?? settings.textFont ?? DEFAULT_TEXT_FONT,
+        ...(data.settings.keepBlack !== undefined ? { keepBlack: data.settings.keepBlack }
+          : settings.keepBlack !== undefined ? { keepBlack: settings.keepBlack } : {}),
+      } : undefined;
       const githubSettings = data.version === 2 && data.github ? github?.prepareImport(data.github) ?? data.github : undefined;
       if (soundSettings) await sound?.stop();
       await restoreBackup(merged, nextSettings, nextApproach, { ...scanSettings, createContent, createSequence, sound: soundSettings, github: githubSettings });
@@ -703,6 +744,7 @@ async function renderPresets(message = '') {
         settings = nextSettings;
         setTextFont(settings.textFont ?? DEFAULT_TEXT_FONT);
         textFontChanged();
+        await applyKeepBlack(Boolean(settings.keepBlack), false);
       }
       if (githubSettings) github?.applyImported(githubSettings);
       if (createSequence) { sequence = structuredClone(createSequence); renderSequence(); }
@@ -942,6 +984,7 @@ function approachContext(): Parameters<typeof initApproach>[0] {
     logicalDims, physical, marqueeDelay, trace,
     renderContent: (c) => renderContent(c),
     createContent: currentContent,
+    keepBlack: () => Boolean(settings.keepBlack),
     chooseCap: () => chooseNativeCap(),
     connectCap: (id) => connectNativeCap(id),
     readRssi: (id) => readCapRssi(id),

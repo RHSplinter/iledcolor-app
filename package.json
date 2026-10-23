@@ -1,6 +1,6 @@
 {
   "name": "iledcolor-app",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,10 +13,14 @@
     "test:icons": "node --test scripts/icons.test.mjs",
     "version": "node scripts/release-version.mjs",
     "version:check": "node scripts/release-version.mjs --check",
+    "release:patch": "npm version patch --no-git-tag-version && npm run version:check",
+    "release:minor": "npm version minor --no-git-tag-version && npm run version:check",
+    "release:major": "npm version major --no-git-tag-version && npm run version:check",
     "e2e": "playwright test",
     "e2e:smoke": "playwright test --grep @smoke",
     "cap:sync": "npm run build && cap sync",
     "android:apk": "npm run cap:sync && cd android && gradlew assembleDebug",
+    "android:install": "npm run android:apk && adb install -r android/app/build/outputs/apk/debug/app-debug.apk",
     "android:release": "npm run cap:sync && cd android && gradlew assembleRelease",
     "ios:open": "npm run cap:sync && cap open ios",
     "icons": "node scripts/make-icons.mjs"

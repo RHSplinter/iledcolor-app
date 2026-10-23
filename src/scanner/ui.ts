@@ -393,11 +393,17 @@ export class GreetingUi {
       const delay = gifDelayMs(this.ctx.marqueeDelay(settings.speed) * marquee.step / 2);
       const duration = greetingDuration(frames.length, delay, settings.repetitions);
       if (target !== this.ctx.controller()) throw new Error('The primary cap changed. Scan again for the current cap.');
+      if (target.state !== 'Ready' || target.temporaryActive || !target.canRestoreContent) {
+        throw new Error(target.temporaryActive ? 'A greeting is already playing'
+          : target.state !== 'Ready' ? 'Connect the primary cap first'
+          : 'Send content to the cap first so it can be restored after the greeting');
+      }
+      const gif = encodeGif(frames, delay, { nonce: gifNonce(), plays: settings.repetitions });
       this.playing = target;
       this.updateStatus();
       this.status(`Playing "${text}" ${settings.repetitions} time(s), then restoring the previous content.`);
-      const result = await target.playTemporary(encodeGif(frames, delay, { nonce: gifNonce(), plays: settings.repetitions }), frames[0]!, duration);
-      if (result === 'completed') void vibrateFeedback();
+      void vibrateFeedback();
+      const result = await target.playTemporary(gif, frames[0]!, duration);
       this.status(result === 'cancelled' ? 'Greeting ended early. Previous content restored.' : 'Greeting finished. Previous content restored.');
       $<HTMLTextAreaElement>('qr-raw').value = '';
     } catch (e) {
