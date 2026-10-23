@@ -5,6 +5,12 @@ name: Build iOS release
 #   push:
 #     tags: ['v*']
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing synchronized version tag
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:

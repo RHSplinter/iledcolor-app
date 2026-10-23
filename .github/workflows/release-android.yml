@@ -3,13 +3,19 @@ name: Build Android release
 on:
   push:
     tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing synchronized version tag
+        required: true
+        type: string
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: mobile-release-android-${{ github.ref_name }}
+  group: mobile-release-android-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 defaults:
@@ -26,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -54,7 +60,7 @@ jobs:
       - name: Validate version and tag
         id: version
         env:
-          RELEASE_TAG: ${{ steps.release_tag.outputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag || steps.release_tag.outputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           npm run version:check -- --tag "$RELEASE_TAG"

@@ -1,0 +1,122 @@
+name: Release new app version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment (same as npm run release:patch/minor/major)
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+        required: true
+      platforms:
+        description: Signed packages to publish to GitHub Releases
+        type: choice
+        options: [android, android-and-ios]
+        default: android
+        required: true
+
+permissions:
+  contents: read
+
+# Serialize version changes, but never cancel an in-progress release.
+concurrency:
+  group: new-app-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Require a branch
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+          [[ "$REF_TYPE" == branch ]] || { echo "::error::Select a branch, not a tag."; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check required signing secrets before changing the branch
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          names=(ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD)
+          if [[ "$PLATFORMS" == android-and-ios ]]; then
+            names+=(IOS_CERTIFICATE_BASE64 IOS_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64)
+          fi
+          for name in "${names[@]}"; do
+            [[ -n "${!name}" ]] || { echo "::error::Missing GitHub Actions secret: $name"; exit 1; }
+          done
+      - name: Prepare synchronized version commit and tag
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          case "$BUMP" in patch|minor|major) ;; *) exit 1 ;; esac
+          npm run version:check
+          npm run "release:$BUMP"
+          TAG="v$(node -p "require('./package.json').version")"
+          npm run version:check -- --tag "$TAG"
+          MESSAGE="chore: release $TAG (Actions run $GITHUB_RUN_ID)"
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            # Re-running this same dispatch must not bump or republish different source.
+            [[ "$(git log -1 --format=%s "$TAG")" == "$MESSAGE" ]] &&
+              [[ "$(git rev-parse "$TAG^")" == "$SOURCE_COMMIT" ]] ||
+              { echo "::error::Tag $TAG already belongs to another release. Start from the updated branch."; exit 1; }
+          else
+            npm run test:release
+            node --test scripts/release-workflow.test.mjs
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -- package.json package-lock.json android/app/build.gradle ios/App/App.xcodeproj/project.pbxproj
+            git commit -m "$MESSAGE"
+            git tag "$TAG"
+            # Reject a stale branch or conflicting tag without updating either remote ref.
+            git push --atomic origin "HEAD:refs/heads/$RELEASE_BRANCH" "refs/tags/$TAG"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Prepared $TAG on $RELEASE_BRANCH. Platform jobs publish independently; retry failed jobs without starting a new version bump." >> "$GITHUB_STEP_SUMMARY"
+
+  android:
+    needs: prepare
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-android.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+    secrets: inherit
+
+  ios:
+    needs: prepare
+    if: inputs.platforms == 'android-and-ios'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-ios.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+    secrets: inherit
