@@ -46,6 +46,22 @@ in its provisioning profile.
 Requirements: Node 22+, JDK 21, Android SDK (platform 36, build-tools 35). Set `JAVA_HOME` and
 `ANDROID_HOME` (or put `sdk.dir=...` in `android/local.properties`).
 
+Enable **Developer options** and **USB debugging** on the phone, connect it by USB, and accept
+the debugging prompt on the device. Confirm ADB can see it with `adb devices`, then build and
+install the debug app in one step:
+
+```powershell
+npm ci
+npm run android:install
+```
+
+Run `npm ci` once in each new checkout/worktree and again after dependency changes. Missing
+type definitions such as `node` or `vite/client` mean the project's dependencies need restoring.
+Ensure `adb` is on PATH (normally from the Android SDK's `platform-tools` directory).
+
+This installs or replaces the debug-signed app while preserving its data. It cannot update a
+store/Release-signed installation because Android requires updates to use the same signing key.
+
 ```powershell
 npm run android:apk       # debug APK: android\app\build\outputs\apk\debug\app-debug.apk
 npm run android:release   # signed APK (with signing configured): android\app\build\outputs\apk\release\app-release.apk
