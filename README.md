@@ -428,18 +428,30 @@ GitHub Actions must be enabled, and repository/organization policy must allow th
 
 ### Versioning and publishing
 
-`package.json` is the version source (currently **0.2.2**), with `package-lock.json` kept in sync.
+`package.json` is the version source, with `package-lock.json` kept in sync.
 The npm `version` hook updates Android's `versionName` and iOS's `MARKETING_VERSION`, plus both
 native build numbers. Only stable `MAJOR.MINOR.PATCH` versions are supported (no prerelease/build
 suffixes). The build number is `MAJOR * 1000000 + MINOR * 1000 + PATCH + 1`: `0.2.0` becomes
 `2001`. Minor and patch are limited to 999 and the build number to 2100000000. Always increase
 the version; reusing a tag/build number is not a new release.
 
+To prepare a new version locally, run one of these commands:
+
+```powershell
+npm run release:patch
+npm run release:minor
+npm run release:major
+```
+
+Each command increments the selected version component, synchronizes the npm manifests and
+Android/iOS version metadata, and checks they agree. It does not stage, commit, tag, push, build,
+or publish anything. In VS Code, use **Terminal > Run Task > Release: Prepare new version locally**
+and choose **patch**, **minor**, or **major**. Run it once per intended version bump.
+
 For example, prepare the next patch from the repository root on Windows:
 
 ```powershell
-npm version patch --no-git-tag-version
-npm run version:check
+npm run release:patch
 npm run test:release
 git add package.json package-lock.json android\app\build.gradle ios\App\App.xcodeproj\project.pbxproj
 git commit -m "chore: release 0.2.1"

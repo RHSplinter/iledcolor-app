@@ -153,6 +153,48 @@ test('CLI checks the tag, lockfile and native metadata and synchronizes a versio
   assert.equal(run('--check', '--tag', 'v1.2.3').status, 0);
 });
 
+for (const bump of ['patch', 'minor', 'major']) {
+  test(`release:${bump} prepares synchronized local files without staging, committing or tagging`, (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'led-hat-prepare-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    for (const path of [
+      'scripts/release-version.mjs', 'package.json', 'package-lock.json',
+      'android/app/build.gradle', 'ios/App/App.xcodeproj/project.pbxproj',
+    ]) {
+      const destination = join(root, path);
+      mkdirSync(dirname(destination), { recursive: true });
+      copyFileSync(new URL('../' + path, import.meta.url), destination);
+    }
+    const git = (...args) => {
+      const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout;
+    };
+    git('init', '--quiet');
+    git('add', '.');
+    git('-c', 'user.name=Release test', '-c', 'user.email=release@example.invalid',
+      '-c', 'core.hooksPath=nonexistent-hooks', 'commit', '--quiet', '-m', 'Initial fixture');
+    const head = git('rev-parse', 'HEAD');
+    const before = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+    const [major, minor, patch] = before.split('.').map(Number);
+    const expected = bump === 'major' ? `${major + 1}.0.0`
+      : bump === 'minor' ? `${major}.${minor + 1}.0` : `${major}.${minor}.${patch + 1}`;
+    const result = spawnSync(`npm run release:${bump}`, {
+      cwd: root,
+      encoding: 'utf8',
+      shell: true,
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version, expected);
+    const check = spawnSync(process.execPath, [join(root, 'scripts/release-version.mjs'),
+      '--check', '--tag', `v${expected}`], { cwd: root, encoding: 'utf8' });
+    assert.equal(check.status, 0, check.stderr);
+    assert.equal(git('rev-parse', 'HEAD'), head);
+    assert.equal(git('tag', '--list'), '');
+    assert.equal(git('diff', '--cached', '--name-only'), '');
+  });
+}
+
 test('Android manual releases derive the tag from validated project files', (t) => {
   const workflow = readFileSync(new URL('../.github/workflows/release-android.yml', import.meta.url), 'utf8');
   assert.ok(workflow.includes('  workflow_dispatch:\n\npermissions:'));
