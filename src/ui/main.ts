@@ -1021,7 +1021,7 @@ async function main() {
   scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
   const scannerReady = scanner.init();
   sound = new SoundUi({ controller: () => controller, logicalDims, physical });
-  github = new GitHubUi({ root: $('#github-section'), controller: () => controller, logicalDims, physical, frameDelayMs: marqueeDelay(DEFAULT_SPEED) });
+  github = new GitHubUi({ root: $('#github-section'), controller: () => controller, logicalDims, physical, frameDelayMs: () => marqueeDelay(Number($<HTMLInputElement>('#c-speed').value) || DEFAULT_SPEED) });
   await Promise.all([scannerReady, sound.init(), github.init()]);
 }
 void main().catch((error: unknown) => {

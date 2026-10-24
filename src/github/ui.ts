@@ -18,7 +18,7 @@ export class GitHubUi {
   private previewTimer: ReturnType<typeof setTimeout> | undefined;
   constructor(private ctx: {
     root: HTMLElement; controller: () => DeviceController;
-    logicalDims: () => [number, number]; physical: (image: RgbImage) => RgbImage; frameDelayMs: number;
+    logicalDims: () => [number, number]; physical: (image: RgbImage) => RgbImage; frameDelayMs: () => number;
   }) {}
 
   async init() {
@@ -28,7 +28,7 @@ export class GitHubUi {
         <form id="github-form">
           <label for="github-handle">GitHub handle</label>
           <input id="github-handle" type="text" maxlength="39" placeholder="e.g. octocat" autocapitalize="none" spellcheck="false" />
-          <p class="small">The past year (53 weeks) scrolls across the hat from right to left, oldest week first, Sunday at the top. Each day uses 2 x 2 LEDs. Dark to bright green means fewer to more contributions.</p>
+          <p class="small">The past year (53 weeks) scrolls across the hat from right to left, oldest week first, Sunday at the top. Each day uses 2 x 2 LEDs. Dark to bright green means fewer to more contributions. Uses the Scroll speed from the Create tab.</p>
           <label for="github-prefix">Prefix text (before the graph)</label>
           <input id="github-prefix" type="text" maxlength="${MAX_GITHUB_CAPTION_LENGTH}" />
           <label for="github-postfix">Postfix text (after the graph)</label>
@@ -141,7 +141,7 @@ export class GitHubUi {
       if (!this.canvas.isConnected) return;
       drawPreview(this.canvas, frames[i]!);
       i = (i + 1) % frames.length;
-      this.previewTimer = setTimeout(tick, this.ctx.frameDelayMs);
+      this.previewTimer = setTimeout(tick, this.ctx.frameDelayMs());
     };
     this.canvas.hidden = false;
     tick();
@@ -184,7 +184,8 @@ export class GitHubUi {
     this.note('Sending contribution animation...');
     try {
       const frames = this.frames();
-      const gif = encodeGif(frames, frames.map(() => this.ctx.frameDelayMs), { nonce: gifNonce() });
+      const delay = this.ctx.frameDelayMs();
+      const gif = encodeGif(frames, frames.map(() => delay), { nonce: gifNonce() });
       const { width, height } = frames[0]!;
       const result = await this.ctx.controller().uploadGif(gif, width, height, frames[0]);
       this.note(result === 'confirmed' ? `Contribution graph for ${this.loadedHandle} is scrolling on the hat.` : 'Sent, not confirmed.');
