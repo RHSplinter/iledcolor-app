@@ -37,9 +37,11 @@ tab navigation and responsive controls on Android, iOS and web.
 
 Choose **Settings → Display → LED text font** for all text on the LED matrix:
 **Silkscreen** (compact, the default), **Tiny5** (large), **Press Start 2P** (arcade),
-**DotGothic16** (tall), or **Bitcount** (full height). All five are bundled for offline use and rendered at their
+**DotGothic16** (tall), **Bitcount** (full height), or **Monaspace Neon** (full height). All six are bundled for offline use and rendered at their
 native pixel sizes, except Tiny5 and Bitcount Prop Single, which use crisp 2x sizes for readability on the
-16-row display. Bitcount's ascenders and descenders use all 16 rows. Glyphs have trimmed side bearings and a one-pixel gap between letters;
+16-row display. Bitcount's ascenders and descenders use all 16 rows. Monaspace Neon is a vector font from
+GitHub Next, so it is scaled to the largest size at which every printable ASCII character fits the configured
+display height. Glyphs have trimmed side bearings and a one-pixel gap between letters;
 emoji get a two-pixel gap on each side so they never touch neighbouring letters.
 Emoji retain their system colour appearance and reserve their actual
 rendered width rather than an assumed square. The sample

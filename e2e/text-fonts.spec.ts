@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const fonts = ['silkscreen', 'tiny5', 'press-start', 'dotgothic', 'bitcount'];
+const fonts = ['silkscreen', 'tiny5', 'press-start', 'dotgothic', 'bitcount', 'monaspace'];
 
 async function pixels(page: Page, selector: string) {
   return page.locator(selector).evaluate((canvas: HTMLCanvasElement) => {
@@ -13,13 +13,13 @@ async function pixels(page: Page, selector: string) {
   });
 }
 
-test('five distinct, crisp fonts have one-pixel spacing and match preview and mock uploads offline', async ({ page, context }) => {
+test('six distinct, crisp fonts have one-pixel spacing and match preview and mock uploads offline', async ({ page, context }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#mock');
   await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20_000 });
   await page.fill('#c-str', 'Hi!');
   await page.click('nav [data-tab=settings]');
-  await expect(page.locator('#s-font option')).toHaveCount(5);
+  await expect(page.locator('#s-font option')).toHaveCount(6);
   await expect.poll(async () => (await pixels(page, '#font-preview')).includes('255,255,255')).toBe(true);
   const samples: string[][] = [];
   for (const font of fonts) {
@@ -50,21 +50,24 @@ test('five distinct, crisp fonts have one-pixel spacing and match preview and mo
     await page.click('nav [data-tab=settings]');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
-  expect(new Set(samples.map((sample) => JSON.stringify(sample))).size).toBe(5);
+  expect(new Set(samples.map((sample) => JSON.stringify(sample))).size).toBe(6);
 
-  // Ascenders and descenders of the full-height font reach the top and bottom LED rows.
-  await page.click('nav [data-tab=connect]');
-  await page.fill('#c-str', 'bjg');
-  await expect.poll(async () => {
-    const image = await pixels(page, '#preview');
-    return Array.from({ length: 16 }, (_, y) => image.slice(y * 32, (y + 1) * 32).includes('255,255,255')).every(Boolean);
-  }).toBe(true);
-  await page.click('nav [data-tab=settings]');
+  // Ascenders and descenders of the full-height fonts reach the top and bottom LED rows.
+  for (const [font, text] of [['bitcount', 'bjg'], ['monaspace', '$gj']]) {
+    await page.selectOption('#s-font', font!);
+    await page.click('nav [data-tab=connect]');
+    await page.fill('#c-str', text!);
+    await expect.poll(async () => {
+      const image = await pixels(page, '#preview');
+      return Array.from({ length: 16 }, (_, y) => image.slice(y * 32, (y + 1) * 32).includes('255,255,255')).every(Boolean);
+    }).toBe(true);
+    await page.click('nav [data-tab=settings]');
+  }
 
   await context.setOffline(true);
   await page.reload();
   await page.click('nav [data-tab=settings]');
-  await expect(page.locator('#s-font')).toHaveValue('bitcount');
+  await expect(page.locator('#s-font')).toHaveValue('monaspace');
   for (const [index, font] of fonts.entries()) {
     await page.selectOption('#s-font', font);
     await expect.poll(() => pixels(page, '#font-preview')).toEqual(samples[index]);
