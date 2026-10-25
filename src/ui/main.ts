@@ -184,7 +184,7 @@ function renderDeviceSettings() {
       <h2>Display</h2>
       <label for="s-font">LED text font</label>
       <select id="s-font" aria-describedby="s-font-help">${TEXT_FONTS.map((f) => `<option value="${f.id}" ${f.id === (settings.textFont ?? DEFAULT_TEXT_FONT) ? 'selected' : ''}>${f.label}</option>`).join('')}</select>
-      <p id="s-font-help" class="small">Applies to all LED text: Connect, sequences, Approach, Scan greetings and Sound reactions. Tiny5 and Bitcount use crisp 2x pixel sizes; Bitcount fills all 16 rows. The other fonts use their native size. Letters have a one-pixel gap and emoji a two-pixel gap. Send again to update Connect content already on the hat.</p>
+      <p id="s-font-help" class="small">Applies to all LED text: Connect, sequences, Approach, Scan greetings and Sound reactions. Tiny5 and Bitcount use crisp 2x pixel sizes; Bitcount fills all 16 rows. Monaspace Neon is scaled to fill the full display height. The other fonts use their native size. Letters have a one-pixel gap and emoji a two-pixel gap. Send again to update Connect content already on the hat.</p>
       <canvas id="font-preview" width="32" height="16" role="img" aria-label="LED font sample: Hi!"></canvas>
       <label for="brightness">Dimming level: <b id="bval">${settings.brightness}</b> (0 = brightest, 10 = dimmest) <span id="bstate" class="small">${esc(brightnessNote)}</span></label>
       <input id="brightness" type="range" min="0" max="10" step="1" value="${settings.brightness}" />
