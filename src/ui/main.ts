@@ -9,6 +9,7 @@ import { gifToFrames, MAX_GIF_STORE_BYTES } from '../render/gifDecode';
 import { ensureFont, renderMarquee, renderText, setTextFont } from '../render/text';
 import { DEFAULT_TEXT_FONT, TEXT_FONTS, isTextFont } from '../render/fonts';
 import { deletePreset, listPresets, loadKv, loadSettings, restoreBackup, requestPersistence, saveKv, savePreset, saveSettings } from '../storage/db';
+import { builtinPresets } from '../storage/builtinPresets';
 import {
   DEFAULT_SETTINGS, DEFAULT_SPEED, DEFAULT_STEP_SECONDS, MAX_SEQUENCE_STEPS, MAX_STEP_SECONDS, isGroupPreset, validateContent, validateSequenceSteps,
   type Content, type Preset, type SequenceStep, type Settings, type SingleContent,
@@ -403,9 +404,11 @@ function renderCreate() {
     try { addSequenceSteps([{ content: editorContent(), seconds: DEFAULT_STEP_SECONDS }]); } catch (e) { $('#c-err').textContent = (e as Error).message; }
   };
   $('#btn-seq-add-preset').onclick = async () => {
-    const id = $<HTMLSelectElement>('#c-seq-preset').value;
+    const value = $<HTMLSelectElement>('#c-seq-preset').value;
     try {
-      const p = (await listPresets()).find((x) => x.id === id);
+      const builtIn = value.startsWith('builtin/');
+      const id = value.slice(builtIn ? 8 : 6);
+      const p = (builtIn ? builtinPresets() : await listPresets()).find((x) => x.id === id);
       if (!p || isGroupPreset(p)) throw new Error('Choose a saved content preset.');
       addSequenceSteps(p.content.kind === 'sequence' ? structuredClone(p.content.steps) : [{ content: p.content, seconds: DEFAULT_STEP_SECONDS }]);
     } catch (e) { $('#c-err').textContent = (e as Error).message; }
@@ -483,8 +486,9 @@ async function refreshSequencePresets() {
   let presets: Preset[] = [];
   try { presets = (await listPresets()).filter((p) => !isGroupPreset(p)); } catch { /* storage errors are shown elsewhere */ }
   const keep = select.value;
-  select.innerHTML = presets.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('') || '<option value="" disabled selected>No saved presets</option>';
-  if (presets.some((p) => p.id === keep)) select.value = keep;
+  select.innerHTML = `<optgroup label="Built-in presets">${builtinPresets().map((p) => `<option value="builtin/${esc(p.id)}">${esc(p.name)}</option>`).join('')}</optgroup>`
+    + `<optgroup label="Saved presets">${presets.map((p) => `<option value="saved/${esc(p.id)}">${esc(p.name)}</option>`).join('')}</optgroup>`;
+  if (Array.from(select.options).some((p) => p.value === keep)) select.value = keep;
   renderSequence();
 }
 
@@ -649,6 +653,12 @@ async function renderPresets(message = '') {
       ${approachAvailable ? '' : '<p class="small">Nearby Approach detection and phone-to-phone BLE sharing require the Android or iOS app. Imported group presets remain available for backup and export.</p>'}
     </div>
     <div class="card">
+      <h2>Built-in presets</h2>
+      <p class="small">Available to everyone, including offline. Load one to edit or send it, then save your own copy.</p>
+      <ul class="list preset-list" id="builtin-presets">${builtinPresets().map((p) => `<li data-id="${esc(p.id)}" data-builtin="true"><span>${esc(p.name)} <small class="muted">${p.id === 'builtin-party-popper' ? 'animated GIF' : p.content.kind}</small></span><button data-act="load">Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}</li>`).join('')}</ul>
+      <p class="small">Built-in logos use artwork supplied for this app. Party Popper uses the supplied 32×16 animated GIF.</p>
+    </div>
+    <div class="card">
       <h2>Backup</h2>
       <fieldset class="share-options">
         <legend>Include in shared file</legend>
@@ -666,8 +676,9 @@ async function renderPresets(message = '') {
     </div>`;
   renderShare();
   root.querySelectorAll<HTMLButtonElement>('li button').forEach((b) => b.onclick = async () => {
-    const id = b.closest('li')!.dataset.id!;
-    const p = presets.find((x) => x.id === id)!;
+    const item = b.closest('li')!;
+    const id = item.dataset.id!;
+    const p = (item.dataset.builtin ? builtinPresets() : presets).find((x) => x.id === id)!;
     if (b.dataset.act === 'share') { openShare(p); return; }
     if (b.dataset.act === 'del') { await deletePreset(id).catch((e) => ($('#p-msg').textContent = e.message)); void renderPresets(); return; }
     if (isGroupPreset(p)) { applyGroupContent(p.groups); showTab('approach'); return; }

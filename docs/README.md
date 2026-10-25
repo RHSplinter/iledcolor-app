@@ -35,6 +35,18 @@ tab navigation and responsive controls on Android, iOS and web.
   **Keep cap black unless an approach, scan or sound event is active**, LED text font, expandable test patterns and protocol log, and rotation/mirroring/transport settings.
   Loading a content preset opens Connect; loading a group preset opens Approach.
 
+**Settings → Built-in presets** includes **Xebia 💜 GitHub**, **LGTM 👍** and literal
+`<header>` scrolling text, the supplied **Xebia logo**, the **GitHub Copilot logo**,
+and an animated **Party Popper** GIF. The artwork is bundled for offline use on web,
+Android and iOS. Logos preserve their aspect ratio on black and the party animation
+is supplied at the 32×16 display resolution. Load a built-in to preview or send it,
+add it to a Connect sequence, or save an editable personal copy. GIF decoding
+requires the same WebCodecs support as uploaded GIFs.
+
+Built-ins are not included in backups and cannot be removed by importing a backup.
+Personal copies, current editor content loaded from a built-in, and sequences using
+built-ins are embedded in **Creations** backups without remote image dependencies.
+
 Choose **Settings → Display → LED text font** for all text on the LED matrix:
 **Silkscreen** (compact, the default), **Tiny5** (large), **Press Start 2P** (arcade),
 **DotGothic16** (tall), or **Bitcount** (full height). All five are bundled for offline use and rendered at their
