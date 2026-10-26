@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { connectHat } from './hat';
+import { openCustomSection, connectHat } from './hat';
 import { readFile } from 'node:fs/promises';
 
 async function shareBackup(page: Page) {
@@ -16,9 +16,11 @@ async function importBackup(page: Page, data: unknown) {
 }
 
 test('all categories restore settings from every tab immediately and after reload', async ({ page }) => {
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#mock');
   await connectHat(page);
+  await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Connect draft');
   await page.locator('#c-speed').fill('7');
   await page.click('nav [data-tab=approach]');
@@ -76,7 +78,8 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.locator('#brightness').fill('9');
   await page.fill('#s-chunk', '492');
   await page.locator('#s-chunk').dispatchEvent('change');
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
+  await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Changed draft');
   await page.click('nav [data-tab=approach]');
   await page.check('input[name=ap-mode][value=p2p]');
@@ -102,7 +105,7 @@ test('all categories restore settings from every tab immediately and after reloa
       await page.reload();
       await connectHat(page);
     }
-    await page.click('nav [data-tab=connect]');
+    await page.click('nav [data-tab=custom]');
     await expect(page.locator('#c-str')).toHaveValue('Connect draft');
     await expect(page.locator('#c-speed')).toHaveValue('7');
     await page.click('nav [data-tab=approach]');
@@ -137,6 +140,7 @@ test('all categories restore settings from every tab immediately and after reloa
 test('display-only backup ignores invalid excluded scanner inputs and preserves other tabs', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
+  await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Keep this draft');
   await page.click('nav [data-tab=scan]');
   await page.fill('#qr-template', 'Keep {name}!');
@@ -157,7 +161,7 @@ test('display-only backup ignores invalid excluded scanner inputs and preserves 
   await expect(page.locator('#qr-repetitions')).toHaveValue('0');
   await page.click('nav [data-tab=sound]');
   await expect(page.locator('#sound-noises')).not.toBeChecked();
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#c-str')).toHaveValue('Keep this draft');
 
   // Unchecking Display & transport settings excludes settings; legacy v1/v2 imports without keepBlack preserve local keepBlack.
@@ -189,13 +193,14 @@ test('display-only backup ignores invalid excluded scanner inputs and preserves 
   await importBackup(page, legacyV1);
   await expect(page.locator('#p-msg')).toContainText('Imported 0 presets');
   await expect(page.locator('#s-keep-black')).toBeChecked();
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#c-keep-black')).toHaveCount(0);
 });
 
 test('malformed scanner settings reject the entire backup without changing other categories', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
+  await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Keep original');
   await page.click('nav [data-tab=settings]');
   const backup = await shareBackup(page);
@@ -205,7 +210,7 @@ test('malformed scanner settings reject the entire backup without changing other
   await importBackup(page, backup);
   await expect(page.locator('#p-msg')).toContainText('Import failed: Repetitions');
   await expect(page.locator('#s-rot')).toHaveValue('0');
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#c-str')).toHaveValue('Keep original');
 
   await page.click('nav [data-tab=settings]');
@@ -216,7 +221,7 @@ test('malformed scanner settings reject the entire backup without changing other
   await expect(page.locator('#p-msg')).toContainText('Import failed: invalid keepBlack');
   await expect(page.locator('#s-rot')).toHaveValue('0');
   await expect(page.locator('#s-keep-black')).not.toBeChecked();
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#c-str')).toHaveValue('Keep original');
   await expect(page.locator('#c-keep-black')).toHaveCount(0);
   await page.reload();

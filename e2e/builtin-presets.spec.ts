@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { connectHat, installFakeHat } from './hat';
+import { openCustomSection, connectHat, installFakeHat, waitForOfflineReady } from './hat';
 import { readFile } from 'node:fs/promises';
 
 test('built-ins load, send, save, back up and remain available offline', async ({ page, context }) => {
@@ -7,7 +7,7 @@ test('built-ins load, send, save, back up and remain available offline', async (
   page.on('request', (r) => { if (!r.url().startsWith('http://localhost:4173')) external.push(r.url()); });
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20_000 });
+  await waitForOfflineReady(page);
 
   for (const [id, kind] of [['xebia-github', 'text'], ['header', 'text'], ['lgtm', 'text'], ['xebia-logo', 'image'], ['github-copilot-logo', 'image'], ['party-popper', 'image']]) {
     await page.click('nav [data-tab=settings]');
@@ -18,13 +18,14 @@ test('built-ins load, send, save, back up and remain available offline', async (
       await expect(page.locator('#builtin-presets header')).toHaveCount(0);
     }
     await page.locator(`#builtin-presets [data-id=builtin-${id}] [data-act=load]`).click();
-    await expect(page.locator('#view-connect')).toBeVisible();
-    await expect(page.locator('#c-kind')).toHaveValue(kind!);
+    await expect(page.locator('#view-custom')).toBeVisible();
+    await expect(page.locator(`#custom-${kind}`)).toHaveAttribute('open', '');
     if (kind === 'text')     await expect(page.locator('#c-str')).toHaveValue(({ header: '<header>', lgtm: 'LGTM 👍' } as Record<string, string>)[id!] ?? 'Xebia 💜 GitHub');
     await expect(page.locator('#c-err')).toBeEmpty();
-    await expect(page.locator('#btn-send')).toBeEnabled();
-    await page.click('#btn-send');
-    await expect(page.locator('#send-note')).toHaveText(/upload confirmed\./i);
+    const send = kind === 'text' ? '#btn-send' : '#btn-send-image';
+    await expect(page.locator(send)).toBeEnabled();
+    await page.click(send);
+    await expect(page.locator('#send-note')).toHaveText(/upload confirmed\./i, { timeout: 15_000 });
   }
 
   // The preview magnifies each LED tenfold; party-popper pixels must animate.
@@ -36,8 +37,10 @@ test('built-ins load, send, save, back up and remain available offline', async (
   await expect.poll(pixels).not.toBe(firstFrame);
   await expect(page.locator('#preview')).toHaveAttribute('width', '320');
   await expect(page.locator('#preview')).toHaveAttribute('height', '160');
-  await page.fill('#c-name', 'My party');
-  await page.click('#btn-save');
+  await page.click('#image-save-start');
+  await page.fill('#image-name', 'My party');
+  await page.locator('#image-save-form').getByRole('button', { name: 'Save preset' }).click();
+  await openCustomSection(page, 'sequence');
   await page.selectOption('#c-seq-preset', { label: 'Party Popper' });
   await page.click('#btn-seq-add-preset');
   await expect(page.locator('#c-seq-list li')).toHaveCount(1);
@@ -60,13 +63,13 @@ test('built-ins load, send, save, back up and remain available offline', async (
   await context.setOffline(true);
   await page.reload();
   await connectHat(page);
-  await expect(page.locator('#c-kind')).toHaveValue('image');
+  await expect(page.locator('#custom-image')).not.toHaveAttribute('open');
   await expect(page.locator('#c-seq-list li')).toHaveCount(1);
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('#builtin-presets li')).toHaveCount(6);
   await expect(page.locator('.preset-list:not(#builtin-presets)')).toContainText('My party');
   await page.locator('#builtin-presets [data-id=builtin-party-popper] [data-act=load]').click();
-  await expect(page.locator('#view-connect')).toBeVisible();
+  await expect(page.locator('#view-custom')).toBeVisible();
   await expect(page.locator('#c-err')).toBeEmpty();
   await expect.poll(pixels).not.toBe(firstFrame);
   expect(external).toEqual([]);
@@ -87,6 +90,7 @@ test('built-ins survive replacement imports on web and cannot shadow personal pr
   await expect(page.locator('#builtin-presets li')).toHaveCount(6);
   await page.locator('.preset-list:not(#builtin-presets) [data-act=load]').click();
   await expect(page.locator('#c-str')).toHaveValue('Keep mine');
+  await openCustomSection(page, 'sequence');
   await page.selectOption('#c-seq-preset', { label: 'Personal text' });
   await page.click('#btn-seq-add-preset');
   await expect(page.locator('#c-seq-list')).toContainText('Keep mine');

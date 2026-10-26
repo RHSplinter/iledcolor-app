@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { connectHat } from './hat';
+import { openCustomSection, connectHat, waitForOfflineReady } from './hat';
 
 test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page, context }) => {
   const external: string[] = [];
@@ -7,17 +7,20 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
 
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20_000 });
+  await waitForOfflineReady(page);
 
 
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
+  await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Hi');
   await expect(page.locator('#btn-send')).toBeEnabled();
   await page.click('#btn-send');
   await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
 
+  await openCustomSection(page, 'text');
+  await page.click('#c-save-start');
   await page.fill('#c-name', 'Greeting');
-  await page.click('#btn-save');
+  await page.locator('#c-save-form').getByRole('button', { name: 'Save preset' }).click();
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('ul.list li').first()).toContainText('Greeting');
 
@@ -28,7 +31,7 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
   await expect(page.locator('#status')).toBeVisible();
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('ul.list li').first()).toContainText('Greeting');
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
 
   expect(external).toEqual([]); // privacy: no off-origin requests
 });
@@ -79,9 +82,11 @@ test('share categories: scan-only file excludes creations and approach content, 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#mock');
   await connectHat(page);
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
+  await openCustomSection(page, 'text');
+  await page.click('#c-save-start');
   await page.fill('#c-name', 'Keep this creation');
-  await page.click('#btn-save');
+  await page.locator('#c-save-form').getByRole('button', { name: 'Save preset' }).click();
   await page.click('nav [data-tab=approach]');
   await page.locator('[data-tier=pair][data-field=text]').fill('Keep my greeting');
   await page.locator('[data-tier=pair][data-field=text]').dispatchEvent('change');
@@ -120,40 +125,40 @@ test('solo uses Connect content, restores it after approaching, and remembers th
   test.setTimeout(60000);
   await page.goto('/#mock');
   await connectHat(page);
-  await page.click('nav [data-tab=connect]');
-  await page.selectOption('#c-kind', 'solid');
-  await page.locator('#c-fg').fill('#ff0000');
+  await page.click('nav [data-tab=custom]');
+  await openCustomSection(page, 'solid');
+  await page.locator('#c-solid').fill('#ff0000');
   await page.click('nav [data-tab=approach]');
   await page.check('#ap-solo-create');
   await expect(page.locator('[data-tier=solo][data-field=text]')).toBeHidden();
   await page.fill('#ap-settle', '0');
   await page.locator('#ap-settle').dispatchEvent('change');
   await page.check('#ap-start');
-  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Connect tab content', { timeout: 15000 });
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Custom tab content', { timeout: 15000 });
   const pixel = () => page.locator('#ap-caps canvas').evaluate((cv: HTMLCanvasElement) =>
     Array.from(cv.getContext('2d')!.getImageData(1, 1, 1, 1).data).slice(0, 3));
   await expect.poll(pixel).toEqual([255, 0, 0]);
   await page.click('#ap-sim-peer');
   await expect(page.locator('#ap-caps .cap-note')).toContainText('Hi ', { timeout: 15000 });
   await page.locator('#ap-peers [data-act=rssi]').fill('-100');
-  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Connect tab content', { timeout: 15000 });
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Custom tab content', { timeout: 15000 });
   await expect.poll(pixel).toEqual([255, 0, 0]);
-  await page.click('nav [data-tab=connect]');
-  await page.locator('#c-fg').fill('#00ff00');
+  await page.click('nav [data-tab=custom]');
+  await page.locator('#c-solid').fill('#00ff00');
   await page.click('nav [data-tab=approach]');
   await expect.poll(pixel, { timeout: 15000 }).toEqual([0, 255, 0]);
   await page.locator('#ap-peers [data-act=rssi]').fill('-50');
   await expect(page.locator('#ap-caps .cap-note')).toContainText('Hi ', { timeout: 15000 });
   await page.uncheck('#ap-start');
-  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Connect tab content', { timeout: 15000 });
+  await expect(page.locator('#ap-caps .cap-note')).toHaveText('Custom tab content', { timeout: 15000 });
   await expect.poll(pixel).toEqual([0, 255, 0]);
   await page.reload();
   await connectHat(page);
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-solo-create')).toBeChecked();
-  await page.click('nav [data-tab=connect]');
-  await expect(page.locator('#c-kind')).toHaveValue('solid');
-  await expect(page.locator('#c-fg')).toHaveValue('#00ff00');
+  await page.click('nav [data-tab=custom]');
+  await expect(page.locator('#custom-solid')).not.toHaveAttribute('open');
+  await expect(page.locator('#c-solid')).toHaveValue('#00ff00');
 });
 
 test('approach mode (mock): two caps greet each other, peers grow the group', async ({ page }) => {
@@ -273,7 +278,7 @@ test('approach calibration and walk record/replay (mock)', async ({ page }) => {
   await expect(page.locator('#ap-replay-out')).toContainText('join after "Together"');
 });
 
-test('the Connect tab cap is cap 1 of approach mode', async ({ page }) => {
+test('the Custom tab cap is cap 1 of approach mode', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
   await page.click('nav button[data-tab=approach]');
@@ -283,7 +288,7 @@ test('the Connect tab cap is cap 1 of approach mode', async ({ page }) => {
   await page.check('input[name=ap-mode][value=hub]');
   await page.click('#ap-add');
   await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(2);
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await page.locator('#status-toggle').click();
   await page.locator('#btn-status-disconnect').click();
   await expect(page.locator('#status')).toHaveText('Disconnected');
@@ -384,9 +389,11 @@ test('sequence: compose, send, save, reload, add preset and back up', async ({ p
   const steps = page.locator('#c-seq-list li[data-index]');
   await expect(page.locator('#c-seq-on')).toBeDisabled();
 
+  await openCustomSection(page, 'text');
   await page.fill('#c-str', 'A');
+  await openCustomSection(page, 'sequence');
   await page.click('#btn-seq-add');
-  await page.selectOption('#c-kind', 'solid');
+  await openCustomSection(page, 'solid');
   await page.click('#btn-seq-add');
   await expect(steps).toHaveCount(2);
   await expect(steps.nth(0)).toContainText('Text "A"');
@@ -399,15 +406,17 @@ test('sequence: compose, send, save, reload, add preset and back up', async ({ p
   await expect(steps.nth(0)).toContainText('Solid');
   await expect(page.getByLabel('Seconds for step 1')).toHaveValue('5');
 
-  await page.click('#btn-send');
+  await page.click('#btn-send-sequence');
   await expect(page.locator('#send-note')).toHaveText('Animation upload confirmed.');
 
-  await page.fill('#c-name', 'Show');
-  await page.click('#btn-save');
-  await expect(page.locator('#send-note')).toHaveText('Saved "Show".');
+  await page.click('#sequence-save-start');
+  await page.fill('#sequence-name', 'Show');
+  await page.locator('#sequence-save-form').getByRole('button', { name: 'Save preset' }).click();
+  await expect(page.locator('#sequence-save-note')).toHaveText('Saved "Show".');
   await page.reload();
   await connectHat(page);
   await expect(steps).toHaveCount(2);
+  await openCustomSection(page, 'sequence');
   await expect(page.locator('#c-seq-on')).toBeChecked();
   await expect(page.getByLabel('Seconds for step 1')).toHaveValue('5');
 
@@ -431,7 +440,7 @@ test('sequence: compose, send, save, reload, add preset and back up', async ({ p
   expect(json.creations.find((p: { name: string }) => p.name === 'Show').content.steps[0].seconds).toBe(5);
 
   // Pausing keeps the draft; single content is sent and the draft is backed up separately.
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await page.uncheck('#c-seq-on');
   await expect(page.locator('#c-seq-help')).toContainText('paused');
   await page.click('nav [data-tab=settings]');
@@ -443,7 +452,7 @@ test('sequence: compose, send, save, reload, add preset and back up', async ({ p
   // Importing restores the shared sequence and plays it.
   await page.setInputFiles('#p-import', { name: 's.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
   await expect(page.locator('#p-msg')).toContainText('Imported');
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#c-seq-on')).toBeChecked();
   await expect(steps).toHaveCount(2);
 

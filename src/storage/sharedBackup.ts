@@ -4,14 +4,14 @@ import { DEFAULT_TEXT_FONT } from '../render/fonts';
 import { validatePreferences as validateSoundPreferences, type SoundPreferences } from '../sound/dictionary';
 import { validateGreeting, validateGreetingProfiles, type GreetingProfileState, type ScannerBackup } from '../scanner/greeting';
 import {
-  DEFAULT_SETTINGS, MAX_IMPORT_BYTES, MAX_PRESETS, isGroupPreset, parseImport, validateContent, validateGroups, validateSequenceSteps, validateSettings,
-  type Content, type ContentPreset, type GroupContent, type GroupPreset, type Preset, type SequenceStep, type Settings,
+  DEFAULT_SETTINGS, MAX_IMPORT_BYTES, MAX_PRESETS, isGroupPreset, parseImport, validateContent, validateCustomDrafts, validateGroups, validateSequenceSteps, validateSettings,
+  type Content, type ContentPreset, type CustomDrafts, type GroupContent, type GroupPreset, type Preset, type SequenceStep, type Settings,
 } from './presets';
 
 export interface ShareSelection { creations: boolean; approach: boolean; scan: boolean; settings?: boolean; sound?: boolean }
 export type ScanSettings = Pick<ApproachSettings, 'enterDbm' | 'leaveDbm' | 'settleMs' | 'confirmMs' | 'staleMs'>;
 type ApproachOptions = Pick<ApproachSettings, 'mode' | 'beacon' | 'countNearbyCaps'>;
-export interface BackupFeatures extends ScannerBackup { settings?: Settings; createContent?: Content; createSequence?: SequenceStep[]; sound?: SoundPreferences; github?: GitHubSettings }
+export interface BackupFeatures extends ScannerBackup { settings?: Settings; createContent?: Content; customDrafts?: Partial<CustomDrafts>; createSequence?: SequenceStep[]; sound?: SoundPreferences; github?: GitHubSettings }
 export interface SharedBackup extends BackupFeatures {
   app: 'iledcolor-app';
   version: 2;
@@ -29,6 +29,7 @@ export function exportSelectedJson(presets: Preset[], approach: ApproachSettings
     app: 'iledcolor-app', version: 2,
     ...(selection.creations ? { creations: presets.filter((p): p is ContentPreset => !isGroupPreset(p)) } : {}),
     ...(selection.creations && features.createContent ? { createContent: validateContent(features.createContent) } : {}),
+    ...(selection.creations && features.customDrafts ? { customDrafts: validateCustomDrafts(features.customDrafts) } : {}),
     ...(selection.creations && features.github ? { github: validateGitHubSettings(features.github) } : {}),
     // A playing sequence already carries its steps in createContent; only a paused draft is stored separately.
     ...(selection.creations && features.createSequence && features.createContent?.kind !== 'sequence'
@@ -66,7 +67,7 @@ function validateLogging(raw: unknown): boolean {
 }
 
 function validateCreateSequence(raw: unknown): SequenceStep[] {
-  try { return validateSequenceSteps(raw); } catch (e) { throw new Error(`Invalid Connect sequence: ${(e as Error).message}.`); }
+  try { return validateSequenceSteps(raw); } catch (e) { throw new Error(`Invalid Custom sequence: ${(e as Error).message}.`); }
 }
 
 function validateApproachOptions(raw: Record<string, unknown>): Partial<ApproachOptions> {
@@ -109,11 +110,12 @@ export function parseSharedBackup(text: string): ImportedBackup {
   if (!('creations' in raw) && !('approach' in raw) && !('scan' in raw) && !('settings' in raw) && !('sound' in raw)) throw new Error('No shared categories in this file.');
   if (['qrProfiles', 'qrGreeting', 'qrScanLogging'].some((key) => key in raw) && !('scan' in raw))
     throw new Error('QR profiles and greeting preferences must be included with scan settings.');
-  if ('createContent' in raw && !('creations' in raw)) throw new Error('Connect content must be included with creations.');
+  if ('createContent' in raw && !('creations' in raw)) throw new Error('Custom content must be included with creations.');
+  if ('customDrafts' in raw && !('creations' in raw)) throw new Error('Custom editor drafts must be included with creations.');
   if ('github' in raw && !('creations' in raw)) throw new Error('GitHub settings must be included with creations.');
-  if ('createSequence' in raw && !('creations' in raw)) throw new Error('The Connect sequence must be included with creations.');
+  if ('createSequence' in raw && !('creations' in raw)) throw new Error('The Custom sequence must be included with creations.');
   if ('createSequence' in raw && isObj(raw.createContent) && raw.createContent.kind === 'sequence')
-    throw new Error('The Connect sequence is stored twice.');
+    throw new Error('The Custom sequence is stored twice.');
   // Reuse the strict preset validator, including the combined count and duplicate-ID checks.
   if ('creations' in raw && !Array.isArray(raw.creations)) throw new Error('Invalid creations list.');
   if ('approach' in raw && (!isObj(raw.approach) || !Array.isArray(raw.approach.presets))) throw new Error('Invalid approach settings.');
@@ -136,6 +138,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
     ...('qrGreeting' in raw ? { qrGreeting: validateGreeting(raw.qrGreeting) } : {}),
     ...('qrScanLogging' in raw ? { qrScanLogging: validateLogging(raw.qrScanLogging) } : {}),
     ...('createContent' in raw ? { createContent: validateContent(raw.createContent) } : {}),
+    ...('customDrafts' in raw ? { customDrafts: validateCustomDrafts(raw.customDrafts) } : {}),
     ...('github' in raw ? { github: validateGitHubSettings(raw.github) } : {}),
     ...('createSequence' in raw ? { createSequence: validateCreateSequence(raw.createSequence) } : {}),
     ...('settings' in raw ? { settings: validateSettings(raw.settings) } : {}),

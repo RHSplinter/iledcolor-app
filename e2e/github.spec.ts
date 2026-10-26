@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { connectHat } from './hat';
+import { openCustomSection, connectHat } from './hat';
 import { readFile } from 'node:fs/promises';
 
 async function expectCaptionPixels(page: Page) {
@@ -21,6 +21,7 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
   await page.goto('/#mock');
   await connectHat(page);
   await expect(page.locator('#github-send')).toBeDisabled();
+  await openCustomSection(page, 'github');
   await page.fill('#github-handle', 'octocat');
   await page.click('#github-load');
   await expect(page.locator('#github-status')).toContainText('Graph ready for octocat');
@@ -39,12 +40,12 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
   const path = await download.path();
   if (!path) throw new Error('Missing backup download');
   const backup = JSON.parse(await readFile(path, 'utf8'));
-  expect(backup.github).toEqual({ handle: 'octocat', prefix: '2026 contributions by {handle}: ', postfix: '\u{1f389}\u{1f389}' });
+  expect(backup.github).toEqual({ speed: 3, handle: 'octocat', prefix: '2026 contributions by {handle}: ', postfix: '\u{1f389}\u{1f389}', font: null });
   expect(backup).not.toHaveProperty('contributions');
   backup.github.handle = 'FokkoVeegens';
   await page.setInputFiles('#p-import', { name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#github-handle')).toHaveValue('FokkoVeegens');
   await expect(page.locator('#github-preview')).toBeHidden();
   await expect(page.locator('#github-send')).toBeDisabled();
@@ -58,7 +59,7 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
   await page.setInputFiles('#p-import', { name: 'older.json', mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ app: 'iledcolor-app', version: 2, creations: [] })) });
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#github-handle')).toHaveValue('FokkoVeegens');
 });
 
@@ -75,13 +76,14 @@ test('long handles and coloured emoji fit the animation upload limit in either o
   });
   await page.goto('/#mock');
   await connectHat(page);
+  await openCustomSection(page, 'github');
   await page.fill('#github-handle', handle);
   await page.click('#github-load');
   await expect(page.locator('#github-status')).toContainText(`Graph ready for ${handle}`);
   for (const rotation of ['0', '90']) {
     await page.click('nav [data-tab=settings]');
     await page.selectOption('#s-rot', rotation);
-    await page.click('nav [data-tab=connect]');
+    await page.click('nav [data-tab=custom]');
     await page.click('#github-send');
     await expect(page.locator('#github-status')).toContainText(`${handle} is scrolling on the hat`, { timeout: 15000 });
   }
@@ -95,10 +97,12 @@ test('invalid handles and failed requests cannot send a stale graph; excluded ca
   });
   await page.goto('/#mock');
   await connectHat(page);
+  await openCustomSection(page, 'github');
   await page.fill('#github-handle', '@bad');
   await page.click('#github-load');
   await expect(page.locator('#github-status')).toContainText('valid GitHub handle');
   expect(requests).toBe(0);
+  await openCustomSection(page, 'github');
   await page.fill('#github-handle', 'missing-user');
   await page.click('#github-load');
   await expect(page.locator('#github-status')).toContainText('not found');
@@ -113,7 +117,7 @@ test('invalid handles and failed requests cannot send a stale graph; excluded ca
   expect(backup).not.toHaveProperty('github');
   await page.setInputFiles('#p-import', { name: 'excluded.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#github-handle')).toHaveValue('missing-user');
 });
 
@@ -127,9 +131,12 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await connectHat(page);
   await expect(page.locator('#github-prefix')).toHaveValue('2026 contributions by {handle}: ');
   await expect(page.locator('#github-postfix')).toHaveValue('\u{1f389}\u{1f389}');
+  await openCustomSection(page, 'github');
+  await page.locator('#github-speed').fill('10');
   await page.fill('#github-handle', '@invalid');
   await page.fill('#github-prefix', 'Hello {handle}: ');
   await expect(page.locator('#github-status')).toContainText('valid GitHub handle');
+  await openCustomSection(page, 'github');
   await page.fill('#github-handle', 'octocat');
   await page.click('#github-load');
   await expect(page.locator('#github-status')).toContainText('Graph ready');
@@ -151,6 +158,12 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await page.fill('#github-postfix', ' Bye {handle} \u{1f389}');
   await expect(page.locator('#github-preview')).toBeVisible();
   await expect(page.locator('#github-send')).toBeEnabled();
+  const previewPixels = () => page.locator('#github-preview').evaluate((canvas: HTMLCanvasElement) =>
+    canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data.join());
+  await expect(page.locator('#github-font')).toHaveValue('');
+  const defaultFontPixels = await previewPixels();
+  await page.selectOption('#github-font', 'tiny5');
+  await expect.poll(previewPixels).not.toBe(defaultFontPixels);
   expect(requests).toBe(1);
 
   await page.click('nav [data-tab=settings]');
@@ -158,23 +171,26 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   const path = await download.path();
   if (!path) throw new Error('Missing backup download');
   const backup = JSON.parse(await readFile(path, 'utf8'));
-  expect(backup.github).toEqual({ handle: 'octocat', prefix: 'Hello {handle}: ', postfix: ' Bye {handle} \u{1f389}' });
+  expect(backup.github).toEqual({ speed: 10, handle: 'octocat', prefix: 'Hello {handle}: ', postfix: ' Bye {handle} \u{1f389}', font: 'tiny5' });
 
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await page.fill('#github-prefix', 'Changed');
   await page.fill('#github-postfix', '');
+  await page.selectOption('#github-font', '');
   await page.click('nav [data-tab=settings]');
   await page.setInputFiles('#p-import', { name: 'captions.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#github-prefix')).toHaveValue('Hello {handle}: ');
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');
+  await expect(page.locator('#github-font')).toHaveValue('tiny5');
   await expect(page.locator('#github-preview')).toBeHidden();
   expect(requests).toBe(1);
   await page.reload();
   await connectHat(page);
   await expect(page.locator('#github-prefix')).toHaveValue('Hello {handle}: ');
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');
+  await expect(page.locator('#github-font')).toHaveValue('tiny5');
 
   await page.click('nav [data-tab=settings]');
   await page.setInputFiles('#p-import', { name: 'older.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
@@ -183,10 +199,11 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
   await page.reload();
   await connectHat(page);
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#github-handle')).toHaveValue('new-user');
   await expect(page.locator('#github-prefix')).toHaveValue('Hello {handle}: ');
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');
+  await expect(page.locator('#github-font')).toHaveValue('tiny5');
 
   await page.click('nav [data-tab=settings]');
   await page.setInputFiles('#p-import', { name: 'partial.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
@@ -195,7 +212,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
   await page.reload();
   await connectHat(page);
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#github-prefix')).toHaveValue('');
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');
 
@@ -203,7 +220,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   backup.github = { handle: 'bad-change', prefix: 'Not applied', postfix: null };
   await page.setInputFiles('#p-import', { name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
   await expect(page.locator('#p-msg')).toContainText('Import failed: GitHub postfix');
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await expect(page.locator('#github-handle')).toHaveValue('new-user');
   await expect(page.locator('#github-prefix')).toHaveValue('');
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');

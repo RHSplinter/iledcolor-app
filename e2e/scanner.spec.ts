@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { connectHat } from './hat';
+import { openCustomSection, connectHat, waitForOfflineReady } from './hat';
 import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 
@@ -37,13 +37,13 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   }, { pixels });
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
+  await waitForOfflineReady(page);
   await context.setOffline(true);
   await page.reload();
   await connectHat(page);
-  await page.click('nav [data-tab=connect]');
-  await page.selectOption('#c-kind', 'solid');
-  await page.click('#btn-send');
+  await page.click('nav [data-tab=custom]');
+  await openCustomSection(page, 'solid');
+  await page.click('#btn-send-solid');
   await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-repetitions')).toHaveValue('3');
@@ -244,7 +244,7 @@ test('scan logging is opt-in, persists, includes failed manual entries, and stop
   await page.uncheck('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toContainText('Existing log kept');
 
-  await page.click('nav [data-tab=connect]');
+  await page.click('nav [data-tab=custom]');
   await page.click('nav [data-tab=settings]');
   await page.getByText('Test patterns (dim, static)', { exact: true }).click();
   await page.click('#btn-test-color');
@@ -297,9 +297,9 @@ test('offline OCR recognizes a printed badge and greets the primary cap', async 
   await page.reload();
   await page.click('#btn-connect');
   await expect(page.locator('#status')).toContainText('Ready');
-  await page.click('nav [data-tab=connect]');
-  await page.selectOption('#c-kind', 'solid');
-  await page.click('#btn-send');
+  await page.click('nav [data-tab=custom]');
+  await openCustomSection(page, 'solid');
+  await page.click('#btn-send-solid');
   await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
   await page.click('nav [data-tab=scan]');
   await page.click('#qr-text-start');

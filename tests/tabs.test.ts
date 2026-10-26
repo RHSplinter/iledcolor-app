@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { initTabs } from '../src/ui/tabs';
 import shell from '../index.html?raw';
 
-const names = ['connect', 'approach', 'scan', 'sound', 'settings'];
+const names = ['custom', 'approach', 'scan', 'sound', 'settings'];
 const button = (name: string) => document.getElementById(`tab-${name}`) as HTMLButtonElement;
 const panel = (name: string) => document.getElementById(`view-${name}`)!;
 const selected = vi.fn();
@@ -30,13 +30,13 @@ describe('tab navigation using the actual app shell', () => {
     select = initTabs(document.getElementById('tab-bar')!, selected);
   });
 
-  it('keeps Connect selected initially and Approach unavailable on web', () => {
-    expectSelection('connect');
+  it('keeps Custom selected initially and Approach unavailable on web', () => {
+    expectSelection('custom');
     expect(button('approach').hidden).toBe(true);
     expect(selected).not.toHaveBeenCalled();
   });
 
-  it.each(['connect', 'scan', 'sound', 'settings'])('clicking %s selects only its associated panel', (name) => {
+  it.each(['custom', 'scan', 'sound', 'settings'])('clicking %s selects only its associated panel', (name) => {
     button(name).querySelector('svg')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expectSelection(name);
     expect(selected).toHaveBeenLastCalledWith(name);
@@ -46,9 +46,9 @@ describe('tab navigation using the actual app shell', () => {
     button('approach').hidden = false;
     expect(select('approach')).toBe(true);
     expectSelection('approach');
-    expect(select('connect')).toBe(true);
-    expectSelection('connect');
-    expect(selected.mock.calls).toEqual([['approach'], ['connect']]);
+    expect(select('custom')).toBe(true);
+    expectSelection('custom');
+    expect(selected.mock.calls).toEqual([['approach'], ['custom']]);
   });
 
   it('ignores unknown, hidden, disabled and missing-panel targets without clearing selection', () => {
@@ -59,15 +59,15 @@ describe('tab navigation using the actual app shell', () => {
     expect(select('sound')).toBe(false);
     button('scan').setAttribute('aria-controls', 'missing');
     expect(select('scan')).toBe(false);
-    expectSelection('connect');
+    expectSelection('custom');
     expect(selected).not.toHaveBeenCalled();
   });
 
   it('wraps arrows, skips hidden tabs, and moves focus with selection', () => {
-    button('connect').focus();
+    button('custom').focus();
     for (const [key, name] of [
       ['ArrowRight', 'scan'], ['ArrowRight', 'sound'], ['ArrowRight', 'settings'],
-      ['ArrowRight', 'connect'], ['ArrowLeft', 'settings'], ['ArrowLeft', 'sound'],
+      ['ArrowRight', 'custom'], ['ArrowLeft', 'settings'], ['ArrowLeft', 'sound'],
     ] as const) {
       expect(press(key).defaultPrevented).toBe(true);
       expect(document.activeElement).toBe(button(name));
@@ -76,12 +76,12 @@ describe('tab navigation using the actual app shell', () => {
   });
 
   it('Home and End skip disabled tabs, while native/mock navigation includes Approach', () => {
-    button('connect').focus();
+    button('custom').focus();
     button('settings').disabled = true;
     press('End');
     expectSelection('sound');
     press('Home');
-    expectSelection('connect');
+    expectSelection('custom');
     button('approach').hidden = false;
     press('ArrowRight');
     expectSelection('approach');
@@ -89,7 +89,7 @@ describe('tab navigation using the actual app shell', () => {
   });
 
   it('leaves ordinary and modified keys and focus outside the tab bar alone', () => {
-    button('connect').focus();
+    button('custom').focus();
     for (const key of ['Tab', 'ArrowUp', 'Escape']) expect(press(key).defaultPrevented).toBe(false);
     expect(press('ArrowRight', { ctrlKey: true }).defaultPrevented).toBe(false);
     expect(press('ArrowRight', { altKey: true }).defaultPrevented).toBe(false);
@@ -97,7 +97,7 @@ describe('tab navigation using the actual app shell', () => {
     document.body.tabIndex = -1;
     document.body.focus();
     expect(press('End').defaultPrevented).toBe(false);
-    expectSelection('connect');
+    expectSelection('custom');
     expect(selected).not.toHaveBeenCalled();
   });
 });
