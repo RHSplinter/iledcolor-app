@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test';
+import { connectHat } from './hat';
 
 test('five icon tabs keep content on Connect and device controls on Settings', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/#mock');
+  await connectHat(page);
   await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
   const tabs = page.getByRole('tab');
   await expect(tabs).toHaveCount(5);
@@ -13,8 +15,7 @@ test('five icon tabs keep content on Connect and device controls on Settings', a
   await expect(page.locator('#view-create, #view-presets')).toHaveCount(0);
   await expect(page.locator('#c-kind')).toBeVisible();
   await expect(page.locator('#brightness')).toBeHidden();
-  await expect(page.locator('#send-help')).toContainText('edit and preview offline');
-  await page.click('#btn-connect');
+  await expect(page.locator('#send-help')).toContainText('Send it to your connected hat');
   await expect(page.locator('#btn-send')).toBeEnabled();
   await page.fill('#c-str', 'Hi');
   await page.fill('#c-name', 'My saved greeting');
@@ -46,6 +47,7 @@ test('five icon tabs keep content on Connect and device controls on Settings', a
   await expect(page.getByRole('tab', { name: 'Connect' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#c-str')).toHaveValue('Hi');
   await page.reload();
+  await connectHat(page);
   await page.getByRole('tab', { name: 'Settings' }).click();
   await expect(page.locator('#s-rot')).toHaveValue('180');
   await expect(page.locator('#s-mh')).toBeChecked();
@@ -57,6 +59,7 @@ test('five icon tabs keep content on Connect and device controls on Settings', a
 
 test('keyboard tabs, scan-first ordering and every marquee choice are accessible', async ({ page }) => {
   await page.goto('/#mock');
+  await connectHat(page);
   await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
   const connect = page.getByRole('tab', { name: 'Connect' });
   await connect.focus();
@@ -84,6 +87,7 @@ test('keyboard tabs, scan-first ordering and every marquee choice are accessible
 
 test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async ({ page }) => {
   await page.goto('/#mock');
+  await connectHat(page);
   await page.fill('#c-name', 'A'.repeat(60));
   await page.click('#btn-save');
   await expect(page.locator('#send-note')).toContainText('Saved');
