@@ -18,7 +18,7 @@ import { composeSequence } from '../render/sequence';
 import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSelection } from '../storage/sharedBackup';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
-import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
+import { bluetoothSupport, connectWebBluetooth, forgetWebBluetoothDevice, reconnectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
 import { applyGroupContent, applyImportedApproachSettings, getApproachSettings, approachRunning, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, keepBlackChanged, renderApproach, sharePeers, shareIdentity, textFontChanged, type PrimaryCap } from '../approach/ui';
@@ -171,7 +171,10 @@ function renderConnect() {
     <div id="content-editor"></div>
     <div id="github-section"></div>`;
   $('#btn-connect').onclick = onConnect;
-  $('#btn-disconnect').onclick = () => (sharedCap() ? disconnectPrimary() : controller.disconnect());
+  $('#btn-disconnect').onclick = () => {
+    if (sharedCap()) disconnectPrimary();
+    else { forgetWebBluetoothDevice(); controller.disconnect(); }
+  };
   $<HTMLInputElement>('#c-keep-black').onchange = (e) => void applyKeepBlack((e.target as HTMLInputElement).checked);
   renderStatus();
 }
@@ -323,6 +326,18 @@ async function onConnect() {
   if (settings.keepBlack && controller.state === 'Ready') {
     await controller.applyKeepBlackIdle(physical(solid(...logicalDims(), [0, 0, 0]))).catch(() => undefined);
   }
+  renderStatus();
+}
+
+async function reconnectBrowserConnection() {
+  if (native || useMock) return;
+  await controller.connect(async () => {
+    const r = await reconnectWebBluetooth();
+    deviceName = r.deviceName;
+    return r.transport;
+  });
+  if (settings.keepBlack && controller.state === 'Ready')
+    await controller.applyKeepBlackIdle(physical(solid(...logicalDims(), [0, 0, 0]))).catch(() => undefined);
   renderStatus();
 }
 
@@ -1021,6 +1036,7 @@ async function main() {
   await initApproach(approachContext());
   initShareReceiver();
   renderConnect();
+  void reconnectBrowserConnection();
   renderDeviceSettings();
   // Navigation must not wait for optional features to restore storage or query native capabilities.
   $('#tab-approach').hidden = !approachAvailable;

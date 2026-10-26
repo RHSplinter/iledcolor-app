@@ -6,6 +6,7 @@ export const CHAR_DATA = '0000a952-0000-1000-8000-00805f9b34fb';
 export const CHAR_NOTIFY = '0000a953-0000-1000-8000-00805f9b34fb';
 /** Reference panel advertises as iledcolor-*; adjust after the compatibility spike. */
 export const NAME_PREFIX = 'iledcolor-';
+const REMEMBERED_DEVICE_KEY = 'iledcolor.webBluetoothDeviceId';
 
 export function bluetoothSupport(): { ok: true } | { ok: false; reason: string } {
   if (!window.isSecureContext) return { ok: false, reason: 'Web Bluetooth needs HTTPS (a secure context).' };
@@ -28,6 +29,34 @@ export async function connectWebBluetooth(
     if (e instanceof DOMException && e.name === 'NotFoundError') throw new SelectionCancelledError();
     throw e;
   }
+  rememberDevice(device);
+  return connectDevice(device);
+}
+
+export async function reconnectWebBluetooth(): Promise<{ transport: Transport; deviceName: string }> {
+  const deviceId = getRememberedDeviceId();
+  const bluetooth = navigator.bluetooth;
+  if (!deviceId || !bluetooth?.getDevices) throw new SelectionCancelledError();
+  const device = (await bluetooth.getDevices()).find((candidate) => candidate.id === deviceId);
+  if (!device) throw new SelectionCancelledError();
+  return connectDevice(device);
+}
+
+export function forgetWebBluetoothDevice(): void {
+  try { localStorage.removeItem(REMEMBERED_DEVICE_KEY); } catch { /* Storage may be unavailable. */ }
+}
+
+function rememberDevice(device: BluetoothDevice): void {
+  try { localStorage.setItem(REMEMBERED_DEVICE_KEY, device.id); } catch { /* Storage may be unavailable. */ }
+}
+
+function getRememberedDeviceId(): string | null {
+  try { return localStorage.getItem(REMEMBERED_DEVICE_KEY); } catch { return null; }
+}
+
+async function connectDevice(
+  device: BluetoothDevice,
+): Promise<{ transport: Transport; deviceName: string }> {
   if (!device.gatt) throw new Error('Device has no GATT server');
   const server = await device.gatt.connect();
   try {

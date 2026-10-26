@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  bluetoothSupport, CHAR_CMD, CHAR_DATA, CHAR_NOTIFY, connectWebBluetooth, NAME_PREFIX, SERVICE_A950,
+  bluetoothSupport, CHAR_CMD, CHAR_DATA, CHAR_NOTIFY, connectWebBluetooth, forgetWebBluetoothDevice,
+  NAME_PREFIX, reconnectWebBluetooth, SERVICE_A950,
 } from '../src/transport/webBluetooth';
 import { SelectionCancelledError } from '../src/transport/types';
 
@@ -27,6 +28,7 @@ function fixture() {
     }),
   };
   const device = Object.assign(new EventTarget(), {
+    id: 'device-id',
     name: 'iledcolor-test' as string | undefined,
     gatt: {
       connected: true,
@@ -41,13 +43,14 @@ function fixture() {
     device.dispatchEvent(new Event('gattserverdisconnected'));
   });
   const requestDevice = vi.fn().mockResolvedValue(device);
-  vi.stubGlobal('navigator', { bluetooth: { requestDevice } });
-  return { cmd, data, notify, service, device, requestDevice };
+  const getDevices = vi.fn().mockResolvedValue([device]);
+  vi.stubGlobal('navigator', { bluetooth: { requestDevice, getDevices } });
+  return { cmd, data, notify, service, device, requestDevice, getDevices };
 }
 
 let f: ReturnType<typeof fixture>;
-beforeEach(() => { f = fixture(); });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+beforeEach(() => { localStorage.clear(); f = fixture(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); localStorage.clear(); });
 
 describe('direct Web Bluetooth boundary', () => {
   it('distinguishes insecure contexts, absent Bluetooth and supported browsers', () => {
@@ -68,6 +71,26 @@ describe('direct Web Bluetooth boundary', () => {
     expect(result.deviceName).toBe('iledcolor-test');
     expect(f.device.gatt.getPrimaryService).toHaveBeenCalledExactlyOnceWith(SERVICE_A950);
     expect(f.service.getCharacteristic.mock.calls.map(([uuid]) => uuid)).toEqual([CHAR_CMD, CHAR_DATA, CHAR_NOTIFY]);
+  });
+
+  it('remembers the selected device and reconnects to it without reopening the picker', async () => {
+    const first = await connectWebBluetooth();
+    expect(localStorage.getItem('iledcolor.webBluetoothDeviceId')).toBe(f.device.id);
+    first.transport.disconnect();
+    const result = await reconnectWebBluetooth();
+    expect(f.getDevices).toHaveBeenCalledOnce();
+    expect(f.requestDevice).toHaveBeenCalledOnce();
+    expect(f.device.gatt.connect).toHaveBeenCalledTimes(2);
+    expect(result.deviceName).toBe('iledcolor-test');
+  });
+
+  it('does not reconnect when the remembered device is unavailable or explicitly forgotten', async () => {
+    await connectWebBluetooth();
+    f.getDevices.mockResolvedValueOnce([]);
+    await expect(reconnectWebBluetooth()).rejects.toBeInstanceOf(SelectionCancelledError);
+    forgetWebBluetoothDevice();
+    await expect(reconnectWebBluetooth()).rejects.toBeInstanceOf(SelectionCancelledError);
+    expect(f.getDevices).toHaveBeenCalledOnce();
   });
 
   it('uses unknown for an unnamed device', async () => {
