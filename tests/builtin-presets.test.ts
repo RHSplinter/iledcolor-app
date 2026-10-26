@@ -7,10 +7,10 @@ import { exportSelectedJson, mergeSharedPresets, parseSharedBackup } from '../sr
 import { listPresets, loadKv, restoreBackup } from '../src/storage/db';
 
 describe('built-in presets', () => {
-  it('provides six valid, independent presets without changing settings', () => {
+  it('provides seven valid, independent presets without changing settings', () => {
     const presets = builtinPresets();
-    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'Party Popper', '<header>', 'LGTM 👍']);
-    expect(new Set(presets.map((p) => p.id)).size).toBe(6);
+    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'Party Popper', '<header>', 'LGTM 👍']);
+    expect(new Set(presets.map((p) => p.id)).size).toBe(7);
     for (const p of presets) expect(validateContent(p.content)).toEqual(p.content);
     expect(parseImport(exportJson(DEFAULT_SETTINGS, presets)).presets).toEqual(presets);
     const first = presets[0]!;
