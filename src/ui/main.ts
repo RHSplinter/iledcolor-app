@@ -400,7 +400,7 @@ function renderCreate() {
       </section>
       <p id="c-err" class="bad small"></p>
       <canvas id="preview" aria-label="Pixel preview"></canvas>
-      <div class="row"><button id="btn-send" class="primary" disabled>Send to hat</button><button id="btn-cancel" class="danger" hidden>Cancel</button></div>
+      <div class="row"><button id="btn-send" class="primary" disabled>Send to &lt;head&gt;</button><button id="btn-cancel" class="danger" hidden>Cancel</button></div>
       <p id="send-help" class="small"></p>
       <progress id="progress" aria-label="Content upload progress" hidden value="0" max="1"></progress>
       <p id="send-note" class="small" role="status">${esc(sendNote)}</p>

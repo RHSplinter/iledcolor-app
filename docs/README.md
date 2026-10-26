@@ -315,70 +315,52 @@ not fetched data or a live display state. Import updates the field immediately
 without fetching or uploading; older backups that omit these fields preserve their
 local values, including handle-only backups from earlier versions.
 
-## QR badge greetings
+## Badge scanning and greetings
 
-The **Scan** tab scans QR codes locally using the camera (Android/iOS app or an HTTPS
-browser with camera permission). Only the primary cap connected to the scanning phone
-is interrupted; other connected caps continue unchanged. The camera stops after one
-successful scan, on Stop, on changing tabs, or when the app is hidden.
+The **Scan** tab reads QR codes and 1D barcodes with the camera, or captures printed
+badge text for on-device English OCR. Scanning works in the Android/iOS apps and in an
+HTTPS browser with camera permission. Scanner assets, including the OCR engine and
+English model, are bundled and cached for offline use (about 7 MB). Scan data is not
+sent to a server. Only the primary cap connected to the scanning phone is interrupted;
+other connected caps continue unchanged. The camera stops after a code scan or OCR
+capture, on Stop, on changing tabs, or when the app is hidden.
 
-Configure a greeting such as `Hi {name}!`, its scroll speed, and the repetition count
-(**3 by default**). A name is extracted automatically from plain text, JSON name fields,
-or a vCard. Save up to **three QR profiles** locally, each with a regex, greeting template,
-and note; **None** selects the general plain-text/JSON/vCard parser. For other badge formats,
-enter a JavaScript regex **without `/` delimiters**. Its first three capture groups map to
-`{name}`/`{firstname}`, `{lastname}`, and `{company}`; named groups
-`(?<name>...)`/`(?<firstname>...)`, `(?<lastname>...)`, and `(?<company>...)` are also supported.
-For example, the MS AI Tour badge format
-`^[^^]*\^(?<firstname>[^^]+)\^(?<lastname>[^^]+)\^(?<company>[^^]+)\^` extracts the
-three fields. `Hello {firstname} {lastname} from {company}!` uses them in a greeting.
-Without capture groups, a named `name` group or the whole match supplies `{name}`.
-Matches are not URL-decoded.
-Unmatched/invalid patterns show an error without changing the cap. Regex extraction
-runs in a worker with a timeout so a pathological pattern cannot block the UI.
-Manual QR-data entry is available when a camera cannot be used.
+For OCR, center the printed name and company in the preview and tap **Capture text**.
+The parser recognizes plain text, JSON, vCard, MECARD, and multiline badge text,
+including company, job title, email, phone, URL, and notes. Configure a greeting such as
+`Hi {name}!`, its scroll speed, and repetition count (**3 by default**). Save up to
+**three scan profiles** locally, each with a regex, greeting template, and note; **None**
+selects the general parser. Regex named groups can include `name`, `firstname`,
+`lastname`, `company`, `title`, `email`, `phone`, `url`, and `notes`; greeting templates
+can use each of these fields. Manual scan-data entry is available when a camera cannot
+be used. Invalid or unmatched patterns show an error without changing the cap.
 
 Send content to the cap once before scanning, or enable **Keep cap black when idle**:
-the protocol cannot read back content that was installed by another app or before the
-current connection. The app retains the last successfully sent image or GIF, including
-content sent by Approach mode; when **Keep cap black when idle** is enabled, the cap stays
-black with the display off until an approach, scan or sound event plays and restores the
-black, display-off state afterwards. The greeting always scrolls, even when it would fit as static text. It uses a finite-loop GIF and the
-GIF's actual frame timings to restore the previous content after the requested count.
-Approach updates for the primary cap wait during the greeting; afterwards the current
-approach plan resumes (with span timing resynchronized). Other caps are not paused.
-**End greeting** restores content early. Connection loss is reported instead of claiming
-restoration; reconnect and send the desired content again.
-If this connection explicitly switched the display off, the greeting briefly switches it
-on and restores the off state. Brightness is left unchanged.
+the protocol cannot read back content installed by another app or before the current
+connection. The app retains the last successfully sent image or GIF, including content
+sent by Approach mode; when keep-black is enabled, the cap restores its black,
+display-off state after the greeting. The greeting scrolls using a finite-loop GIF and
+the requested repetition count. Approach updates for the primary cap wait during the
+greeting; other caps are not paused. **End greeting** restores content early. Keep the
+app open through playback and restoration because phones can suspend JavaScript in the
+background.
 
-Keep the app open through playback and restoration: phones can suspend JavaScript in the
-background, delaying restoration, and a closed app cannot restore a disconnected cap.
-Finite GIF-loop handling and precise physical playback timing still need verification on
-the actual cap firmware; BLE acknowledgements confirm transfer, not displayed frame counts.
-Scanner configuration stays in local storage; QR payloads are not persisted unless you
-enable **Save all scanned data to a local file** in the Scan tab (off by default).
-While enabled, every camera scan or submitted manual entry is appended before extraction,
-including entries whose greeting fails. The local `qr-scan-log.jsonl` file contains one JSON
-object per line with a UTC timestamp, source (`camera`/`manual`), the complete unmodified
-payload (`raw`), and the selected profile's ID/note (or `null`). JSON escaping preserves
-embedded line breaks. Logging stays enabled across restarts until switched off; disabling
-it keeps the existing log. Logs may contain personal data: obtain appropriate consent and
-share only with trusted recipients.
-**Share scan log** opens the native share sheet, or shares/downloads the file in supported
-browsers. Native logs live in the app's private data directory; a share snapshot is written
-to cache. Browser logs use local IndexedDB via Capacitor Filesystem and may be evicted by
-the browser. Uninstalling the app or clearing its data removes logs; share them for safekeeping.
-The app does not upload scans to a server. Logs are excluded from preset backups.
-The QR profiles are included in the existing JSON preset
-backup/import. The resulting greeting is sent to the cap over BLE.
+Scanner configuration stays in local storage. Scanned data is not persisted unless
+**Save all scanned data to a local file** is enabled (off by default). While enabled,
+camera scans, OCR captures, and submitted manual entries are logged before extraction,
+including scans whose greeting fails. The local `qr-scan-log.jsonl` file contains one
+JSON object per line with a UTC timestamp, source (`camera`/`ocr`/`manual`), the complete
+unmodified payload, and selected profile ID/note (or `null`). Logs may contain personal
+data; obtain appropriate consent and share only with trusted recipients. The app does
+not upload scans; logs are excluded from preset backups. **Share scan log** opens the
+native share sheet or shares/downloads the file in supported browsers.
 
 Credits: inspired by **Rob Bos / Xebia's [badge-scanner](https://github.com/xebia/badge-scanner)**.
 No code was copied from that repository, which had no declared license when inspected.
-The independent scanner bundles **ZXing Browser (MIT)** and **ZXing JS (Apache-2.0)**;
-credits and full licenses are shipped in `public/licenses/` and linked in the Scan tab.
-The decoder is bundled locally, not loaded from a CDN, and is cached for offline use.
-No native scanner plugin or Android minimum-SDK increase is required.
+The scanner bundles ZXing Browser (MIT), ZXing JS (Apache-2.0), and Tesseract.js
+(Apache-2.0) with its English model. Credits and licenses are shipped in
+`public/licenses/` and linked in the Scan tab. Assets are bundled locally and cached
+for offline use; no native scanner plugin or Android minimum-SDK increase is required.
 
 ## Download Android and iOS releases
 

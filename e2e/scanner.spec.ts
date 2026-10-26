@@ -105,9 +105,10 @@ test('a greeting pauses only the primary cap while approach updates keep reachin
   await page.click('nav [data-tab=scan]');
   await page.click('#qr-cancel');
   await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15000 });
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200, 200]);
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-caps .cap-note').first()).toContainText('span ', { timeout: 15000 });
+  // The resumed multi-cap approach greeting emits its own haptic after cancellation.
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200, 200, 200]);
 });
 
 test('regex errors leave content alone and settings persist without badge data', async ({ page }) => {
@@ -261,4 +262,54 @@ test('scan logging is opt-in, persists, includes failed manual entries, and stop
   const lines = (await readFile(path, 'utf8')).trim().split('\n');
   expect(lines).toHaveLength(1);
   expect(JSON.parse(lines[0]!)).toMatchObject({ raw, source: 'manual', profile: { id: '1', note: 'Evaluation' } });
+});
+
+test('offline OCR recognizes a printed badge and greets the primary cap', async ({ page, context }) => {
+  test.setTimeout(90000);
+  await page.addInitScript(() => {
+    Object.assign(window, { feedbackVibrations: [] as number[] });
+    Object.defineProperty(navigator, 'vibrate', { value: () => true });
+    const canvas = document.createElement('canvas');
+    canvas.width = 960;
+    canvas.height = 540;
+    const ctx = canvas.getContext('2d')!;
+    const drawBadge = () => {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 62px Arial';
+      ctx.fillText('Rob Bos', 190, 175);
+      ctx.fillText('Software Engineer', 190, 275);
+      ctx.fillText('Xebia', 190, 375);
+    };
+    drawBadge();
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      value: async () => {
+        const stream = canvas.captureStream(10);
+        setTimeout(drawBadge, 100);
+        return stream;
+      },
+    });
+  });
+  await page.goto('/#mock');
+  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 30000 });
+  await context.setOffline(true);
+  await page.reload();
+  await page.click('#btn-connect');
+  await expect(page.locator('#status')).toContainText('Ready');
+  await page.click('nav [data-tab=connect]');
+  await page.selectOption('#c-kind', 'solid');
+  await page.click('#btn-send');
+  await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
+  await page.click('nav [data-tab=scan]');
+  await page.click('#qr-text-start');
+  await expect(page.locator('#qr-ocr-controls')).toBeVisible();
+  await page.waitForFunction(() => {
+    const video = document.querySelector<HTMLVideoElement>('#qr-video');
+    return !!video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0;
+  });
+  await page.click('#qr-capture');
+  await expect(page.locator('#qr-status')).toContainText('Hi Rob Bos!', { timeout: 60000 });
+  await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 30000 });
+  await expect(page.locator('#qr-error')).toBeEmpty();
 });

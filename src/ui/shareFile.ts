@@ -1,3 +1,5 @@
+import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import { isNativeApp } from '../platform';
 
 /**
@@ -7,7 +9,6 @@ import { isNativeApp } from '../platform';
  */
 export async function shareTextFile(fileName: string, text: string, mimeType: string, title: string): Promise<boolean> {
   if (isNativeApp()) {
-    const [{ Filesystem, Directory, Encoding }, { Share }] = await Promise.all([import('@capacitor/filesystem'), import('@capacitor/share')]);
     const { uri } = await Filesystem.writeFile({ path: fileName, data: text, directory: Directory.Cache, encoding: Encoding.UTF8 });
     try {
       await Share.share({ title, files: [uri], dialogTitle: title });
