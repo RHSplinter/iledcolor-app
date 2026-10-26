@@ -17,7 +17,7 @@ export function bluetoothSupport(): { ok: true } | { ok: false; reason: string }
 /** Must be called from a user gesture (tap). Resolves once A953 notifications are started. */
 export async function connectWebBluetooth(
   namePrefix = NAME_PREFIX,
-): Promise<{ transport: Transport; deviceName: string }> {
+): Promise<{ transport: Transport; deviceName: string; deviceId: string }> {
   let device: BluetoothDevice;
   try {
     device = await navigator.bluetooth.requestDevice({
@@ -28,8 +28,63 @@ export async function connectWebBluetooth(
     if (e instanceof DOMException && e.name === 'NotFoundError') throw new SelectionCancelledError();
     throw e;
   }
+  return openDevice(device);
+}
+
+/**
+ * Reconnect without a picker or user gesture to a hat the user already granted
+ * (e.g. after a page reload). Throws SelectionCancelledError when it is not available.
+ *
+ * After a reload Chrome has forgotten where the hat is and fails `gatt.connect()` with
+ * "no longer in range" until it has rediscovered it. Watching advertisements keeps a
+ * discovery session running (on Windows `advertisementreceived` never fires, but the
+ * scan still finds the hat), so connect is retried while watching until it succeeds.
+ */
+export async function reconnectWebBluetooth(
+  deviceId: string,
+  timeoutMs = 30000,
+  retryMs = 1000,
+): Promise<{ transport: Transport; deviceName: string; deviceId: string }> {
+  if (!navigator.bluetooth?.getDevices) throw new SelectionCancelledError();
+  const device = (await navigator.bluetooth.getDevices()).find((d) => d.id === deviceId);
+  if (!device) throw new SelectionCancelledError();
+  const deadline = Date.now() + timeoutMs;
+  const watch = new AbortController();
+  let seen: () => void = () => undefined;
+  const onAdvert = () => seen();
+  device.addEventListener('advertisementreceived', onAdvert);
+  try {
+    if (typeof device.watchAdvertisements === 'function') await device.watchAdvertisements({ signal: watch.signal }).catch(() => undefined);
+    for (;;) {
+      try {
+        return await openDevice(device, Math.max(1000, Math.min(10000, deadline - Date.now())));
+      } catch (e) {
+        if (Date.now() + retryMs >= deadline) throw e;
+      }
+      await new Promise<void>((resolve) => { const t = setTimeout(resolve, retryMs); seen = () => { clearTimeout(t); resolve(); }; });
+    }
+  } finally {
+    device.removeEventListener('advertisementreceived', onAdvert);
+    watch.abort();
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${what} timed out`)), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
+async function openDevice(
+  device: BluetoothDevice,
+  connectTimeoutMs?: number,
+): Promise<{ transport: Transport; deviceName: string; deviceId: string }> {
   if (!device.gatt) throw new Error('Device has no GATT server');
-  const server = await device.gatt.connect();
+  const connecting = device.gatt.connect();
+  const server = connectTimeoutMs
+    ? await withTimeout(connecting, connectTimeoutMs, 'Connecting to the hat').catch((e) => { device.gatt?.disconnect(); throw e; })
+    : await connecting;
   try {
     const service = await server.getPrimaryService(SERVICE_A950);
     const [cmd, data, notify] = await Promise.all([
@@ -63,7 +118,7 @@ export async function connectWebBluetooth(
       onDisconnect(cb) { dropListeners.add(cb); return () => dropListeners.delete(cb); },
       disconnect() { closing = true; if (device.gatt?.connected) device.gatt.disconnect(); },
     };
-    return { transport, deviceName: device.name ?? 'unknown' };
+    return { transport, deviceName: device.name ?? 'unknown', deviceId: device.id };
   } catch (e) {
     server.disconnect();
     throw e;

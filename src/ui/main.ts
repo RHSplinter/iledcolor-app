@@ -18,7 +18,7 @@ import { composeSequence } from '../render/sequence';
 import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSelection } from '../storage/sharedBackup';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
-import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
+import { bluetoothSupport, connectWebBluetooth, reconnectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
 import { applyGroupContent, applyImportedApproachSettings, getApproachSettings, approachRunning, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, keepBlackChanged, renderApproach, sharePeers, shareIdentity, textFontChanged, type PrimaryCap } from '../approach/ui';
@@ -85,8 +85,15 @@ function newController() {
 const sharedCap = () => native || useMock;
 const updateConnectionStatus = initConnectionStatus($('#connection-status'), () => {
   if (sharedCap()) disconnectPrimary();
-  else controller.disconnect();
+  else { forgetLastHat(); controller.disconnect(); }
 });
+
+/** Browser-only: id of the last hat connected via Web Bluetooth, so a page reload can reconnect. Never exported. */
+const LAST_HAT_KEY = 'iledcolor.lastWebBluetoothHat';
+function rememberLastHat(id: string) { try { localStorage.setItem(LAST_HAT_KEY, id); } catch { /* storage unavailable */ } }
+function forgetLastHat() { try { localStorage.removeItem(LAST_HAT_KEY); } catch { /* storage unavailable */ } }
+let restoreNote = '';
+function lastHat(): string | null { try { return localStorage.getItem(LAST_HAT_KEY); } catch { return null; } }
 const watched = new WeakSet<DeviceController>();
 function onPrimaryChange(p: PrimaryCap | null) {
   scanner?.stopCamera();
@@ -117,7 +124,7 @@ function renderStatus() {
   $('#status-label').textContent = s === 'Uploading' && p ? `Uploading ${p.sent}/${p.total}` : s === 'Ready' && deviceName ? `Ready: ${deviceName}` : s;
   const err = controller.error;
   const msg = $('#conn-msg', document);
-  if (msg) msg.textContent = err ?? '';
+  if (msg) msg.textContent = err ?? restoreNote;
   const prog = document.querySelector<HTMLProgressElement>('#progress');
   if (prog && p) { prog.max = p.total; prog.value = p.sent; }
   updateButtons();
@@ -330,13 +337,41 @@ async function onConnect() {
   }
   newController();
   deviceName = '';
+  restoreNote = '';
   await controller.connect(async () => {
     const sup = bluetoothSupport();
     if (!sup.ok) throw new Error(sup.reason);
     const r = await connectWebBluetooth();
     deviceName = r.deviceName;
+    rememberLastHat(r.deviceId);
     return r.transport;
   });
+  await afterWebConnect();
+}
+
+/** After a page reload, silently reconnect to the hat the user already chose (no picker, no tap needed). */
+async function restoreWebConnection() {
+  const id = lastHat();
+  if (sharedCap() || !id || !bluetoothSupport().ok || controller.state !== 'Disconnected') return;
+  if (!navigator.bluetooth.getDevices) {
+    // This browser cannot reuse a Bluetooth permission without the picker, which needs a tap.
+    restoreNote = 'The page reload closed the Bluetooth connection. Tap Connect and choose your hat again.';
+    renderStatus();
+    return;
+  }
+  restoreNote = 'Reconnecting to your last hat…';
+  renderStatus();
+  await controller.connect(async () => {
+    try {
+      const r = await reconnectWebBluetooth(id);
+      deviceName = r.deviceName;
+      return r.transport;
+    } finally { restoreNote = ''; }
+  });
+  await afterWebConnect();
+}
+
+async function afterWebConnect() {
   if (settings.keepBlack && controller.state === 'Ready') {
     await controller.applyKeepBlackIdle(physical(solid(...logicalDims(), [0, 0, 0]))).catch(() => undefined);
   }
@@ -1050,6 +1085,7 @@ async function main() {
   const scannerReady = scanner.init();
   sound = new SoundUi({ controller: () => controller, logicalDims, physical });
   github = new GitHubUi({ root: $('#github-section'), controller: () => controller, logicalDims, physical, frameDelayMs: () => marqueeDelay(Number($<HTMLInputElement>('#c-speed').value) || DEFAULT_SPEED) });
+  void restoreWebConnection().catch(() => renderStatus());
   await Promise.all([scannerReady, sound.init(), github.init()]);
 }
 void main().catch((error: unknown) => {
