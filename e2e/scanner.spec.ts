@@ -104,9 +104,10 @@ test('a greeting pauses only the primary cap while approach updates keep reachin
   await page.click('nav [data-tab=scan]');
   await page.click('#qr-cancel');
   await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15000 });
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200, 200]);
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-caps .cap-note').first()).toContainText('span ', { timeout: 15000 });
+  // The resumed multi-cap approach greeting emits its own haptic after cancellation.
+  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200, 200, 200]);
 });
 
 test('regex errors leave content alone and settings persist without badge data', async ({ page }) => {

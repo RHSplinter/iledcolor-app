@@ -3,6 +3,7 @@ import '@fontsource/silkscreen/latin-400.css';
 import '@fontsource/tiny5/latin-400.css';
 import '@fontsource/dotgothic16/latin-400.css';
 import '@fontsource/bitcount-prop-single/latin-400.css';
+import '@fontsource/monaspace-neon/latin-400.css';
 import type { RgbImage } from '../protocol/framing';
 import type { Rgb } from './matrix';
 import { splitRuns } from './segments';
@@ -76,13 +77,48 @@ function rasterEmoji(text: string, size: number, height: number): ImageData {
 }
 
 const PRINTABLE_ASCII = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i));
-const glyphCaches = new Map<TextFont, Map<string, Glyph>>();
+type FontSpec = typeof TEXT_FONTS[number];
+const glyphCaches = new Map<string, Map<string, Glyph>>();
+const fittedSizes = new Map<string, number>();
 /** Glyphs are reused only after the webfont has loaded; fallback-font rasters must not stick. */
-function glyphCache(font: typeof TEXT_FONTS[number]): Map<string, Glyph> {
-  if (!document.fonts.check(`${font.size}px ${font.family}`)) return new Map();
-  let cache = glyphCaches.get(font.id);
-  if (!cache) { cache = new Map(); glyphCaches.set(font.id, cache); }
+function glyphCache(font: FontSpec, size: number): Map<string, Glyph> {
+  if (!document.fonts.check(`${size}px ${font.family}`)) return new Map();
+  const key = `${font.id}@${size}`;
+  let cache = glyphCaches.get(key);
+  if (!cache) { cache = new Map(); glyphCaches.set(key, cache); }
   return cache;
+}
+
+function glyphLookup(font: FontSpec, size: number): (char: string) => Glyph {
+  const glyphs = glyphCache(font, size);
+  return (char) => {
+    let glyph = glyphs.get(char);
+    if (!glyph) { glyph = rasterGlyph(char, font.family, size); glyphs.set(char, glyph); }
+    return glyph;
+  };
+}
+
+/** Rows covered by all printable ASCII glyphs, so no character is ever clipped. */
+function asciiExtent(glyphFor: (char: string) => Glyph): { top: number; bottom: number } {
+  const reference = PRINTABLE_ASCII.map(glyphFor).filter((g) => g.height);
+  return {
+    top: Math.min(...reference.map((g) => g.top)),
+    bottom: Math.max(...reference.map((g) => g.top + g.height)),
+  };
+}
+
+/** Largest pixel size at which a scalable font's full ASCII extent still fits in `height` rows. */
+function fontSize(font: FontSpec, height: number): number {
+  if (!('fit' in font)) return font.size;
+  const key = `${font.id}@${height}`;
+  const cached = fittedSizes.get(key);
+  if (cached) return cached;
+  const extentAt = (size: number) => { const e = asciiExtent(glyphLookup(font, size)); return e.bottom - e.top; };
+  let size = Math.max(4, Math.floor(font.size * height / extentAt(font.size)));
+  while (size > 4 && extentAt(size) > height) size--;
+  while (size < height * 4 && extentAt(size + 1) <= height) size++;
+  if (document.fonts.check(`${size}px ${font.family}`)) fittedSizes.set(key, size);
+  return size;
 }
 
 /** One-line strip at natural width: hard-pixel ASCII text plus colour emoji. */
@@ -90,12 +126,7 @@ export function renderStrip(text: string, height: number, fg: Rgb, bg: Rgb): { s
   const { runs, unsupported } = splitRuns(text);
   const font = TEXT_FONTS.find((f) => f.id === textFont)!;
   const emojiPx = Math.max(8, height - 2);
-  const glyphs = glyphCache(font);
-  const glyphFor = (char: string) => {
-    let glyph = glyphs.get(char);
-    if (!glyph) { glyph = rasterGlyph(char, font.family, font.size); glyphs.set(char, glyph); }
-    return glyph;
-  };
+  const glyphFor = glyphLookup(font, fontSize(font, height));
   const tokens = runs.flatMap<StripToken>((r) => {
     if (r.kind === 'emoji') {
       const image = rasterEmoji(r.text, emojiPx, height);
@@ -104,9 +135,7 @@ export function renderStrip(text: string, height: number, fg: Rgb, bg: Rgb): { s
     return [...r.text].map((char) => ({ kind: 'text', glyph: glyphFor(char), width: glyphFor(char).width }));
   });
   // Centre the font's full ASCII extent so the baseline never moves between different texts.
-  const reference = PRINTABLE_ASCII.map(glyphFor).filter((g) => g.height);
-  const top = Math.min(...reference.map((g) => g.top));
-  const bottom = Math.max(...reference.map((g) => g.top + g.height));
+  const { top, bottom } = asciiExtent(glyphFor);
   const baseline = Math.floor((height - (bottom - top)) / 2) - top;
   // Emoji have soft edges and no fixed pixel grid, so give them a wider unlit gutter than letters.
   const gapAfter = (i: number) => (tokens[i]!.kind === 'emoji' || tokens[i + 1]?.kind === 'emoji' ? EMOJI_GAP : 1);
