@@ -7,6 +7,9 @@ This is the Xebia Led hat used/introduced at GitHub Universe 2026.
 > [!IMPORTANT]
 > Ensure the cap is fully charged the day before use!!
 
+> [!IMPORTANT]
+> Do not use the app that comes with the cap. You don't need it and it is of Chinese origin.
+
 1. If you have an iPhone, install the [Bluefy app](https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055).
 2. The cap is bluetooth-controlled and needs to be switched on by keeping the push-button pressed.
 
