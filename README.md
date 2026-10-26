@@ -23,7 +23,7 @@ This is the Xebia Led hat used/introduced at GitHub Universe 2026.
 4. If you have an Android device, you'll need it to allow bluetooth access in order to pair with the cap.
 5. In the browser (Bluefy browser for iPhone), navigate to https://rhsplinter.github.io/iledcolor-app.
 6. Press the connect button at the top of the page and connect to the Bluetooth name of the cap you discovered in step 2.
-7. Open **Custom**, expand the content section you want, and use its **Send to cap** button to apply your changes.
+7. Open **Custom**, expand the content section you want, and use its **Send to cap** button to apply your changes. The **Presets** tab is first and opens by default after connecting.
 8. Familiarize yourself with the controls in the app and ask questions if you don't understand it. We have loaded the app with some presets you can use.
 
 ## Custom content and backups
@@ -36,14 +36,14 @@ PNG, JPG and animated GIF, with contain, cover and stretch fitting.
 The existing **Sequence** editor is available in its own collapsed section.
 
 Each section has **Send to cap** and **Save as preset** controls. To save, enter a name
-and select the adjacent check button. Load saved presets from Settings. GitHub presets
+and select the adjacent check button. Load saved or built-in presets from the **Presets** tab. GitHub presets
 store the handle, captions, caption font and their own scroll speed. When the graph was loaded before
 saving, the preset also keeps that graph and its date, so it can be shown, used in
 sequences and shared without internet; load the graph again to refresh it. Presets
 saved before loading a graph fetch a fresh graph each time they are shown, which
 requires internet and sends that public handle to the contribution service.
 
-**Settings > Backup > Creations** includes saved presets, all current Custom editor
+**Presets > Backup > Creations** includes saved presets, all current Custom editor
 drafts (even collapsed sections and image fit/background before choosing a file),
 per-text fonts, sequences, and GitHub handle, captions, caption font and speed. Selecting all
 categories backs up portable configuration across all tabs. Imports are saved

@@ -156,9 +156,12 @@ function updateButtons() {
 }
 
 /** Until a hat is connected only the connection controls are shown; everything else needs a hat. */
+let wasConnected = false;
 function applyConnectionGate() {
   const s = controller.state;
   const connected = s === 'Ready' || s === 'Uploading';
+  const justConnected = connected && !wasConnected;
+  wasConnected = connected;
   document.body.classList.toggle('disconnected', !connected);
   for (const id of ['content-editor', 'github-section', 'tab-bar', 'tab-scan', 'tab-sound', 'tab-settings']) {
     const el = document.getElementById(id);
@@ -169,6 +172,7 @@ function applyConnectionGate() {
   const approachTab = document.getElementById('tab-approach');
   if (approachTab) approachTab.hidden = !connected || !approachAvailable;
   if (!connected && showTab && $('#view-custom').hidden) showTab('custom');
+  if (justConnected && showTab) showTab('presets');
 }
 
 function banner(html: string | null) {
@@ -790,14 +794,14 @@ async function sendSection(kind: keyof CustomDrafts | 'sequence', content: () =>
 const backupSelection: ShareSelection = { creations: true, approach: true, scan: true, settings: true, sound: true };
 
 async function renderPresets(message = '') {
-  const root = $('#settings-presets');
+  const root = $('#presets-content');
   let presets: Preset[] = [];
   let err = '';
   try { presets = await listPresets(); } catch (e) { err = (e as Error).message; }
   root.innerHTML = `
     <div id="p-share" class="card" hidden></div>
     <div class="card">
-      <h2>Presets</h2>
+      <h1>Presets</h1>
       ${err ? `<p class="bad">${esc(err)}</p>` : ''}
       <ul class="list preset-list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? `group content${approachAvailable ? '' : ' - requires the native app; kept for backup'}` : p.content.kind === 'sequence' ? `sequence (${p.content.steps.length} step${p.content.steps.length === 1 ? '' : 's'})` : p.content.kind}</small></span><button data-act="load" ${isGroupPreset(p) && !approachAvailable ? 'disabled' : ''}>Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || `<li class="muted">No presets yet. Save content on Custom${approachAvailable ? ' or a group preset on Approach' : ''} to find it here.</li>`}</ul>
       ${approachAvailable ? '' : '<p class="small">Nearby Approach detection and phone-to-phone BLE sharing require the Android or iOS app. Imported group presets remain available for backup and export.</p>'}
@@ -1067,7 +1071,7 @@ function initShareReceiver() {
       incomingNote = `Saved preset "${p.name}"${o.fromName ? ` from ${o.fromName}` : ''}.`;
       setTimeout(() => {
         renderSharePrompt();
-        if (!$('#view-settings').hidden) void renderPresets();
+        if (!$('#view-presets').hidden) void renderPresets();
       }, 0);
     },
     onClosed: (o, _state, message) => { incomingNote = `Preset "${o.name}" not received: ${message}`; renderSharePrompt(); },
@@ -1103,7 +1107,7 @@ let showTab: ((name: string) => boolean) | undefined;
 function onTabSelected(name: string) {
   if (name !== 'scan') scanner?.stopCamera();
   if (name !== 'sound') void sound?.stop();
-  if (name === 'settings') void renderPresets();
+  if (name === 'presets') void renderPresets();
   if (name === 'custom') void refreshSequencePresets();
   if (name === 'approach') renderApproach();
   window.scrollTo(0, 0);
@@ -1188,6 +1192,7 @@ async function main() {
   renderDeviceSettings();
   // Navigation must not wait for optional features to restore storage or query native capabilities.
   showTab = initTabs($('#tab-bar'), onTabSelected);
+  void renderPresets();
   applyConnectionGate();
   renderCreate();
   setupPwa();

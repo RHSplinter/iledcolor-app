@@ -10,7 +10,7 @@ test('built-ins load, send, save, back up and remain available offline', async (
   await waitForServiceWorker(page);
 
   for (const [id, kind] of [['xebia-github', 'text'], ['header', 'text'], ['lgtm', 'text'], ['xebia-logo', 'image'], ['github-copilot-logo', 'image'], ['copilot-head', 'image'], ['party-popper', 'image']]) {
-    await page.click('nav [data-tab=settings]');
+    await page.click('nav [data-tab=presets]');
     await expect(page.locator('#builtin-presets li')).toHaveCount(7);
     await expect(page.locator('#builtin-presets [data-act=del]')).toHaveCount(0);
     if (id === 'header') {
@@ -46,7 +46,7 @@ test('built-ins load, send, save, back up and remain available offline', async (
   await expect(page.locator('#c-seq-list li')).toHaveCount(1);
   await page.uncheck('#c-seq-on');
 
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const backup = JSON.parse(await readFile((await download.path())!, 'utf8'));
   expect(backup.creations.map((p: { name: string }) => p.name)).toEqual(['My party']);
@@ -65,14 +65,14 @@ test('built-ins load, send, save, back up and remain available offline', async (
   await connectHat(page);
   await expect(page.locator('#custom-image')).not.toHaveAttribute('open');
   await expect(page.locator('#c-seq-list li')).toHaveCount(1);
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   await expect(page.locator('#builtin-presets li')).toHaveCount(7);
   await expect(page.locator('.preset-list:not(#builtin-presets)')).toContainText('My party');
   await page.locator('#builtin-presets [data-id=builtin-party-popper] [data-act=load]').click();
   await expect(page.locator('#view-custom')).toBeVisible();
   await expect(page.locator('#c-err')).toBeEmpty();
   await expect.poll(pixels).not.toBe(firstFrame);
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   await page.locator('#builtin-presets [data-id=builtin-copilot-head] [data-act=load]').click();
   await expect(page.locator('#custom-image')).toHaveAttribute('open', '');
   await expect(page.locator('#c-err')).toBeEmpty();
@@ -83,7 +83,7 @@ test('built-ins survive replacement imports on web and cannot shadow personal pr
   await installFakeHat(page);
   await page.goto('/');
   await connectHat(page);
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   const file = {
     app: 'iledcolor-app', version: 2,
     creations: [{ id: 'builtin-xebia-github', name: 'Personal text', updatedAt: 1,
@@ -101,11 +101,11 @@ test('built-ins survive replacement imports on web and cannot shadow personal pr
   await page.selectOption('#c-seq-preset', { label: 'Xebia 💜 GitHub' });
   await page.click('#btn-seq-add-preset');
   await expect(page.locator('#c-seq-list')).toContainText('Xebia 💜 GitHub');
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   await page.locator('#builtin-presets [data-id=builtin-xebia-github] [data-act=load]').click();
   await expect(page.locator('#c-str')).toHaveValue('Xebia 💜 GitHub');
 
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   await page.setInputFiles('#p-import', { name: 'empty.json', mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ ...file, creations: [] })) });
   await expect(page.locator('#p-msg')).toContainText('Imported');

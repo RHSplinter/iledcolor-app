@@ -13,13 +13,13 @@ async function save(page: Page, section: string, name: string) {
 }
 
 async function backup(page: Page) {
-  await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Presets' }).click();
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   return JSON.parse(await readFile((await download.path())!, 'utf8'));
 }
 
 async function restore(page: Page, data: unknown) {
-  await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Presets' }).click();
   await page.setInputFiles('#p-import', { name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(data)) });
 }
 
@@ -130,7 +130,7 @@ test('GitHub presets save settings, load fresh graphs, and use their own scroll 
   await page.fill('#github-handle', 'different');
   await page.locator('#github-speed').fill('1');
   for (let i = 0; i < 2; i++) {
-    await page.getByRole('tab', { name: 'Settings' }).click();
+    await page.getByRole('tab', { name: 'Presets' }).click();
     await page.locator('.preset-list li', { hasText: 'My graph' }).getByRole('button', { name: 'Load', exact: true }).click();
     await expect(page.locator('#github-status')).toContainText('Graph ready for octocat');
     await expect(page.locator('#github-speed')).toHaveValue('9');
@@ -165,7 +165,7 @@ test('GitHub presets saved after loading keep the graph and replay it offline', 
   await page.route('https://github-contributions-api.jogruber.de/**', (route) => { requests++; return route.abort(); });
   await page.getByRole('tab', { name: 'Custom' }).click();
   await page.fill('#github-handle', 'someone-else');
-  await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Presets' }).click();
   await page.locator('.preset-list li', { hasText: 'Offline graph' }).getByRole('button', { name: 'Load', exact: true }).click();
   await expect(page.locator('#github-status')).toContainText(`Saved graph for octocat from ${today}`);
   await expect(page.locator('#github-handle')).toHaveValue('octocat');
