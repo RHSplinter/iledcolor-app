@@ -92,9 +92,29 @@ function cleanField(value: string | undefined, field: string, required = false):
     if (required) throw new Error('No usable name found. Set a regex with a capture group for the name.');
     return undefined;
   }
-  if (cleaned.length > 100 || /[\u0000-\u001f\u007f]/.test(cleaned))
+  if ((required && cleaned.length > 100) || /[\u0000-\u001f\u007f]/.test(cleaned))
     throw new Error(`The extracted ${field} is invalid or too long.`);
   return cleaned;
+}
+
+function splitEscaped(value: string, delimiter: string): string[] {
+  const parts: string[] = [];
+  let part = '';
+  let escaped = false;
+  for (const character of value) {
+    if (escaped) {
+      part += character;
+      escaped = false;
+    } else if (character === '\\') {
+      part += character;
+      escaped = true;
+    } else if (character === delimiter) {
+      parts.push(part);
+      part = '';
+    } else part += character;
+  }
+  parts.push(part);
+  return parts;
 }
 
 function payloadFields(text: string): Partial<ExtractedName> {
@@ -125,12 +145,12 @@ function payloadFields(text: string): Partial<ExtractedName> {
 
   if (/^MECARD:/i.test(text)) {
     const fields: Partial<ExtractedName> = {};
-    for (const part of text.replace(/^MECARD:/i, '').split(/;(?=[A-Z]+:)/i)) {
+    for (const part of splitEscaped(text.replace(/^MECARD:/i, ''), ';')) {
       const colon = part.indexOf(':');
       if (colon < 0) continue;
       const key = part.slice(0, colon).toUpperCase();
-      const value = part.slice(colon + 1).replace(/;+$/, '').trim();
-      if (key === 'N') fields.name = value.split(',').reverse().join(' ');
+      const value = part.slice(colon + 1).trim();
+      if (key === 'N') fields.name = splitEscaped(value, ',').reverse().join(' ');
       else if (key === 'ORG') fields.company = value;
       else if (key === 'EMAIL') fields.email = value;
       else if (key === 'TEL') fields.phone = value;
@@ -233,8 +253,8 @@ function parseFreeText(text: string): Partial<ExtractedName> {
 
   const notes = usableLines.flatMap((line, index) => {
     if (used.has(index)) return [];
-    if (/^[a-z][a-z0-9_-]{2,20}$/i.test(line)) return [`Handle: ${line}`];
     if (BADGE_TIER.test(line)) return [`Badge tier: ${line}`];
+    if (/^[a-z][a-z0-9_-]{2,20}$/i.test(line)) return [`Handle: ${line}`];
     return [];
   });
   if (notes.length) fields.notes = notes.join('\n');
@@ -245,12 +265,19 @@ export function extractName(raw: string, pattern: string): ExtractedName {
   if (!raw.trim() || raw.length > 4096) throw new Error('Scan data must contain between 1 and 4096 characters.');
   let fields: Partial<ExtractedName>;
   if (pattern) {
-    const match = new RegExp(pattern, 'u').exec(raw);
+    const match = new RegExp(pattern, 'du').exec(raw);
     if (!match) throw new Error('The name regex did not match the scanned data.');
+    const namedRanges = Object.entries(match.indices?.groups ?? {})
+      .filter(([field]) => ['name', 'firstname', 'lastname', 'company', 'title', 'email', 'phone', 'url', 'notes'].includes(field))
+      .flatMap(([, range]) => range ? [range] : []);
+    const isNamedFieldCapture = (index: number) => {
+      const range = match.indices?.[index];
+      return !!range && namedRanges.some(([start, end]) => start === range[0] && end === range[1]);
+    };
     fields = {
-      name: match.groups?.name ?? match.groups?.firstname ?? match[1] ?? match[0],
-      ...(match[2] !== undefined ? { lastname: match[2] } : {}),
-      ...(match[3] !== undefined ? { company: match[3] } : {}),
+      name: match.groups?.name ?? match.groups?.firstname ?? (isNamedFieldCapture(1) ? match[0] : match[1] ?? match[0]),
+      ...(match[2] !== undefined && !isNamedFieldCapture(2) ? { lastname: match[2] } : {}),
+      ...(match[3] !== undefined && !isNamedFieldCapture(3) ? { company: match[3] } : {}),
       ...(match.groups?.name !== undefined ? { name: match.groups.name } : {}),
       ...(match.groups?.firstname !== undefined ? { name: match.groups.firstname } : {}),
       ...(match.groups?.lastname !== undefined ? { lastname: match.groups.lastname } : {}),

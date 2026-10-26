@@ -55,12 +55,24 @@ describe('QR names and greeting settings', () => {
     expect(greetingText('Hi {name}, {title} at {company}: {email}', parsed))
       .toBe('Hi Rob Bos, Software Engineer at Xebia: rob@example.org');
   });
+  it('keeps oversized optional vCard notes from blocking a valid name', () => {
+    const notes = 'S'.repeat(350);
+    const parsed = extractName(`BEGIN:VCARD\nFN:Rob Bos\nNOTE:${notes}\nEND:VCARD`, '');
+    expect(parsed).toMatchObject({ name: 'Rob Bos', notes });
+    expect(greetingText('Hi {name}!', parsed)).toBe('Hi Rob Bos!');
+    expect(() => greetingText('Hi {name}: {notes}', parsed)).toThrow(/too long/);
+  });
+  it('respects escaped delimiters in MECARD values', () => {
+    const parsed = extractName(String.raw`MECARD:N:Doe\, Jr.,John;NOTE:Speaker\;Tier\;ORG:Ignored;ORG:Xebia;;`, '');
+    expect(parsed).toEqual({ name: 'John Doe, Jr.', company: 'Xebia', notes: 'Speaker;Tier;ORG:Ignored' });
+  });
   it('reconstructs noisy OCR names and extracts contacts from printed text', () => {
     const parsed = extractName('Conference\n7Rob\nBos\nSoftware Engineer\nXebia\nrob@example.org\n+31 20 123 4567', '');
     expect(parsed).toMatchObject({
       name: 'Rob Bos', title: 'Software Engineer', company: 'Xebia',
       email: 'rob@example.org', phone: '+31 20 123 4567',
     });
+    expect(extractName('Rob Bos\nSoftware Engineer\nXebia\nSpeaker', '').notes).toBe('Badge tier: Speaker');
   });
   it('supports a named group, first capture group, full match and literal replacement', () => {
     expect(extractName('id=3;name=Rob Bos;', 'name=(?<name>[^;]+)')).toEqual({ name: 'Rob Bos' });
@@ -72,6 +84,10 @@ describe('QR names and greeting settings', () => {
     expect(extractName('Rob,Bos,Xebia', '(?<name>[^,]+),(?<lastname>[^,]+),(?<company>[^,]+)')).toEqual({
       name: 'Rob', lastname: 'Bos', company: 'Xebia',
     });
+    expect(extractName('Rob|Engineer|rob@example.org', '(?<name>[^|]+)\\|(?<title>[^|]+)\\|(?<email>[^|]+)'))
+      .toEqual({ name: 'Rob', title: 'Engineer', email: 'rob@example.org' });
+    expect(extractName('Rob|Bos|Xebia|Engineer', '(?<name>[^|]+)\\|([^|]+)\\|([^|]+)\\|(?<title>[^|]+)'))
+      .toEqual({ name: 'Rob', lastname: 'Bos', company: 'Xebia', title: 'Engineer' });
     expect(greetingText('Hi {name}, {lastname} at {company}!', extractName('Rob|Bos|Xebia', '([^|]+)\\|([^|]+)\\|([^|]+)')))
       .toBe('Hi Rob, Bos at Xebia!');
     expect(greetingText('Hi {name} {lastname} {company}!', { name: 'Rob' })).toBe('Hi Rob  !');
