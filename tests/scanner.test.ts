@@ -156,10 +156,20 @@ describe('greeting GIF metadata', () => {
 });
 
 describe('temporary cap playback', () => {
-  it('refuses unknown prior content instead of replacing it irreversibly', async () => {
+  it.each(['completed', 'cancelled'] as const)('uses a blank fallback with unknown prior content when %s', async (result) => {
+    vi.useFakeTimers();
     const { controller, transport } = await setup();
-    await expect(controller.playTemporary(gif, still, 1000)).rejects.toThrow(/Send content/);
-    expect(transport.writes).toHaveLength(2);
+    expect(controller.canRestoreContent).toBe(false);
+    const playback = controller.playTemporary(gif, still, 1000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.temporaryActive).toBe(true);
+    expect(streams(transport)).toHaveLength(2);
+    if (result === 'cancelled') controller.cancelUpload();
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(playback).resolves.toBe(result);
+    expect(streams(transport).at(-1)).toEqual(buildImageStream({ ...still, pixels: new Uint8Array(24) }).bytes);
+    expect(controller.canRestoreContent).toBe(true);
+    expect(controller.temporaryActive).toBe(false);
   });
   it('restores the last sent image, not the edited preview, after exactly the requested duration', async () => {
     vi.useFakeTimers();

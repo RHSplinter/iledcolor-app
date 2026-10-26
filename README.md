@@ -55,6 +55,14 @@ Phone identity, cap connections/device IDs, permissions, running state, QR paylo
 and scan-log contents are not exported. The scan-logging preference belongs to
 **Scan settings**; importing it can enable local scan logging.
 
+## Badge scanning
+
+After connecting, open **Scan** to scan a QR code/barcode, capture printed text,
+or enter badge data manually. No initial **Send to cap** is required.
+After the greeting, content previously sent from this app since connecting is
+restored. If no previous content is known, the cap shows a blank background instead.
+Keep the app open and connected until the greeting finishes.
+
 ## More docs
 
 Go to:

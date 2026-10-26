@@ -63,7 +63,7 @@ export class GreetingUi {
         <p id="qr-error" class="bad" role="alert"></p>
         <p id="qr-ready" class="small" role="status"></p>
         <p class="small">Scan a badge code or capture its printed text to greet its owner on this phone's primary cap. Other caps keep playing.
-        Send content to the cap first so it can be restored afterwards.</p>
+        Content sent from this app is restored afterwards. If none has been sent since connecting, the cap shows a blank background after the greeting.</p>
         <label for="qr-profile">Saved badge profile</label>
         <select id="qr-profile"><option value="">None — general scan data</option></select>
       </div>
@@ -325,11 +325,12 @@ export class GreetingUi {
   updateStatus() {
     if (!document.getElementById('qr-start')) return;
     const ctl = this.ctx.controller();
-    const unavailable = ctl.state !== 'Ready' || !ctl.canRestoreContent || ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
-    $('qr-ready').textContent = this.scanning ? '' : ctl.state !== 'Ready' ? 'Connect your primary cap on Connect before scanning.'
-      : !ctl.canRestoreContent ? 'Send content from Connect first so it can be restored after the greeting.'
+    const unavailable = ctl.state !== 'Ready' || ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
+    $('qr-ready').textContent = this.scanning ? '' : ctl.state !== 'Ready' ? 'Connect your primary cap before scanning.'
       : ctl.temporaryActive || this.processing ? 'Wait for the current greeting to finish, or end it above.'
-      : this.sharingLog || this.savingLogging ? 'Wait for the scan log operation to finish.' : 'Ready to scan a badge.';
+      : this.sharingLog || this.savingLogging ? 'Wait for the scan log operation to finish.'
+      : !ctl.canRestoreContent ? 'Ready to scan a badge. No previous content is known; the cap will show a blank background after the greeting.'
+      : 'Ready to scan a badge.';
     $<HTMLButtonElement>('qr-start').disabled = unavailable || this.scanning;
     $<HTMLButtonElement>('qr-text-start').disabled = unavailable || this.scanning;
     $<HTMLButtonElement>('qr-submit').disabled = unavailable || this.scanning;
@@ -473,18 +474,18 @@ export class GreetingUi {
       const delay = gifDelayMs(this.ctx.marqueeDelay(settings.speed) * marquee.step / 2);
       const duration = greetingDuration(frames.length, delay, settings.repetitions);
       if (target !== this.ctx.controller()) throw new Error('The primary cap changed. Scan again for the current cap.');
-      if (target.state !== 'Ready' || target.temporaryActive || !target.canRestoreContent) {
+      if (target.state !== 'Ready' || target.temporaryActive) {
         throw new Error(target.temporaryActive ? 'A greeting is already playing'
-          : target.state !== 'Ready' ? 'Connect the primary cap first'
-          : 'Send content to the cap first so it can be restored after the greeting');
+          : 'Connect the primary cap first');
       }
+      const restoringPrevious = target.canRestoreContent;
       const gif = encodeGif(frames, delay, { nonce: gifNonce(), plays: settings.repetitions });
       this.playing = target;
       this.updateStatus();
-      this.status(`Playing "${text}" ${settings.repetitions} time(s), then restoring the previous content.`);
+      this.status(`Playing "${text}" ${settings.repetitions} time(s), then ${restoringPrevious ? 'restoring the previous content' : 'showing a blank background'}.`);
       void vibrateFeedback();
       const result = await target.playTemporary(gif, frames[0]!, duration);
-      this.status(result === 'cancelled' ? 'Greeting ended early. Previous content restored.' : 'Greeting finished. Previous content restored.');
+      this.status(`${result === 'cancelled' ? 'Greeting ended early.' : 'Greeting finished.'} ${restoringPrevious ? 'Previous content restored.' : 'Blank background displayed.'}`);
       $<HTMLTextAreaElement>('qr-raw').value = '';
     } catch (e) {
       this.status('');
