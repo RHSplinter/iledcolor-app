@@ -1,4 +1,4 @@
-QR greeting scanner
+Badge greeting scanner
 
 Inspiration and thanks:
 Rob Bos / Xebia, badge-scanner
@@ -6,9 +6,9 @@ https://github.com/xebia/badge-scanner
 No source code was copied or adapted from badge-scanner. The repository did not
 declare a license when this independently implemented integration was added.
 
-Bundled QR decoding libraries:
+Bundled scanning libraries:
 
-@zxing/browser, Copyright (c) 2018 ZXing for JS, MIT License.
+@zxing/browser, Copyright (c) 2018 ZXing for JS, MIT License. Used for QR codes and barcodes.
 https://github.com/zxing-js/browser
 Full license: zxing-browser-MIT.txt (in this directory).
 
@@ -17,3 +17,11 @@ https://github.com/zxing-js/library
 Full license: zxing-library-Apache-2.0.txt (in this directory).
 
 The scanner uses the libraries as published, without source modifications.
+
+Printed badge text is recognized locally by Tesseract.js. The English model is
+bundled from @tesseract.js-data/eng and is processed on-device. The npm package
+declares MIT; its upstream tessdata repository identifies the model files as
+Apache-2.0. Both notices are included.
+https://github.com/naptha/tessdata
+Full licenses are included in tesseract-js-APACHE-2.0.txt,
+tesseract-core-APACHE-2.0.txt, and tesseract-data-MIT.txt.
