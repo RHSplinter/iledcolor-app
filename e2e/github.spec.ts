@@ -20,6 +20,7 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
   });
   await page.goto('/#mock');
   await connectHat(page);
+  await expect(page.locator('#github-send')).toBeDisabled();
   await page.fill('#github-handle', 'octocat');
   await page.click('#github-load');
   await expect(page.locator('#github-status')).toContainText('Graph ready for octocat');
@@ -27,7 +28,7 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
   await expectCaptionPixels(page);
   await expect.poll(() => page.locator('#github-preview').evaluate((canvas: HTMLCanvasElement) =>
     [...canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data].some((v, i) => i % 4 !== 3 && v > 0))).toBe(true);
-  await expect(page.locator('#github-send')).toBeDisabled();
+  await expect(page.locator('#github-send')).toBeEnabled();
   await page.click('#github-send');
   await expect(page.locator('#github-status')).toContainText('octocat is scrolling on the hat');
   await expect(page.locator('#c-str')).toHaveValue('HI');

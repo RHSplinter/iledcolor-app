@@ -25,7 +25,7 @@ test.describe('web tab navigation @smoke', () => {
     await expect(page.locator('#c-kind')).toBeVisible();
     await expect(page.locator('#connection-card')).toBeHidden();
     await expect(page.getByRole('heading', { name: 'Hat connection', exact: true })).toBeHidden();
-    await expect(page.locator('#view-connect input[type=checkbox]')).toHaveCount(0);
+    await expect(page.locator('#view-connect').getByLabel(/Keep cap black/)).toHaveCount(0);
     await page.getByRole('tab', { name: 'Settings', exact: true }).click();
     await expect(page.locator('#s-keep-black')).toBeVisible();
     await page.getByRole('tab', { name: 'Connect', exact: true }).click();

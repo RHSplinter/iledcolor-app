@@ -98,7 +98,10 @@ test('all categories restore settings from every tab immediately and after reloa
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories.');
 
   for (const reload of [false, true]) {
-    if (reload) await page.reload();
+    if (reload) {
+      await page.reload();
+      await connectHat(page);
+    }
     await page.click('nav [data-tab=connect]');
     await expect(page.locator('#c-str')).toHaveValue('Connect draft');
     await expect(page.locator('#c-speed')).toHaveValue('7');
