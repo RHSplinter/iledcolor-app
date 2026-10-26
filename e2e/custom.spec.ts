@@ -75,7 +75,7 @@ test('Custom sections start collapsed and send/save their own content with keybo
 
   await openCustomSection(page, 'image');
   await expect(page.locator('#btn-send-image')).toBeDisabled();
-  await page.setInputFiles('#c-file', 'src\\assets\\presets\\xebia-logo.png');
+  await page.setInputFiles('#c-file', 'src/assets/presets/xebia-logo.png');
   await page.selectOption('#c-fit', 'stretch');
   await page.click('#btn-send-image');
   await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
