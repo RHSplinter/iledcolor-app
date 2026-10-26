@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { connectHat } from './hat';
+import { connectHat, waitForServiceWorker } from './hat';
 import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 
@@ -37,7 +37,7 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   }, { pixels });
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
+  await waitForServiceWorker(page);
   await context.setOffline(true);
   await page.reload();
   await connectHat(page);
@@ -292,7 +292,7 @@ test('offline OCR recognizes a printed badge and greets the primary cap', async 
     });
   });
   await page.goto('/#mock');
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 30000 });
+  await waitForServiceWorker(page);
   await context.setOffline(true);
   await page.reload();
   await page.click('#btn-connect');

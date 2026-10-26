@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { connectHat, installFakeHat } from './hat';
+import { connectHat, installFakeHat, waitForServiceWorker } from './hat';
 
 test('web navigation skips native-only Approach and retains content, scan and settings', async ({ page, context }) => {
   await installFakeHat(page);
@@ -7,7 +7,7 @@ test('web navigation skips native-only Approach and retains content, scan and se
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   await connectHat(page);
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
+  await waitForServiceWorker(page);
   await expect(page.getByRole('tab')).toHaveCount(4);
   await expect(page.getByRole('tab')).toHaveText(['Connect', 'Scan', 'Sound', '']);
   await expect(page.locator('#tab-approach')).toBeHidden();
@@ -70,7 +70,6 @@ for (const platform of ['ios', 'android']) {
     }, platform);
     await page.goto('/');
     await connectHat(page);
-    await expect(page.locator('#offline')).toHaveText(platform === 'ios' ? 'iOS app' : 'Android app');
     await expect(page.getByRole('tab')).toHaveCount(5);
     await expect(page.locator('#c-kind')).toBeVisible();
     await expect(page.locator('#view-connect')).toContainText(platform === 'ios'

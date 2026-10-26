@@ -962,10 +962,8 @@ function onTabSelected(name: string) {
 }
 
 function setupPwa() {
-  const offline = $('#offline');
-  if (native) { offline.textContent = platformName() === 'ios' ? 'iOS app' : 'Android app'; offline.className = 'pill ok'; return; }
+  if (native) return;
   const updateSW = registerSW({
-    onOfflineReady() { offline.textContent = 'Ready for offline use'; offline.className = 'pill ok'; },
     onNeedRefresh() {
       const show = () => {
         if (controller.state === 'Uploading' || controller.temporaryActive) { setTimeout(show, 2000); return; } // never reload mid-transfer
@@ -974,11 +972,8 @@ function setupPwa() {
       };
       show();
     },
-    onRegisterError(e) { offline.textContent = 'Offline cache failed'; offline.className = 'pill err'; console.error(e); },
+    onRegisterError(e) { console.error(e); },
   });
-  navigator.serviceWorker?.ready.then(() => {
-    if (offline.textContent === 'Checking offline…') offline.textContent = 'Caching for offline…';
-  }).catch(() => undefined);
 
   let deferred: (Event & { prompt: () => Promise<void> }) | null = null;
   window.addEventListener('beforeinstallprompt', (e) => {

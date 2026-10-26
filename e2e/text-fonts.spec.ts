@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { connectHat } from './hat';
+import { connectHat, waitForServiceWorker } from './hat';
 
 const fonts = ['silkscreen', 'tiny5', 'press-start', 'dotgothic', 'bitcount', 'monaspace'];
 
@@ -18,7 +18,7 @@ test('six distinct, crisp fonts have one-pixel spacing and match preview and moc
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20_000 });
+  await waitForServiceWorker(page);
   await page.fill('#c-str', 'Hi!');
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-font option')).toHaveCount(6);
