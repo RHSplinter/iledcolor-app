@@ -95,6 +95,9 @@ describe('proximity tracker', () => {
 });
 
 describe('tiers', () => {
+  it('defaults every tier to a readable scroll speed', () => {
+    expect(Object.values(DEFAULT_APPROACH.tiers).map((tier) => tier.speed)).toEqual([3, 3, 3, 3, 3]);
+  });
   it('maps group sizes to the configured tiers', () => {
     expect([0, 1, 2, 3, 4, 5, 8, 9, 15].map(tierFor)).toEqual(['solo', 'solo', 'pair', 'upTo4', 'upTo4', 'upTo8', 'upTo8', 'moreThan8', 'moreThan8']);
   });

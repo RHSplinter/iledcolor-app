@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkDecodedLimits, checkFileLimits, fitRect } from '../src/render/image';
 import { cornerTest, rgbaToRgb, solid, transformImage } from '../src/render/matrix';
-import { DEFAULT_SETTINGS, exportJson, isGroupPreset, parseImport, type Preset } from '../src/storage/presets';
+import { DEFAULT_SETTINGS, DEFAULT_SPEED, exportJson, isGroupPreset, parseImport, type Preset } from '../src/storage/presets';
 import { DEFAULT_APPROACH } from '../src/approach/tiers';
 
 const px = (img: { width: number; pixels: Uint8Array }, x: number, y: number) =>
@@ -54,6 +54,7 @@ describe('import limits', () => {
 const preset: Preset = { id: 'a', name: 'Hello', updatedAt: 1, content: { kind: 'text', text: 'Hi', fg: '#ffffff', bg: '#000000' } };
 
 describe('preset import/export', () => {
+  it('uses a readable default scroll speed', () => expect(DEFAULT_SPEED).toBe(3));
   it('round-trips', () => {
     const out = parseImport(exportJson(DEFAULT_SETTINGS, [preset]));
     expect(out.presets).toEqual([preset]);

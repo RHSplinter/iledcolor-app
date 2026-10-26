@@ -61,7 +61,7 @@ export function exportJson(settings: Settings, presets: Preset[], qrProfiles: Gr
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isInt = (v: unknown, lo: number, hi: number): v is number => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
 
-export const DEFAULT_SPEED = 5;
+export const DEFAULT_SPEED = 3;
 function speedOf(v: unknown): number { if (!isInt(v, 1, 10)) throw new Error('invalid speed'); return v; }
 
 export function validateContent(c: unknown): Content {

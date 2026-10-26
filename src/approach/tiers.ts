@@ -44,11 +44,11 @@ export const TEMPLATE_HELP = '{me} = this cap, {other} = the other cap(s), {coun
 export const DEFAULT_APPROACH: ApproachSettings = {
   mode: 'p2p',
   tiers: {
-    solo: { mode: 'individual', text: '{me}', fg: '#00c8ff', bg: '#000000', speed: 5 },
-    pair: { mode: 'individual', text: 'Hi {other}!', fg: '#ffd000', bg: '#000000', speed: 5 },
-    upTo4: { mode: 'span', text: '{count} caps together!', fg: '#ff40c0', bg: '#000000', speed: 5 },
-    upTo8: { mode: 'span', text: 'Party of {count}!', fg: '#40ff60', bg: '#000000', speed: 5 },
-    moreThan8: { mode: 'span', text: 'Crowd of {count} caps!', fg: '#ff6020', bg: '#000000', speed: 6 },
+    solo: { mode: 'individual', text: '{me}', fg: '#00c8ff', bg: '#000000', speed: 3 },
+    pair: { mode: 'individual', text: 'Hi {other}!', fg: '#ffd000', bg: '#000000', speed: 3 },
+    upTo4: { mode: 'span', text: '{count} caps together!', fg: '#ff40c0', bg: '#000000', speed: 3 },
+    upTo8: { mode: 'span', text: 'Party of {count}!', fg: '#40ff60', bg: '#000000', speed: 3 },
+    moreThan8: { mode: 'span', text: 'Crowd of {count} caps!', fg: '#ff6020', bg: '#000000', speed: 3 },
   },
   enterDbm: -70,
   leaveDbm: -75, // ≈ 4 m: caps count as away before they are really out of range

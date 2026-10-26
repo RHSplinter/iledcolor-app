@@ -31,6 +31,7 @@ afterEach(() => vi.useRealTimers());
 describe('QR names and greeting settings', () => {
   it('defaults to three repetitions', () => {
     expect(DEFAULT_GREETING.repetitions).toBe(3);
+    expect(DEFAULT_GREETING.speed).toBe(3);
     expect(validateGreeting(DEFAULT_GREETING)).toEqual(DEFAULT_GREETING);
   });
   it.each([
