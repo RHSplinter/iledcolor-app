@@ -3,6 +3,14 @@
 body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui,sans-serif; padding-bottom:calc(88px + env(safe-area-inset-bottom)); }
 header { display:flex; gap:8px; padding:calc(8px + env(safe-area-inset-top)) 12px 8px; position:sticky; top:0; background:var(--bg); z-index:2; flex-wrap:wrap; }
 .pill { padding:4px 10px; border-radius:99px; background:var(--card); font-size:14px; overflow-wrap:anywhere; }
+#connection-status { position:relative; max-width:100%; }
+#status { padding:0; }
+#status-toggle { display:inline-flex; align-items:center; gap:6px; min-height:0; padding:4px 10px; max-width:100%; border-radius:99px; background:none; font:inherit; }
+#status-toggle:disabled { opacity:1; }
+#connection-actions { position:absolute; top:calc(100% + 6px); left:0; z-index:1; padding:8px; border:1px solid var(--border); border-radius:12px; background:var(--card); box-shadow:0 4px 16px #0008; }
+.connection-icon { width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.connection-icon.connected { color:var(--ok); }
+.connection-icon.disconnected { color:var(--bad); }
 .pill.ok { color:var(--ok); } .pill.err { color:var(--bad); } .pill.busy { color:var(--warn); } .muted { color:#999; }
 #banner { margin:8px 12px; padding:10px 12px; border-radius:8px; background:#2a2a1a; border:1px solid var(--warn); }
 #share-prompt { position:fixed; left:12px; right:12px; bottom:calc(76px + env(safe-area-inset-bottom)); z-index:3; max-width:536px; max-height:60dvh; overflow:auto; overflow-wrap:anywhere; margin:0 auto; padding:16px; border-radius:12px; background:#14243a; border:1px solid var(--accent); box-shadow:0 4px 24px #000a; }
@@ -107,3 +115,4 @@ fieldset.tier legend { padding:0 6px; font-weight:600; }
 @media (prefers-reduced-motion:reduce) {
   .switch input, .switch input::after { transition:none; }
 }
+body.disconnected { padding-bottom:env(safe-area-inset-bottom); }

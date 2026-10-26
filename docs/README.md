@@ -5,14 +5,22 @@
 The native apps have five icon tabs: **Connect**, **Approach**, **Scan**, **Sound**, and
 **Settings** (the gear icon at the far right). The web app has **Connect**, **Scan**, **Sound**
 and **Settings**; native-only Approach detection is not offered in the browser.
+Until a cap is connected, the app shows only the **Hat connection** controls (connect,
+connection status and install help); the tab bar, content editor and all other tabs appear
+once the cap is ready and stay available during uploads. If the connection is lost or you
+disconnect, the app returns to the connection controls. The whole **Hat connection**
+section is hidden while the cap is connected, including during uploads.
+To disconnect, tap the connection status pill at the top and select **Disconnect**.
+Tap the pill again, tap elsewhere or press Escape to dismiss the button.
 The top status bar shows live pills across every tab for primary cap connection,
+with a green link icon when connected (including uploads) and a red broken-link icon otherwise,
 **Approach** (`Approach: off`, `Approach: on`, or `Approach: on (N)` with the nearby group count),
 **Listening** (`Listening: off`, `Listening: starting…`, `Listening: voice sample`, `Listening: on`,
 `Listening: paused`, or `Listening: stopping…`), and offline readiness.
 The same source supplies the content editor, scan-first layout, settings, accessible
 tab navigation and responsive controls on Android, iOS and web.
 
-- **Connect:** connect/disconnect your primary cap, optionally enable **Keep cap black unless an approach, scan or sound event is active** (keep cap black when idle), then create text, solid colours,
+- **Connect:** connect your primary cap, then create text, solid colours,
   images or GIFs, preview and send them, or save a content preset. There is no separate Create tab.
   Under **Sequence**, add the current content or saved presets as steps (up to 20), set how
   many seconds each step shows (animations play whole cycles for at least that long), reorder
@@ -73,8 +81,9 @@ See [the UI change record](docs/ui-improvements.md) for the expert review and im
 Besides the PWA, the project builds **Android** and **iOS** apps (Capacitor, `android/` and `ios/`) with the shared UI plus **Approach mode**: when caps come close, they show greetings for each other or one marquee spanning all caps, configurable for 1, 2, up to 4, up to 8, and more than 8 caps. While approach mode runs, presets can also be shared with a nearby phone; the receiver must accept the preset before it is transferred. See [docs/approaching-mode.md](docs/approaching-mode.md) for the detection design and [docs/INSTALL.md](docs/INSTALL.md) for building the APK.
 
 Web Bluetooth requires a supported browser (for example Chrome on Android or desktop);
-Safari on iOS does not support it. Offline editing, presets, QR profiles, manual QR entry
-and backup/import remain available without Bluetooth. Camera scanning requires HTTPS
+Safari on iOS does not support it. Editing, presets, QR profiles, manual QR entry and
+backup/import work offline but require a connected cap, so they are not available in a
+browser without Bluetooth. Camera scanning requires HTTPS
 and permission. Imported native group presets are retained and can be exported again,
 but cannot be loaded in the browser. Nearby BLE sharing is native-only; JSON file
 sharing/download remains available on web. The `#mock` development mode deliberately
@@ -99,7 +108,9 @@ npm run e2e
 The existing hardware-mock/offline tests run in Chromium. Permission-free web
 navigation smoke tests run in Chromium, Firefox and WebKit, with desktop/mobile
 viewports, every visible tab, keyboard wrapping, reload and content retention
-while switching tabs. They do not connect a cap or request camera/microphone access.
+while switching tabs. They first check that only the connection controls are shown while
+disconnected, then connect a simulated cap (`e2e/hat.ts` fakes Web Bluetooth and the native
+BLE bridge); they do not request camera/microphone access.
 
 To run the same smoke tests against the deployed app, including its subdirectory:
 

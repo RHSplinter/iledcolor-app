@@ -26,6 +26,7 @@ import { listenForShares, withShareLink } from '../approach/contentExchange';
 import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
 import { shareTextFile } from './shareFile';
 import { initTabs } from './tabs';
+import { initConnectionStatus } from './connectionStatus';
 import { GreetingUi } from '../scanner/ui';
 import { SoundUi } from '../sound/ui';
 import { UpdateUi } from '../update/ui';
@@ -82,6 +83,10 @@ function newController() {
 }
 /** In the app (and mock mode) the Connect tab's cap is cap 1 of approach mode: one shared connection. */
 const sharedCap = () => native || useMock;
+const updateConnectionStatus = initConnectionStatus($('#connection-status'), () => {
+  if (sharedCap()) disconnectPrimary();
+  else controller.disconnect();
+});
 const watched = new WeakSet<DeviceController>();
 function onPrimaryChange(p: PrimaryCap | null) {
   scanner?.stopCamera();
@@ -104,16 +109,19 @@ function renderStatus() {
   const s = controller.state;
   const el = $('#status');
   if (!el) return;
-  const cls = s === 'Ready' ? 'ok' : s === 'Error' ? 'err' : s === 'Disconnected' ? 'muted' : 'busy';
+  const cls = s === 'Ready' ? 'ok' : s === 'Error' || s === 'Disconnected' ? 'err' : 'busy';
   el.className = `pill ${cls}`;
+  const connected = s === 'Ready' || s === 'Uploading';
+  updateConnectionStatus(connected);
   const p = controller.progress;
-  el.textContent = s === 'Uploading' && p ? `Uploading ${p.sent}/${p.total}` : s === 'Ready' && deviceName ? `Ready: ${deviceName}` : s;
+  $('#status-label').textContent = s === 'Uploading' && p ? `Uploading ${p.sent}/${p.total}` : s === 'Ready' && deviceName ? `Ready: ${deviceName}` : s;
   const err = controller.error;
   const msg = $('#conn-msg', document);
   if (msg) msg.textContent = err ?? '';
   const prog = document.querySelector<HTMLProgressElement>('#progress');
   if (prog && p) { prog.max = p.total; prog.value = p.sent; }
   updateButtons();
+  applyConnectionGate();
   scanner?.updateStatus();
   sound?.updateStatus();
   github?.updateStatus();
@@ -129,7 +137,7 @@ function updateButtons() {
   set('btn-send', !ready || !lastImage);
   const help = document.getElementById('send-help');
   if (help) help.textContent = controller.temporaryActive ? 'Wait for the current cap reaction to finish before sending.'
-    : !ready ? 'Connect your hat above to send content. You can edit and preview offline.'
+    : !ready ? 'Wait for the hat to be ready before sending.'
     : !lastImage ? 'Choose valid content to enable sending.' : 'Preview ready. Send it to your connected hat.';
   set('btn-test-color', !ready); set('btn-test-corner', !ready);
   set('btn-disp-on', !ready); set('btn-disp-off', !ready);
@@ -140,6 +148,22 @@ function updateButtons() {
   if (prog) prog.hidden = s !== 'Uploading';
   const label = document.getElementById('btn-connect');
   if (label) label.textContent = s === 'Error' || controller.error ? 'Reconnect' : 'Connect';
+}
+
+/** Until a hat is connected only the connection controls are shown; everything else needs a hat. */
+function applyConnectionGate() {
+  const s = controller.state;
+  const connected = s === 'Ready' || s === 'Uploading';
+  document.body.classList.toggle('disconnected', !connected);
+  for (const id of ['content-editor', 'github-section', 'tab-bar', 'tab-scan', 'tab-sound', 'tab-settings']) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !connected;
+  }
+  const connectionCard = document.getElementById('connection-card');
+  if (connectionCard) connectionCard.hidden = connected;
+  const approachTab = document.getElementById('tab-approach');
+  if (approachTab) approachTab.hidden = !connected || !approachAvailable;
+  if (!connected && showTab && $('#view-connect').hidden) showTab('connect');
 }
 
 function banner(html: string | null) {
@@ -154,7 +178,7 @@ function renderConnect() {
   const sup: ReturnType<typeof bluetoothSupport> = native ? { ok: true } : bluetoothSupport();
   const root = $('#view-connect');
   root.innerHTML = `
-    <div class="card">
+    <div class="card" id="connection-card">
       <h2>Hat connection</h2>
       ${sup.ok || useMock ? '' : `<p class="bad">${esc(sup.ok ? '' : sup.reason)}</p>`}
       ${useMock ? '<p class="warn">Mock mode: no real hat is used.</p>' : ''}
@@ -164,15 +188,13 @@ function renderConnect() {
         <button id="btn-install" hidden>Install app</button>
       </div>
       <p id="conn-msg" class="small"></p>
-      <label><input type="checkbox" id="c-keep-black" ${settings.keepBlack ? 'checked' : ''} /> Keep cap black unless an approach, scan or sound event is active</label>
       <p class="small">Close other controller apps first. ${native ? `${platformName() === 'ios' ? 'iOS' : 'Android'} will ask for Bluetooth permission the first time you connect.` : 'Choose your hat in the browser Bluetooth picker. Connecting requires Web Bluetooth; editing and presets work offline.'}</p>
-      <p class="small" id="install-help" hidden>To install: use your browser's Install app or Add to Home Screen option (in Safari, open the Share menu).</p>
+      <p class="small" id="install-help" hidden>To install: use your browser's Install app or Add to Home Screen option.</p>
     </div>
     <div id="content-editor"></div>
     <div id="github-section"></div>`;
   $('#btn-connect').onclick = onConnect;
   $('#btn-disconnect').onclick = () => (sharedCap() ? disconnectPrimary() : controller.disconnect());
-  $<HTMLInputElement>('#c-keep-black').onchange = (e) => void applyKeepBlack((e.target as HTMLInputElement).checked);
   renderStatus();
 }
 
@@ -267,8 +289,6 @@ function syncKeepBlackControls() {
   const on = Boolean(settings.keepBlack);
   const sBox = document.getElementById('s-keep-black') as HTMLInputElement | null;
   if (sBox) sBox.checked = on;
-  const cBox = document.getElementById('c-keep-black') as HTMLInputElement | null;
-  if (cBox) cBox.checked = on;
 }
 
 async function applyKeepBlack(on: boolean, persist = true) {
@@ -681,12 +701,12 @@ async function renderPresets(message = '') {
     const p = (item.dataset.builtin ? builtinPresets() : presets).find((x) => x.id === id)!;
     if (b.dataset.act === 'share') { openShare(p); return; }
     if (b.dataset.act === 'del') { await deletePreset(id).catch((e) => ($('#p-msg').textContent = e.message)); void renderPresets(); return; }
-    if (isGroupPreset(p)) { applyGroupContent(p.groups); showTab('approach'); return; }
+    if (isGroupPreset(p)) { applyGroupContent(p.groups); showTab?.('approach'); return; }
     if (p.content.kind === 'image') imageDataUrl = p.content.dataUrl;
     try {
       const { image } = await renderContent(p.content);
       lastImage = image;
-      showTab('connect');
+      showTab?.('connect');
       setCreateFrom(p.content);
       await refreshPreview(p.content);
     } catch (e) { $('#p-msg').textContent = (e as Error).message; }
@@ -933,7 +953,7 @@ function setCreateFrom(c: Content) {
 
 // ---------- tabs, offline, install, updates ---------------------------------------
 
-let showTab: (name: string) => boolean;
+let showTab: ((name: string) => boolean) | undefined;
 
 function onTabSelected(name: string) {
   if (name !== 'scan') scanner?.stopCamera();
@@ -1023,8 +1043,8 @@ async function main() {
   renderConnect();
   renderDeviceSettings();
   // Navigation must not wait for optional features to restore storage or query native capabilities.
-  $('#tab-approach').hidden = !approachAvailable;
   showTab = initTabs($('#tab-bar'), onTabSelected);
+  applyConnectionGate();
   renderCreate();
   setupPwa();
   setupAppUpdates();
