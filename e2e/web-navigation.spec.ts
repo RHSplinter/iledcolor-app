@@ -111,6 +111,22 @@ test.describe('web tab navigation @smoke', () => {
     await expect(page.locator('#status')).toContainText('Ready: iledcolor-FAKE');
   });
 
+  test('manual Connect remains available when automatic reconnect APIs are disabled', async ({ page }) => {
+    await installFakeHat(page);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator.bluetooth, 'getDevices', { configurable: true, value: undefined });
+    });
+    await page.goto('./');
+    await connectHat(page);
+    await page.reload();
+    await expect(page.locator('#status')).toContainText('Disconnected');
+    await expect(page.locator('#conn-msg')).toContainText('Remembered hat: iledcolor-FAKE');
+    await expect(page.locator('#btn-connect')).toBeEnabled();
+    await expect(page.locator('#btn-connect')).toHaveText('Connect');
+    await page.locator('#btn-connect').click();
+    await expect(page.locator('#status')).toContainText('Ready: iledcolor-FAKE');
+  });
+
   test('disconnecting from another tab returns to the connection controls', async ({ page }) => {
     await installFakeHat(page);
     await page.goto('./');
