@@ -27,3 +27,14 @@ Use one Edge/Chrome tab on the same origin throughout the test. Apply any pendin
 6. Open the connected status menu and Disconnect. Reload must remain disconnected. Connect may now show the picker, which can still label previously authorized devices as paired.
 
 Local validation on Windows, 2026-10-26: 452 unit tests and the production build pass. Simulated browser tests cover automatic refresh, exact-ID selection, visible progress, ten-second timeout, and explicit disconnect. The physical Edge session retained iledcolor-231B in local storage but reported that getDevices() was unavailable. Automatic physical reconnect is therefore blocked in this browser configuration; seeing Ready during an earlier interactive session did not establish an automatic-reconnect pass. The full browser run also exposed a badge-greeting failure in the existing mock keepBlack test, outside the browser-reconnect path.
+
+## Connection tab fallback (no experimental reconnect API required)
+
+- Select Keep Bluetooth in an LED Hat Connection tab, then Connect.
+- Verify the new tab is titled LED Hat Connection and explains that it owns the hat link and must remain open.
+- Choose the physical hat once in that tab; verify focus returns to the main app.
+- Refresh the main app three times without selecting Connect or reopening the picker. Verify the same hat is ready and can receive a command after each refresh.
+- Disconnect in the main app; verify the connection tab reports disconnected and the remembered identity is cleared.
+- Close the connection tab and refresh the main app. It must return to Connect within 10 seconds.
+
+Automated tests pass for the held-link flow with getDevices deliberately unavailable, including three main-page refreshes with exactly one picker and one GATT connection. Physical Windows verification remains pending.

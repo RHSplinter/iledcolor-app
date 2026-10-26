@@ -1,11 +1,11 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type BrowserContext } from '@playwright/test';
 
 /**
  * Installs a fake LED hat behind both Web Bluetooth and the native BluetoothLe plugin bridge, so
  * plain web and app-shell pages can connect without hardware. It acks every write like the
  * in-app mock hat (`#mock`). Call it before `page.goto`.
  */
-export async function installFakeHat(page: Page) {
+export async function installFakeHat(page: Page | BrowserContext) {
   await page.addInitScript(() => {
     const SERVICE = '0000a950-0000-1000-8000-00805f9b34fb';
     const CMD = '0000a951-0000-1000-8000-00805f9b34fb';

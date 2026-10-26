@@ -115,7 +115,7 @@ describe('reconnectWebBluetooth', () => {
 
   it('treats a missing permission or unsupported browser as "not available"', async () => {
     stubBluetooth([]);
-    await expect(reconnectWebBluetooth('hat-1')).rejects.toBeInstanceOf(SelectionCancelledError);
+    await expect(reconnectWebBluetooth('hat-1')).rejects.toThrow('no saved Bluetooth permissions');
     stubBluetooth(undefined);
     await expect(reconnectWebBluetooth('hat-1')).rejects.toBeInstanceOf(SelectionCancelledError);
   });

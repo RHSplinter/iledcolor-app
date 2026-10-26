@@ -28,17 +28,20 @@ This is the Xebia Led hat used/introduced at GitHub Universe 2026.
    Automatic reconnect is optional. Without browser support, the app keeps the standard manual **Connect** flow. It detects the available Bluetooth APIs rather than requiring browser flags for everyone. Use the same browser profile and site address, and keep only one controller session open: a hat held by another tab or app may stop advertising.
 8. Familiarize yourself with the controls in the app and ask questions if you don't understand it. We have loaded the app with some presets you can use.
 
-## Optional automatic reconnect in Chrome / Edge
+## Keep the Bluetooth connection through refresh
 
-Manual connection works without experimental features. Automatic reconnect after refresh needs the browser to expose `navigator.bluetooth.getDevices()`; Bluetooth rediscovery can also use `BluetoothDevice.watchAdvertisements()`.
+If your browser cannot restore Bluetooth permission after refresh, enable **Keep Bluetooth in an LED Hat Connection tab** before pressing Connect. The app opens a separate tab titled **LED Hat Connection** with an explanation of why it must stay open.
 
-For users who choose to try this optional feature:
+1. In that tab, press **Choose LED hat** and select your hat once. Browser permission requires this initial click in the tab that owns Bluetooth.
+2. Focus returns to the main LED Hat Controller; a Return button is also available in the connection tab. Leave the connection tab open in the background.
+3. Refresh the main app normally. Its top bar shows **Reconnecting to [hat name]** while it reattaches to the existing Bluetooth link, without a picker or experimental flags.
+4. Disconnect from the main app to release the link and forget the saved hat. Closing or refreshing the connection tab also ends its live connection; the main app returns to Connect if it cannot reattach within 10 seconds.
 
-- Open `edge://flags` in Edge or `chrome://flags` in Chrome.
-- Look for **Use the new permissions backend for Web Bluetooth**, if available. The browser may also require **Experimental Web Platform features** to expose the reconnect APIs. Flag availability varies by browser version; see the [Web Bluetooth implementation status](https://github.com/whatwg/bluetooth/blob/main/implementation-status.md).
-- These are browser-wide experimental settings, not settings for this website alone. Restart the browser after changing them, then connect to the hat once to grant permission under the active configuration.
-- On later refreshes the top status shows **Reconnecting to [hat name]** automatically, with no click or picker. If it cannot finish within 10 seconds, normal **Connect** controls return.
-- If the required APIs remain unavailable, continue using manual **Connect**; the app does not open another window or tab.
+## Optional direct browser reconnect
+
+Without a connection tab, automatic reconnect requires the browser to expose `navigator.bluetooth.getDevices()` and to retain the hat's permission after refresh. `BluetoothDevice.watchAdvertisements()` can help Bluetooth rediscovery. These APIs and persistent permissions may require browser-wide experimental settings; see the [Web Bluetooth implementation status](https://github.com/whatwg/bluetooth/blob/main/implementation-status.md).
+
+The tested Windows Edge 156 session exposes getDevices with Experimental Web Platform features enabled but returns an empty device list after refresh; that setting alone did not establish working direct reconnect, and Edge has no Bluetooth-specific flag in its experiments list. Use the connection-tab option above, which needs no experimental reconnect API, or use normal manual Connect. The app never opens a connection tab unless that option is selected.
 
 ## Custom content and backups
 

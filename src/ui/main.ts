@@ -19,6 +19,7 @@ import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSe
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
 import { forgetWebHat, loadWebHat, saveWebHat } from '../transport/webBluetoothMemory';
+import { connectionTabClient, savedConnectionTab } from '../transport/connectionTab';
 import { bluetoothSupport, connectWebBluetooth, reconnectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
@@ -96,6 +97,8 @@ const updateConnectionStatus = initConnectionStatus($('#connection-status'), () 
 function forgetLastHat() { forgetWebHat(); restoreNote = ''; }
 let restoreNote = '';
 let restoringWebConnection = false;
+function connectionTabPreferred() { try { return localStorage.getItem('iledcolor.useConnectionTab') === 'true'; } catch { return false; } }
+function preferConnectionTab(on: boolean) { try { localStorage.setItem('iledcolor.useConnectionTab', String(on)); } catch { /* storage unavailable */ } }
 const watched = new WeakSet<DeviceController>();
 function onPrimaryChange(p: PrimaryCap | null) {
   scanner?.stopCamera();
@@ -198,11 +201,14 @@ function renderCustom() {
         <button id="btn-install" hidden>Install app</button>
       </div>
       <p id="conn-msg" class="small"></p>
+      ${sharedCap() ? '' : `<label class="small"><input id="use-connection-tab" type="checkbox" ${connectionTabPreferred() ? 'checked' : ''}> Keep Bluetooth in an LED Hat Connection tab so refreshing this app keeps the link.</label>`}
       <p class="small">Close other controller apps first. ${native ? `${platformName() === 'ios' ? 'iOS' : 'Android'} will ask for Bluetooth permission the first time you connect.` : 'Choose your hat in the browser Bluetooth picker. Connecting requires Web Bluetooth; editing and presets are available after connecting.'}</p>
       <p class="small" id="install-help" hidden>To install: use your browser's Install app or Add to Home Screen option.</p>
     </div>
     <div id="content-editor"></div>`;
   $('#btn-connect').onclick = onConnect;
+  const linkOption = document.getElementById('use-connection-tab') as HTMLInputElement | null;
+  if (linkOption) linkOption.onchange = () => preferConnectionTab(linkOption.checked);
   renderStatus();
 }
 
@@ -339,6 +345,25 @@ async function onConnect() {
     renderStatus();
     return;
   }
+  if (connectionTabPreferred()) {
+    const client = connectionTabClient();
+    const linkUrl = new URL(location.href);
+    linkUrl.search = '?hatConnection=1'; linkUrl.hash = '';
+    const link = window.open(linkUrl.href, 'iledcolor-led-hat-connection');
+    window.focus();
+    if (!link) { restoreNote = 'Allow the LED Hat Connection tab to open, then use Connect again.'; renderStatus(); return; }
+    newController();
+    restoreNote = 'In the LED Hat Connection tab, choose your LED hat once. Then return here and leave that tab open.';
+    await controller.connect(async () => {
+      const result = await client.connect(undefined, 120000, () => link.closed);
+      deviceName = result.deviceName;
+      saveWebHat({ id: result.deviceId, name: result.deviceName });
+      restoreNote = ''; window.focus();
+      return result.transport;
+    });
+    await afterWebConnect();
+    return;
+  }
   newController();
   deviceName = '';
   restoreNote = '';
@@ -361,7 +386,8 @@ async function restoreWebConnection() {
   if (sharedCap() || !saved || !bluetoothSupport().ok || restoringWebConnection) return;
   if (!['Disconnected', 'Error'].includes(controller.state)) return;
   deviceName = saved.name;
-  if (!navigator.bluetooth.getDevices) {
+  const linkTab = connectionTabPreferred() ? savedConnectionTab() : null;
+  if (!linkTab && !navigator.bluetooth.getDevices) {
     restoreNote = `Remembered hat: ${saved.name}. This browser does not support automatic Bluetooth reconnect. Use Connect to choose your hat.`;
     renderStatus();
     return;
@@ -371,13 +397,20 @@ async function restoreWebConnection() {
   renderStatus();
   try {
     await controller.connect(async () => {
-      const r = await reconnectWebBluetooth(saved.id);
+      const r = linkTab
+        ? await connectionTabClient().connect(saved.id, 10000)
+        : await reconnectWebBluetooth(saved.id);
       deviceName = r.deviceName;
       saveWebHat({ id: r.deviceId, name: r.deviceName });
       return r.transport;
     });
   } finally {
     restoringWebConnection = false;
+    if (controller.error?.includes('Bluetooth permissions') || controller.error?.includes('return permission')) {
+      preferConnectionTab(true);
+      const option = document.getElementById('use-connection-tab') as HTMLInputElement | null;
+      if (option) option.checked = true;
+    }
     restoreNote = ['Ready'].includes(controller.state) ? ''
       : `Remembered hat: ${saved.name}. Could not reconnect automatically. Check the hat is on, then use Connect.`;
   }

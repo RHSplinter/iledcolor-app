@@ -49,7 +49,9 @@ export async function reconnectWebBluetooth(
   const deadline = Date.now() + timeoutMs;
   const devices = await withTimeout(navigator.bluetooth.getDevices(), timeoutMs, 'Finding the hat');
   const device = devices.find((d) => d.id === deviceId);
-  if (!device) throw new SelectionCancelledError();
+  if (!device) throw new Error(devices.length === 0
+    ? 'The browser returned no saved Bluetooth permissions. Automatic reconnect requires persistent Bluetooth permissions; use Connect to grant access again.'
+    : 'The browser did not return permission for the remembered hat. Connect once to grant access in this browser configuration.');
   const watch = new AbortController();
   let seen: () => void = () => undefined;
   const onAdvert = () => seen();
