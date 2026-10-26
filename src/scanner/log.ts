@@ -6,7 +6,7 @@ const LOG_FILE = 'qr-scan-log.jsonl';
 
 export interface ScanLogEntry {
   timestamp: string;
-  source: 'camera' | 'manual';
+  source: 'camera' | 'ocr' | 'manual';
   raw: string;
   profile: { id: string; note: string } | null;
 }
@@ -27,7 +27,7 @@ export async function shareScanLog(): Promise<'shared' | 'downloaded' | 'cancell
   requireFilesystem();
   const { data } = await Filesystem.readFile({ path: LOG_FILE, directory: Directory.Data, encoding: Encoding.UTF8 });
   const text = typeof data === 'string' ? data : await data.text();
-  if (!text) throw new Error('The scan log is empty. Enable logging and scan a QR code first.');
+  if (!text) throw new Error('The scan log is empty. Enable logging and scan a badge first.');
   if (Capacitor.isNativePlatform()) {
     if (!Capacitor.isPluginAvailable('Share')) throw new Error('File sharing is unavailable in this app build.');
     const { uri } = await Filesystem.writeFile({

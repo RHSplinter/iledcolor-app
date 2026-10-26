@@ -25,9 +25,9 @@ tab navigation and responsive controls on Android, iOS and web.
   multi-cap group greeting on a connected cap, the phone vibrates once as the group upload starts.
   Every spanning **Marquee** choice is marked **unstable**:
   physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
-- **Scan:** the scan/stop/end-greeting actions, camera and status come first, followed by
+- **Scan:** the code/text scan, capture/stop/end-greeting actions, camera and status come first, followed by
   the profile selector, QR profile editor, greeting settings, manual entry, and scan-log/privacy controls.
-  A recognized QR greeting (camera or manual entry) vibrates once immediately when the greeting
+  A recognized badge greeting (camera, OCR or manual entry) vibrates once immediately when the greeting
   starts on the primary cap; stopping the camera or a failure does not vibrate.
 - **Sound:** opt-in applause/whistle detection, wearer voice sampling, English/German
   phrase reactions, pocket-pause settings, dictionary and editable animation text.
@@ -240,7 +240,7 @@ In **Settings → Backup**, choose what to include before tapping **Share preset
 and sequence steps, including a paused sequence draft, plus the current GitHub handle,
 prefix and postfix text),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
-**Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
+**Scan settings** (proximity thresholds, timing, badge profiles, current greeting/regex,
 repetitions, speed and scan-logging preference), **Display & transport settings**
 (LED text font, keep-cap-black-when-idle preference, dimensions, brightness, rotation,
 mirroring and Bluetooth write settings; older backups without a font or keep-black
@@ -252,7 +252,7 @@ the browser speech permission stay on each device, so record a voice sample on t
 receiving phone before using phrases.
 The system share sheet sends a JSON file. Import replaces only the included categories,
 keeping excluded presets and settings unchanged. Importing Scan settings can enable
-local scan logging; log contents and scanned QR payloads are never included. Phone
+local scan logging; log contents and scanned badge data are never included. Phone
 identity, cap connections, permissions and live running state are not shared.
 Older version-2 files keep newer settings they do not contain. Older full JSON backups
 remain importable with their original full-replacement behavior. Reconnect after importing
@@ -290,20 +290,27 @@ not fetched data or a live display state. Import updates the field immediately
 without fetching or uploading; older backups that omit these fields preserve their
 local values, including handle-only backups from earlier versions.
 
-## QR badge greetings
+## Badge scanning and greetings
 
-The **Scan** tab scans QR codes locally using the camera (Android/iOS app or an HTTPS
-browser with camera permission). Only the primary cap connected to the scanning phone
+The **Scan** tab reads QR codes and 1D barcodes locally from the camera, or captures
+printed badge text for on-device English OCR. This works in the Android/iOS app and in
+an HTTPS browser with camera permission. The OCR engine and its English model are bundled
+with the app and cached for offline use; first install/update downloads about 7 MB of
+scanner assets. No scan data is sent to a server. Only the primary cap connected to the scanning phone
 is interrupted; other connected caps continue unchanged. The camera stops after one
-successful scan, on Stop, on changing tabs, or when the app is hidden.
+successful code scan, after an OCR capture, on Stop, on changing tabs, or when the app is hidden.
+For OCR, center the printed name and company in the preview and tap **Capture text**.
 
 Configure a greeting such as `Hi {name}!`, its scroll speed, and the repetition count
 (**3 by default**). A name is extracted automatically from plain text, JSON name fields,
-or a vCard. Save up to **three QR profiles** locally, each with a regex, greeting template,
-and note; **None** selects the general plain-text/JSON/vCard parser. For other badge formats,
+vCards, MECARD, and multi-line printed badge text; contact fields include company, job title,
+email, phone, URL and notes. Save up to **three scan profiles** locally, each with a regex,
+greeting template, and note; **None** selects the general parser. For other badge formats,
 enter a JavaScript regex **without `/` delimiters**. Its first three capture groups map to
 `{name}`/`{firstname}`, `{lastname}`, and `{company}`; named groups
-`(?<name>...)`/`(?<firstname>...)`, `(?<lastname>...)`, and `(?<company>...)` are also supported.
+`(?<name>...)`/`(?<firstname>...)`, `(?<lastname>...)`, `(?<company>...)`,
+`(?<title>...)`, `(?<email>...)`, `(?<phone>...)`, `(?<url>...)`, and `(?<notes>...)`
+are also supported. Greeting templates can use each of those fields.
 For example, the MS AI Tour badge format
 `^[^^]*\^(?<firstname>[^^]+)\^(?<lastname>[^^]+)\^(?<company>[^^]+)\^` extracts the
 three fields. `Hello {firstname} {lastname} from {company}!` uses them in a greeting.
@@ -311,7 +318,7 @@ Without capture groups, a named `name` group or the whole match supplies `{name}
 Matches are not URL-decoded.
 Unmatched/invalid patterns show an error without changing the cap. Regex extraction
 runs in a worker with a timeout so a pathological pattern cannot block the UI.
-Manual QR-data entry is available when a camera cannot be used.
+Manual scan-data entry is available when a camera cannot be used.
 
 Send content to the cap once before scanning, or enable **Keep cap black when idle**:
 the protocol cannot read back content that was installed by another app or before the
@@ -333,10 +340,11 @@ Finite GIF-loop handling and precise physical playback timing still need verific
 the actual cap firmware; BLE acknowledgements confirm transfer, not displayed frame counts.
 Scanner configuration stays in local storage; QR payloads are not persisted unless you
 enable **Save all scanned data to a local file** in the Scan tab (off by default).
-While enabled, every camera scan or submitted manual entry is appended before extraction,
+While enabled, every camera scan, OCR capture or submitted manual entry is appended before extraction,
 including entries whose greeting fails. The local `qr-scan-log.jsonl` file contains one JSON
-object per line with a UTC timestamp, source (`camera`/`manual`), the complete unmodified
-payload (`raw`), and the selected profile's ID/note (or `null`). JSON escaping preserves
+object per line with a UTC timestamp, source (`camera`/`ocr`/`manual`), the complete unmodified
+payload (`raw`), and the selected profile's ID/note (or `null`). OCR remains on-device.
+JSON escaping preserves
 embedded line breaks. Logging stays enabled across restarts until switched off; disabling
 it keeps the existing log. Logs may contain personal data: obtain appropriate consent and
 share only with trusted recipients.
@@ -350,9 +358,10 @@ backup/import. The resulting greeting is sent to the cap over BLE.
 
 Credits: inspired by **Rob Bos / Xebia's [badge-scanner](https://github.com/xebia/badge-scanner)**.
 No code was copied from that repository, which had no declared license when inspected.
-The independent scanner bundles **ZXing Browser (MIT)** and **ZXing JS (Apache-2.0)**;
+The independent scanner bundles **ZXing Browser (MIT)**, **ZXing JS (Apache-2.0)**,
+and **Tesseract.js (Apache-2.0)** with its English model;
 credits and full licenses are shipped in `public/licenses/` and linked in the Scan tab.
-The decoder is bundled locally, not loaded from a CDN, and is cached for offline use.
+Scanner assets are bundled locally, not loaded from a CDN, and are cached for offline use.
 No native scanner plugin or Android minimum-SDK increase is required.
 
 ## Download Android and iOS releases

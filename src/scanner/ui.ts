@@ -9,6 +9,7 @@ import { vibrateFeedback } from '../feedback';
 import { QrCamera } from './camera';
 import { extractNameSafely } from './extract';
 import { appendScanLog, shareScanLog } from './log';
+import { BadgeTextRecognizer } from './ocr';
 import {
   DEFAULT_GREETING, greetingDuration, greetingText, validateGreeting, validateGreetingProfiles,
   type ExtractedName, type GreetingProfile, type GreetingProfileState, type GreetingSettings, type ScannerBackup,
@@ -25,7 +26,10 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 export class GreetingUi {
   private camera = new QrCamera();
+  private recognizer = new BadgeTextRecognizer();
+  private cameraMode: 'codes' | 'text' | null = null;
   private scanning = false;
+  private recognizing = false;
   private processing = false;
   private playing?: DeviceController;
   private scanId = 0;
@@ -40,65 +44,73 @@ export class GreetingUi {
   async init() {
     $('view-scan').innerHTML = `
       <div class="card">
-        <h2>QR greeting</h2>
+        <h2>Badge greeting</h2>
         <div class="row scan-actions">
-          <button id="qr-start" class="primary">Scan QR code</button>
+          <button id="qr-start" class="primary">Scan QR / barcode</button>
+          <button id="qr-text-start">Scan printed text</button>
           <button id="qr-stop" hidden>Stop camera</button>
           <button id="qr-cancel" hidden>End greeting</button>
         </div>
-        <video id="qr-video" playsinline muted hidden aria-label="QR camera preview"></video>
+        <div id="qr-video-wrap" hidden>
+          <video id="qr-video" playsinline muted aria-label="Badge camera preview"></video>
+          <div id="qr-reticle" hidden aria-hidden="true"></div>
+        </div>
+        <div id="qr-ocr-controls" hidden>
+          <p class="small">Frame the printed name and company, then capture. Text is recognized on this device.</p>
+          <button id="qr-capture" class="primary">Capture text</button>
+        </div>
         <p id="qr-status" role="status" aria-live="polite"></p>
         <p id="qr-error" class="bad" role="alert"></p>
         <p id="qr-ready" class="small" role="status"></p>
-        <p class="small">Scan a badge to greet its owner on this phone's primary cap. Other caps keep playing.
+        <p class="small">Scan a badge code or capture its printed text to greet its owner on this phone's primary cap. Other caps keep playing.
         Send content to the cap first so it can be restored afterwards.</p>
-        <label for="qr-profile">Saved QR profile</label>
-        <select id="qr-profile"><option value="">None — general QR data</option></select>
+        <label for="qr-profile">Saved badge profile</label>
+        <select id="qr-profile"><option value="">None — general scan data</option></select>
       </div>
       <div class="card">
-        <h2>QR profile</h2>
+        <h2>Badge profile</h2>
         <label for="qr-note">Profile note</label>
         <input id="qr-note" type="text" maxlength="60" placeholder="e.g. MS AI Tour" />
         <div class="row">
           <button id="qr-profile-save">Save profile</button>
           <button id="qr-profile-delete" hidden>Delete profile</button>
         </div>
-        <p class="small">Save up to three profiles. Select None for the default plain-text, JSON or vCard extraction.</p>
+        <p class="small">Save up to three profiles. Select None for automatic badge-text, plain-text, JSON, vCard or MECARD extraction.</p>
         <label for="qr-pattern">Name regex (optional)</label>
         <input id="qr-pattern" type="text" maxlength="300" spellcheck="false" aria-describedby="qr-pattern-help" />
-        <p id="qr-pattern-help" class="small">Without a regex: plain names, JSON names and vCards.
+        <p id="qr-pattern-help" class="small">Without a regex: printed badge text, plain names, JSON, vCards and MECARD.
         Regex capture groups 1–3 map to firstname, lastname and company. Named groups may use firstname or name,
-        lastname, and company. Example for MS AI Tour badges: ^[^^]*\\^(?&lt;firstname&gt;[^^]+)\\^(?&lt;lastname&gt;[^^]+)\\^(?&lt;company&gt;[^^]+)\\^.
+        lastname, company, title, email, phone, url and notes. Example for MS AI Tour badges: ^[^^]*\\^(?&lt;firstname&gt;[^^]+)\\^(?&lt;lastname&gt;[^^]+)\\^(?&lt;company&gt;[^^]+)\\^.
         Enter the pattern without / delimiters.</p>
       </div>
       <div class="card">
         <h2>Greeting settings</h2>
         <label for="qr-template">Greeting</label>
         <input id="qr-template" type="text" maxlength="200" aria-describedby="qr-template-help" />
-        <p id="qr-template-help" class="small">Use {name} or {firstname}, {lastname} and {company} for the captured fields.</p>
+        <p id="qr-template-help" class="small">Use {name} or {firstname}, {lastname}, {company}, {title}, {email}, {phone}, {url} or {notes} for captured fields.</p>
         <label for="qr-repetitions">Repetitions</label>
         <input id="qr-repetitions" type="number" min="1" max="65536" step="1" />
         <label for="qr-speed">Scroll speed</label>
         <input id="qr-speed" type="range" min="1" max="10" step="1" />
         <details>
-          <summary>Enter QR data manually</summary>
-          <label for="qr-raw">QR data (not saved)</label>
+          <summary>Enter scan data manually</summary>
+          <label for="qr-raw">Scan data (not saved)</label>
           <textarea id="qr-raw" rows="3" maxlength="4096"></textarea>
-          <button id="qr-submit">Greet from QR data</button>
+          <button id="qr-submit">Greet from scan data</button>
         </details>
       </div>
       <div class="card">
         <h2>Scan log &amp; privacy</h2>
         <label><input id="qr-log-enabled" type="checkbox" /> Save all scanned data to a local file</label>
-        <p class="small">Off by default. When enabled, logs complete QR payloads (including failed greetings and manual entries),
+        <p class="small">Off by default. When enabled, logs complete camera, OCR and manual scan data (including failed greetings),
         timestamps and profile notes in qr-scan-log.jsonl. This may include personal data.
         Turning logging off keeps the existing file. Logs are separate from preset backups.
         Share only with trusted recipients.</p>
         <button id="qr-log-share">Share scan log</button>
         <p id="qr-log-status" role="status" aria-live="polite"></p>
         <p id="qr-log-error" class="bad" role="alert"></p>
-        <p class="small">QR data is processed locally and is only saved when logging is enabled. Only the greeting is sent to your cap over Bluetooth.
-        Camera access requires permission.
+        <p class="small">Scan data and OCR are processed locally and are only saved when logging is enabled. Only the greeting is sent to your cap over Bluetooth.
+        Camera access requires permission. The English text-recognition model is bundled for offline use.
         Keep the app open until the previous content is restored.</p>
         <p class="small">Inspired by <a href="https://github.com/xebia/badge-scanner" target="_blank" rel="noopener noreferrer">Rob Bos / Xebia's badge-scanner</a>.
         QR decoding: <a href="https://github.com/zxing-js/browser" target="_blank" rel="noopener noreferrer">ZXing Browser (MIT)</a>,
@@ -121,7 +133,7 @@ export class GreetingUi {
         const selected = this.profiles.find((profile) => profile.id === this.selectedProfileId);
         if (selected && !restoredSettings) settings = { ...settings, pattern: selected.pattern, template: selected.template };
       }
-    } catch (e) { this.error(`Could not restore saved QR profiles: ${this.message(e)}`); }
+    } catch (e) { this.error(`Could not restore saved badge profiles: ${this.message(e)}`); }
     try {
       const enabled = await loadKv('qrScanLogging');
       if (enabled !== undefined && typeof enabled !== 'boolean') throw new Error('Invalid logging preference.');
@@ -143,6 +155,8 @@ export class GreetingUi {
     $('qr-profile-save').onclick = () => { void this.saveProfile(); };
     $('qr-profile-delete').onclick = () => { void this.deleteProfile(); };
     $('qr-start').onclick = () => { void this.scan(); };
+    $('qr-text-start').onclick = () => { void this.scanText(); };
+    $('qr-capture').onclick = () => { void this.captureText(); };
     $('qr-stop').onclick = () => this.stopCamera();
     $('qr-submit').onclick = () => { void this.greet($<HTMLTextAreaElement>('qr-raw').value, this.ctx.controller(), 'manual'); };
     $('qr-log-enabled').onchange = () => { void this.setLogging(); };
@@ -177,7 +191,7 @@ export class GreetingUi {
     try {
       const result = await shareScanLog();
       $('qr-log-status').textContent = result === 'downloaded' ? 'Scan log downloaded.' : result === 'cancelled' ? 'Sharing cancelled.' : 'Scan log share dialog closed.';
-    } catch (e) { $('qr-log-error').textContent = `Could not share scan log: ${this.message(e)}. Enable logging and scan a QR code to create the file.`; }
+    } catch (e) { $('qr-log-error').textContent = `Could not share scan log: ${this.message(e)}. Enable logging and scan a badge to create the file.`; }
     finally { this.sharingLog = false; this.updateStatus(); }
   }
   private error(message: string) { $('qr-error').textContent = message; }
@@ -198,7 +212,7 @@ export class GreetingUi {
 
   private renderProfiles() {
     const select = $<HTMLSelectElement>('qr-profile');
-    select.replaceChildren(new Option('None — general QR data', ''));
+    select.replaceChildren(new Option('None — general scan data', ''));
     for (const profile of this.profiles) select.add(new Option(`${profile.id}. ${profile.note}`, profile.id));
     $<HTMLButtonElement>('qr-profile-delete').hidden = !this.selectedProfileId;
   }
@@ -258,7 +272,7 @@ export class GreetingUi {
   private async selectProfile(id: string | null) {
     const profile = this.profiles.find((item) => item.id === id);
     if (id && !profile) {
-      this.error('That QR profile is no longer saved.');
+      this.error('That badge profile is no longer saved.');
       return;
     }
     this.selectedProfileId = id;
@@ -269,7 +283,7 @@ export class GreetingUi {
     try {
       await Promise.all([saveKv('qrGreeting', this.readSettings()), this.persistProfiles()]);
       this.error('');
-    } catch (e) { this.error(`Could not select QR profile: ${this.message(e)}`); }
+    } catch (e) { this.error(`Could not select badge profile: ${this.message(e)}`); }
   }
 
   private async saveProfile() {
@@ -287,8 +301,8 @@ export class GreetingUi {
       this.renderProfiles();
       $<HTMLSelectElement>('qr-profile').value = id;
       this.error('');
-      this.status(`Saved QR profile "${note}".`);
-    } catch (e) { this.error(`Could not save QR profile: ${this.message(e)}`); }
+      this.status(`Saved badge profile "${note}".`);
+    } catch (e) { this.error(`Could not save badge profile: ${this.message(e)}`); }
   }
 
   private async deleteProfile() {
@@ -304,8 +318,8 @@ export class GreetingUi {
       $<HTMLInputElement>('qr-template').value = DEFAULT_GREETING.template;
       await saveKv('qrGreeting', this.readSettings());
       this.error('');
-      this.status('Deleted QR profile.');
-    } catch (e) { this.error(`Could not delete QR profile: ${this.message(e)}`); }
+      this.status('Deleted badge profile.');
+    } catch (e) { this.error(`Could not delete badge profile: ${this.message(e)}`); }
   }
 
   updateStatus() {
@@ -317,7 +331,14 @@ export class GreetingUi {
       : ctl.temporaryActive || this.processing ? 'Wait for the current greeting to finish, or end it above.'
       : this.sharingLog || this.savingLogging ? 'Wait for the scan log operation to finish.' : 'Ready to scan a badge.';
     $<HTMLButtonElement>('qr-start').disabled = unavailable || this.scanning;
+    $<HTMLButtonElement>('qr-text-start').disabled = unavailable || this.scanning;
     $<HTMLButtonElement>('qr-submit').disabled = unavailable || this.scanning;
+    const video = $<HTMLVideoElement>('qr-video');
+    const videoReady = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0;
+    $<HTMLButtonElement>('qr-capture').disabled = !this.scanning || this.cameraMode !== 'text' || this.recognizing || !videoReady;
+    $('qr-video-wrap').hidden = !this.scanning;
+    $('qr-ocr-controls').hidden = !this.scanning || this.cameraMode !== 'text';
+    $('qr-reticle').hidden = this.cameraMode !== 'text';
     $('qr-stop').hidden = !this.scanning;
     $('qr-cancel').hidden = !this.playing;
     $<HTMLInputElement>('qr-log-enabled').disabled = this.processing || this.scanning || this.savingLogging || this.sharingLog;
@@ -332,16 +353,18 @@ export class GreetingUi {
     const wasScanning = this.scanning;
     this.camera.stop();
     this.scanning = false;
+    this.cameraMode = null;
     const video = $<HTMLVideoElement>('qr-video');
-    if (video) { video.srcObject = null; video.hidden = true; }
+    if (video) { video.onloadeddata = null; video.srcObject = null; }
     if (wasScanning) this.status('Camera stopped.');
     this.updateStatus();
   }
 
-  private async scan() {
+  private async startCamera(mode: 'codes' | 'text') {
     const target = this.ctx.controller();
     const attempt = ++this.scanId;
     this.scanning = true;
+    this.cameraMode = mode;
     this.updateStatus();
     try {
       const settings = this.readSettings();
@@ -349,21 +372,74 @@ export class GreetingUi {
       if (attempt !== this.scanId) return;
       this.error('');
       const video = $<HTMLVideoElement>('qr-video');
-      video.hidden = false;
+      video.onloadeddata = () => this.updateStatus();
       this.status('Starting camera. Allow camera access when prompted.');
-      await this.camera.start(video, (raw) => {
-        this.stopCamera();
-        void this.greet(raw, target, 'camera');
-      }, (e) => { this.stopCamera(); this.error(`Camera failed: ${this.message(e)}. Retry or enter QR data manually.`); });
-      if (this.scanning) this.status('Point the camera at a QR code. The greeting starts immediately after scanning.');
+      if (mode === 'codes') {
+        await this.camera.start(video, (raw) => {
+          this.stopCamera();
+          void this.greet(raw, target, 'camera');
+        }, (e) => { this.stopCamera(); this.error(`Camera failed: ${this.message(e)}. Retry or enter scan data manually.`); });
+      } else {
+        await this.camera.preview(video);
+      }
+      if (this.scanning) this.status(mode === 'codes'
+        ? 'Point the camera at a QR code or barcode. The greeting starts immediately after scanning.'
+        : 'Frame the printed name and company, then capture the text.');
     } catch (e) {
       if (attempt !== this.scanId) return;
       this.stopCamera();
-      this.error(`Could not start scanner: ${this.message(e)}. Retry or enter QR data manually.`);
+      this.error(`Could not start scanner: ${this.message(e)}. Retry or enter scan data manually.`);
     }
   }
 
-  private async greet(raw: string, target: DeviceController, source: 'camera' | 'manual') {
+  private async scan() { await this.startCamera('codes'); }
+  private async scanText() { await this.startCamera('text'); }
+
+  private async captureText() {
+    if (!this.scanning || this.cameraMode !== 'text' || this.recognizing) return;
+    const video = $<HTMLVideoElement>('qr-video');
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
+      this.error('Camera is not ready yet. Wait for the preview, then capture again.');
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    const inset = 0.15;
+    const sx = Math.round(video.videoWidth * inset);
+    const sy = Math.round(video.videoHeight * inset);
+    canvas.width = Math.round(video.videoWidth * (1 - inset * 2));
+    canvas.height = Math.round(video.videoHeight * (1 - inset * 2));
+    const context = canvas.getContext('2d');
+    if (!context) {
+      this.error('Text recognition is unavailable because canvas rendering failed.');
+      return;
+    }
+    context.drawImage(video, sx, sy, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+
+    const attempt = this.scanId;
+    const target = this.ctx.controller();
+    this.recognizing = true;
+    this.updateStatus();
+    this.error('');
+    this.status('Loading the offline text recognizer…');
+    try {
+      const raw = await this.recognizer.recognize(canvas, (status, progress) => {
+        if (attempt === this.scanId) this.status(`${status} (${Math.round(progress * 100)}%)…`);
+      });
+      if (attempt !== this.scanId) return;
+      this.stopCamera();
+      void this.greet(raw, target, 'ocr');
+    } catch (e) {
+      if (attempt === this.scanId) {
+        this.error(`Text recognition failed: ${this.message(e)}`);
+        this.status('Adjust the badge position or lighting, then capture again.');
+      }
+    } finally {
+      this.recognizing = false;
+      this.updateStatus();
+    }
+  }
+
+  private async greet(raw: string, target: DeviceController, source: 'camera' | 'ocr' | 'manual') {
     if (this.processing) return;
     this.processing = true;
     this.error('');
