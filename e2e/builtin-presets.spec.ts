@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test';
+import { connectHat, installFakeHat } from './hat';
 import { readFile } from 'node:fs/promises';
 
 test('built-ins load, send, save, back up and remain available offline', async ({ page, context }) => {
   const external: string[] = [];
   page.on('request', (r) => { if (!r.url().startsWith('http://localhost:4173')) external.push(r.url()); });
   await page.goto('/#mock');
+  await connectHat(page);
   await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20_000 });
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
 
   for (const [id, kind] of [['xebia-github', 'text'], ['header', 'text'], ['lgtm', 'text'], ['xebia-logo', 'image'], ['github-copilot-logo', 'image'], ['party-popper', 'image']]) {
     await page.click('nav [data-tab=settings]');
@@ -59,6 +59,7 @@ test('built-ins load, send, save, back up and remain available offline', async (
 
   await context.setOffline(true);
   await page.reload();
+  await connectHat(page);
   await expect(page.locator('#c-kind')).toHaveValue('image');
   await expect(page.locator('#c-seq-list li')).toHaveCount(1);
   await page.click('nav [data-tab=settings]');
@@ -72,7 +73,9 @@ test('built-ins load, send, save, back up and remain available offline', async (
 });
 
 test('built-ins survive replacement imports on web and cannot shadow personal preset IDs', async ({ page }) => {
+  await installFakeHat(page);
   await page.goto('/');
+  await connectHat(page);
   await page.click('nav [data-tab=settings]');
   const file = {
     app: 'iledcolor-app', version: 2,

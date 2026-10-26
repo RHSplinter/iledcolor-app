@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { connectHat, installFakeHat } from './hat';
 
 for (const feature of ['scan', 'sound']) {
   test(`tabs respond while ${feature} settings are still loading`, async ({ page }) => {
+    await installFakeHat(page);
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.addInitScript((name) => {
@@ -21,6 +23,7 @@ for (const feature of ['scan', 'sound']) {
       };
     }, feature);
     await page.goto('/');
+    await connectHat(page);
     await expect(page.locator(feature === 'scan' ? '#qr-template' : '#sound-language')).toBeAttached();
     const settings = page.getByRole('tab', { name: 'Settings', exact: true });
     await settings.click();

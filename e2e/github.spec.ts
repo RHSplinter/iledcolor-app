@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { connectHat } from './hat';
 import { readFile } from 'node:fs/promises';
 
 async function expectCaptionPixels(page: Page) {
@@ -18,6 +19,8 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
     await route.fulfill({ json: { contributions: [{ date: now.toISOString().slice(0, 10), count: 4, level: 4 }] } });
   });
   await page.goto('/#mock');
+  await connectHat(page);
+  await expect(page.locator('#github-send')).toBeDisabled();
   await page.fill('#github-handle', 'octocat');
   await page.click('#github-load');
   await expect(page.locator('#github-status')).toContainText('Graph ready for octocat');
@@ -25,9 +28,7 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
   await expectCaptionPixels(page);
   await expect.poll(() => page.locator('#github-preview').evaluate((canvas: HTMLCanvasElement) =>
     [...canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data].some((v, i) => i % 4 !== 3 && v > 0))).toBe(true);
-  await expect(page.locator('#github-send')).toBeDisabled();
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
+  await expect(page.locator('#github-send')).toBeEnabled();
   await page.click('#github-send');
   await expect(page.locator('#github-status')).toContainText('octocat is scrolling on the hat');
   await expect(page.locator('#c-str')).toHaveValue('HI');
@@ -49,6 +50,7 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
   await expect(page.locator('#github-send')).toBeDisabled();
   expect(requests).toBe(1);
   await page.reload();
+  await connectHat(page);
   await expect(page.locator('#github-handle')).toHaveValue('FokkoVeegens');
   expect(requests).toBe(1);
 
@@ -72,11 +74,10 @@ test('long handles and coloured emoji fit the animation upload limit in either o
     await route.fulfill({ json: { contributions } });
   });
   await page.goto('/#mock');
+  await connectHat(page);
   await page.fill('#github-handle', handle);
   await page.click('#github-load');
   await expect(page.locator('#github-status')).toContainText(`Graph ready for ${handle}`);
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
   for (const rotation of ['0', '90']) {
     await page.click('nav [data-tab=settings]');
     await page.selectOption('#s-rot', rotation);
@@ -93,6 +94,7 @@ test('invalid handles and failed requests cannot send a stale graph; excluded ca
     await route.fulfill({ status: 404, json: { error: 'Not Found' } });
   });
   await page.goto('/#mock');
+  await connectHat(page);
   await page.fill('#github-handle', '@bad');
   await page.click('#github-load');
   await expect(page.locator('#github-status')).toContainText('valid GitHub handle');
@@ -122,6 +124,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
     await route.fulfill({ json: { contributions: [{ date: new Date().toISOString().slice(0, 10), count: 1, level: 1 }] } });
   });
   await page.goto('/#mock');
+  await connectHat(page);
   await expect(page.locator('#github-prefix')).toHaveValue('2026 contributions by {handle}: ');
   await expect(page.locator('#github-postfix')).toHaveValue('\u{1f389}\u{1f389}');
   await page.fill('#github-handle', '@invalid');
@@ -139,8 +142,6 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await page.fill('#github-postfix', ' Bye {handle} \u{1f389}');
   await expect(page.locator('#github-preview')).toBeVisible();
   expect(requests).toBe(1);
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
   await page.click('#github-send');
   await expect(page.locator('#github-status')).toContainText('is scrolling on the hat');
   await page.fill('#github-postfix', '\u00e9');
@@ -171,6 +172,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await expect(page.locator('#github-preview')).toBeHidden();
   expect(requests).toBe(1);
   await page.reload();
+  await connectHat(page);
   await expect(page.locator('#github-prefix')).toHaveValue('Hello {handle}: ');
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');
 
@@ -180,6 +182,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   })) });
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=connect]');
   await expect(page.locator('#github-handle')).toHaveValue('new-user');
   await expect(page.locator('#github-prefix')).toHaveValue('Hello {handle}: ');
@@ -191,6 +194,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   })) });
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=connect]');
   await expect(page.locator('#github-prefix')).toHaveValue('');
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');
