@@ -188,7 +188,7 @@ function payloadFields(text: string): Partial<ExtractedName> {
 }
 
 const TITLE_WORDS = /\b(consultant|engineer|manager|director|developer|trainer|lead|architect|founder|ceo|cto|specialist|designer|analyst|owner|partner)\b/i;
-const NAME_FRAGMENT = /^[A-Z][a-zA-Z'-]{1,24}$/;
+const NAME_FRAGMENT = /^\p{Lu}[\p{L}'-]{1,24}$/u;
 const BADGE_TIER = /^(expert|speaker|mvp|attendee|sponsor|organizer|organiser|volunteer|staff|vip|exhibitor|press|media|guest|keynote)$/i;
 const BADGE_NOISE = /[\\=~^`©®™•§¤¶_]/;
 
@@ -203,13 +203,13 @@ function parseFreeText(text: string): Partial<ExtractedName> {
   if (phone) fields.phone = phone;
 
   const lines = text.split(/\r?\n/).map((line) => line.trim().split(/\s+/)
-    .map((token) => token.replace(/^[^a-z]+|[^a-z]+$/gi, '')).filter(Boolean).join(' '))
+    .map((token) => token.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '')).filter(Boolean).join(' '))
     .filter((line) => line && line.length <= 40 && line.split(/\s+/).length <= 6 &&
-      /[a-z]/i.test(line) && !/\d/.test(line) && !BADGE_NOISE.test(line) &&
+      /\p{L}/u.test(line) && !/\d/.test(line) && !BADGE_NOISE.test(line) &&
       ![email, url, phone].some((contact) => contact && line.includes(contact)) &&
       line.replace(/\s/g, '').length > 0);
   const usableLines = lines.filter((line) => {
-    const letters = line.match(/[a-z]/gi)?.length ?? 0;
+    const letters = line.match(/\p{L}/gu)?.length ?? 0;
     const compact = line.replace(/\s/g, '');
     return compact.length > 0 && letters / compact.length >= 0.7 &&
       line.split(/\s+/).some((word) => word.length >= 3 && /[aeiou]/i.test(word));
@@ -241,9 +241,14 @@ function parseFreeText(text: string): Partial<ExtractedName> {
   } else {
     const candidate = usableLines.findIndex((_, index) => !used.has(index));
     if (candidate >= 0) {
-      fields.name = usableLines[candidate];
+      let nameEnd = candidate;
+      if (NAME_FRAGMENT.test(usableLines[candidate]!) && NAME_FRAGMENT.test(usableLines[candidate + 1] ?? '')) {
+        fields.name = `${usableLines[candidate]} ${usableLines[candidate + 1]}`;
+        used.add(candidate + 1);
+        nameEnd++;
+      } else fields.name = usableLines[candidate];
       used.add(candidate);
-      const companyIndex = usableLines.findIndex((_, index) => !used.has(index) && index > candidate);
+      const companyIndex = usableLines.findIndex((_, index) => !used.has(index) && index > nameEnd);
       if (companyIndex >= 0) {
         fields.company = usableLines[companyIndex];
         used.add(companyIndex);

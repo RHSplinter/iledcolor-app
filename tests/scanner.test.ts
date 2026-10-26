@@ -66,6 +66,12 @@ describe('QR names and greeting settings', () => {
     const parsed = extractName(String.raw`MECARD:N:Doe\, Jr.,John;NOTE:Speaker\;Tier\;ORG:Ignored;ORG:Xebia;;`, '');
     expect(parsed).toEqual({ name: 'John Doe, Jr.', company: 'Xebia', notes: 'Speaker;Tier;ORG:Ignored' });
   });
+  it('does not interpret escaped MECARD delimiters as fields or structured-name separators', () => {
+    expect(extractName(String.raw`MECARD:N:Bos,Rob;NOTE:Contact\;TEL:12345678;;`, ''))
+      .toEqual({ name: 'Rob Bos', notes: 'Contact;TEL:12345678' });
+    expect(extractName(String.raw`MECARD:N:Smith\, Jr.,Jane;;`, ''))
+      .toEqual({ name: 'Jane Smith, Jr.' });
+  });
   it('reconstructs noisy OCR names and extracts contacts from printed text', () => {
     const parsed = extractName('Conference\n7Rob\nBos\nSoftware Engineer\nXebia\nrob@example.org\n+31 20 123 4567', '');
     expect(parsed).toMatchObject({
@@ -73,6 +79,11 @@ describe('QR names and greeting settings', () => {
       email: 'rob@example.org', phone: '+31 20 123 4567',
     });
     expect(extractName('Rob Bos\nSoftware Engineer\nXebia\nSpeaker', '').notes).toBe('Badge tier: Speaker');
+  });
+  it('preserves Unicode letters in OCR names and reconstructs names without a title', () => {
+    expect(extractName('José Nuñez\nSoftware Engineer\nXebia', '').name).toBe('José Nuñez');
+    expect(extractName('Zoë\nSoftware Engineer\nXebia', '').name).toBe('Zoë');
+    expect(extractName('Rob\nBos\nXebia', '')).toMatchObject({ name: 'Rob Bos', company: 'Xebia' });
   });
   it('supports a named group, first capture group, full match and literal replacement', () => {
     expect(extractName('id=3;name=Rob Bos;', 'name=(?<name>[^;]+)')).toEqual({ name: 'Rob Bos' });
