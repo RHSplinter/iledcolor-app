@@ -20,6 +20,7 @@ export function initConnectionStatus(root: HTMLElement, onDisconnect: () => void
     if (!connected) return;
     close();
     onDisconnect();
+    root.ownerDocument.getElementById('btn-connect')?.focus();
   };
   root.ownerDocument.addEventListener('click', (event) => {
     if (!event.composedPath().includes(root)) close();

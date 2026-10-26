@@ -62,13 +62,18 @@ describe('connection status disclosure', () => {
   });
 
   it('disconnects only after selecting the revealed button and closes it', () => {
+    const connect = document.createElement('button');
+    connect.id = 'btn-connect';
+    document.body.append(connect);
     update(true);
     toggle.click();
     expect(onDisconnect).not.toHaveBeenCalled();
+    disconnect.focus();
     disconnect.click();
     expect(onDisconnect).toHaveBeenCalledTimes(1);
     expect(actions.hidden).toBe(true);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(connect);
   });
 
   it('dismisses on outside click but not a click inside the disclosure', () => {

@@ -186,7 +186,7 @@ function renderConnect() {
         <button id="btn-install" hidden>Install app</button>
       </div>
       <p id="conn-msg" class="small"></p>
-      <p class="small">Close other controller apps first. ${native ? `${platformName() === 'ios' ? 'iOS' : 'Android'} will ask for Bluetooth permission the first time you connect.` : 'Choose your hat in the browser Bluetooth picker. Connecting requires Web Bluetooth; editing and presets work offline.'}</p>
+      <p class="small">Close other controller apps first. ${native ? `${platformName() === 'ios' ? 'iOS' : 'Android'} will ask for Bluetooth permission the first time you connect.` : 'Choose your hat in the browser Bluetooth picker. Connecting requires Web Bluetooth; editing and presets are available after connecting.'}</p>
       <p class="small" id="install-help" hidden>To install: use your browser's Install app or Add to Home Screen option.</p>
     </div>
     <div id="content-editor"></div>
