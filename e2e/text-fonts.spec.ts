@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { connectHat, waitForServiceWorker } from './hat';
+import { openCustomSection, connectHat, waitForServiceWorker } from './hat';
 
 const fonts = ['silkscreen', 'tiny5', 'press-start', 'dotgothic', 'bitcount', 'monaspace'];
 
@@ -19,6 +19,7 @@ test('six distinct, crisp fonts have one-pixel spacing and match preview and moc
   await page.goto('/#mock');
   await connectHat(page);
   await waitForServiceWorker(page);
+  await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Hi!');
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-font option')).toHaveCount(6);
@@ -43,7 +44,7 @@ test('six distinct, crisp fonts have one-pixel spacing and match preview and moc
     expect(rows.lastIndexOf(true)).toBeLessThan(15);
     if (font === 'tiny5') expect(rows.lastIndexOf(true) - rows.indexOf(true) + 1).toBeGreaterThanOrEqual(10);
     samples.push(sample);
-    await page.click('nav [data-tab=connect]');
+    await page.click('nav [data-tab=custom]');
     await expect.poll(() => pixels(page, '#preview')).toEqual(sample);
     await expect(page.locator('#status')).toContainText('Ready');
     await page.click('#btn-send');
@@ -56,8 +57,9 @@ test('six distinct, crisp fonts have one-pixel spacing and match preview and moc
   // Ascenders and descenders of the full-height fonts reach the top and bottom LED rows.
   for (const [font, text] of [['bitcount', 'bjg'], ['monaspace', '$gj']]) {
     await page.selectOption('#s-font', font!);
-    await page.click('nav [data-tab=connect]');
-    await page.fill('#c-str', text!);
+    await page.click('nav [data-tab=custom]');
+    await openCustomSection(page, 'text');
+  await page.fill('#c-str', text!);
     await expect.poll(async () => {
       const image = await pixels(page, '#preview');
       return Array.from({ length: 16 }, (_, y) => image.slice(y * 32, (y + 1) * 32).includes('255,255,255')).every(Boolean);
@@ -82,7 +84,8 @@ test('emoji keep their full bitmap and two blank columns on both sides in every 
   const background = '0,0,0';
   const readText = async (text: string) => {
     const previous = await pixels(page, '#preview');
-    await page.fill('#c-str', text);
+    await openCustomSection(page, 'text');
+  await page.fill('#c-str', text);
     await expect.poll(() => pixels(page, '#preview')).not.toEqual(previous);
     return pixels(page, '#preview');
   };
@@ -90,7 +93,7 @@ test('emoji keep their full bitmap and two blank columns on both sides in every 
   for (const font of fonts) {
     await page.click('nav [data-tab=settings]');
     await page.selectOption('#s-font', font);
-    await page.click('nav [data-tab=connect]');
+    await page.click('nav [data-tab=custom]');
     const letter = await readText('i');
     const letterWidth = widthOf(letter);
     for (const emoji of ['💜', '👩‍💻']) {
@@ -108,7 +111,8 @@ test('emoji keep their full bitmap and two blank columns on both sides in every 
           for (let x = 0; x < letterWidth; x++) expected[y * 32 + letterOffset + x] = letter[y * 32 + x]!;
           for (let x = 0; x < emojiWidth; x++) expected[y * 32 + emojiOffset + x] = image[y * 32 + x]!;
         }
-        await page.fill('#c-str', emojiFirst ? `${emoji}i` : `i${emoji}`);
+        await openCustomSection(page, 'text');
+  await page.fill('#c-str', emojiFirst ? `${emoji}i` : `i${emoji}`);
         await expect.poll(() => pixels(page, '#preview')).toEqual(expected);
         await expect(page.locator('#c-warn')).toBeEmpty();
       }

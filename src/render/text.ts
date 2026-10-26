@@ -122,9 +122,9 @@ function fontSize(font: FontSpec, height: number): number {
 }
 
 /** One-line strip at natural width: hard-pixel ASCII text plus colour emoji. */
-export function renderStrip(text: string, height: number, fg: Rgb, bg: Rgb): { strip: RgbImage; unsupported: string[] } {
+export function renderStrip(text: string, height: number, fg: Rgb, bg: Rgb, fontId: TextFont = textFont): { strip: RgbImage; unsupported: string[] } {
   const { runs, unsupported } = splitRuns(text);
-  const font = TEXT_FONTS.find((f) => f.id === textFont)!;
+  const font = TEXT_FONTS.find((f) => f.id === fontId)!;
   const emojiPx = Math.max(8, height - 2);
   const glyphFor = glyphLookup(font, fontSize(font, height));
   const tokens = runs.flatMap<StripToken>((r) => {
@@ -164,8 +164,8 @@ export function renderStrip(text: string, height: number, fg: Rgb, bg: Rgb): { s
 }
 
 /** Single-line text rendered 1:1 onto the matrix, left-aligned; `clipped` when wider than the display. */
-export function renderText(text: string, width: number, height: number, fg: Rgb, bg: Rgb): TextRender {
-  const { strip, unsupported } = renderStrip(text, height, fg, bg);
+export function renderText(text: string, width: number, height: number, fg: Rgb, bg: Rgb, font?: TextFont): TextRender {
+  const { strip, unsupported } = renderStrip(text, height, fg, bg, font);
   const pixels = new Uint8Array(width * height * 3);
   for (let i = 0; i < width * height; i++) pixels.set(bg, i * 3);
   const w = Math.min(width, strip.width);
@@ -183,8 +183,8 @@ export function renderSpanMarquee(text: string, width: number, height: number, t
 }
 
 /** Frames of text scrolling in from the right and out to the left; the hat loops them as a GIF. */
-export function renderMarquee(text: string, width: number, height: number, fg: Rgb, bg: Rgb, step = 2): MarqueeRender {
-  const { strip, unsupported } = renderStrip(text, height, fg, bg);
+export function renderMarquee(text: string, width: number, height: number, fg: Rgb, bg: Rgb, step = 2, font?: TextFont): MarqueeRender {
+  const { strip, unsupported } = renderStrip(text, height, fg, bg, font);
   const stripW = strip.width;
   const frames: RgbImage[] = [];
   for (let shift = 0; shift < stripW + width; shift += step) {

@@ -33,9 +33,9 @@ for (const feature of ['scan', 'sound']) {
     await page.getByRole('tab', { name: feature === 'scan' ? 'Sound' : 'Scan', exact: true }).click();
     await expect(page.locator(feature === 'scan' ? '#sound-language' : '#qr-template'))
       .toHaveValue(feature === 'scan' ? 'en-US' : 'Hi {name}!');
-    await page.getByRole('tab', { name: 'Connect', exact: true }).click();
-    await expect(page.locator('#c-kind')).toBeVisible();
-    await page.getByRole('tab', { name: 'Connect', exact: true }).focus();
+    await page.getByRole('tab', { name: 'Custom', exact: true }).click();
+    await expect(page.locator('#custom-text > summary')).toBeVisible();
+    await page.getByRole('tab', { name: 'Custom', exact: true }).focus();
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('tab', { name: 'Scan', exact: true })).toBeFocused();
     expect(errors).toEqual([]);

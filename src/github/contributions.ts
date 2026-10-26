@@ -3,12 +3,16 @@ import { solid, type Rgb } from '../render/matrix';
 import { sliceSpan } from '../render/span';
 import { splitRuns } from '../render/segments';
 import { quantizeGifFrame } from '../render/gif';
+import { isTextFont, type TextFont } from '../render/fonts';
 
-export interface GitHubSettings { handle: string; prefix?: string; postfix?: string }
+/** `font` is the caption font; `null` follows the Settings LED text font. Fields absent in older files stay absent. */
+export interface GitHubSettings { handle: string; prefix?: string; postfix?: string; speed?: number; font?: TextFont | null }
 export const DEFAULT_GITHUB_PREFIX = '2026 contributions by {handle}: ';
 export const DEFAULT_GITHUB_POSTFIX = '\u{1f389}\u{1f389}';
 export const MAX_GITHUB_CAPTION_LENGTH = 200;
 export interface Contribution { date: string; count: number; level: number }
+/** A loaded graph kept with presets so they replay offline; `asOf` is the UTC date it was loaded. */
+export interface GitHubGraph { asOf: string; days: Contribution[] }
 const DAY = 86400000;
 // Green channel only: GitHub's mixed palette contains blue that dominates on the hat's LEDs.
 const COLORS: Rgb[] = [[0, 8, 0], [0, 48, 0], [0, 100, 0], [0, 170, 0], [0, 255, 0]];
@@ -26,10 +30,16 @@ export function validateGitHubSettings(raw: unknown): GitHubSettings {
     return value;
   };
   // Missing fields in older files are intentionally not replaced by defaults.
+  if ('speed' in raw && (typeof raw.speed !== 'number' || !Number.isInteger(raw.speed) || raw.speed < 1 || raw.speed > 10)) {
+    throw new Error('GitHub scroll speed must be an integer from 1 to 10.');
+  }
+  if ('font' in raw && raw.font !== null && !isTextFont(raw.font)) throw new Error('Invalid GitHub caption font.');
   return {
     handle: raw.handle,
     ...('prefix' in raw ? { prefix: caption('prefix', raw.prefix) } : {}),
     ...('postfix' in raw ? { postfix: caption('postfix', raw.postfix) } : {}),
+    ...('speed' in raw ? { speed: raw.speed as number } : {}),
+    ...('font' in raw ? { font: raw.font as TextFont | null } : {}),
   };
 }
 
@@ -55,6 +65,19 @@ export function parseContributions(raw: unknown): Contribution[] {
     return { date: day.date, count: day.count, level: day.level };
   });
 }
+
+export function validateGitHubGraph(raw: unknown): GitHubGraph {
+  if (typeof raw !== 'object' || raw === null || !('asOf' in raw) || typeof raw.asOf !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.asOf)
+    || !Number.isFinite(Date.parse(raw.asOf)) || new Date(raw.asOf).toISOString().slice(0, 10) !== raw.asOf) {
+    throw new Error('Invalid GitHub graph date.');
+  }
+  if (!('days' in raw)) throw new Error('Invalid GitHub graph.');
+  try { return { asOf: raw.asOf, days: parseContributions({ contributions: raw.days }) }; }
+  catch { throw new Error('Invalid GitHub graph.'); }
+}
+
+/** The moment a stored graph is drawn for, so replaying it later keeps the same 53 weeks. */
+export const graphDate = (asOf: string): Date => new Date(`${asOf}T12:00:00Z`);
 
 export async function fetchContributions(handle: string, signal?: AbortSignal): Promise<Contribution[]> {
   validateGitHubSettings({ handle });

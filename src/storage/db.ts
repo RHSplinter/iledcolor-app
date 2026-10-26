@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, validateSettings, type Preset, type Settings } from './presets';
+import { DEFAULT_SETTINGS, mergeCustomDrafts, validateCustomDrafts, validateSettings, type Preset, type Settings } from './presets';
 import type { ApproachSettings } from '../approach/tiers';
 import type { BackupFeatures } from './sharedBackup';
 import { isTextFont } from '../render/fonts';
@@ -89,7 +89,24 @@ export async function restoreBackup(presets: Preset[], settings?: Settings, appr
         }
         if (approach) t.objectStore('kv').put(approach, 'approach');
         if (features.sound) t.objectStore('kv').put(features.sound, 'soundPreferences');
-        for (const key of ['createContent', 'createSequence', 'qrProfiles', 'qrGreeting', 'qrScanLogging', 'github'] as const) {
+        for (const key of ['customDrafts', 'github'] as const) {
+          const value = features[key];
+          if (value === undefined) continue;
+          const kv = t.objectStore('kv');
+          const request = kv.get(key);
+          request.onsuccess = () => {
+            try {
+              const previous: unknown = request.result;
+              kv.put(key === 'customDrafts'
+                ? mergeCustomDrafts(previous === undefined ? {} : validateCustomDrafts(previous), validateCustomDrafts(value))
+                : { ...(typeof previous === 'object' && previous !== null ? previous : {}), ...value }, key);
+            } catch (e) {
+              t.abort();
+              reject(new Error(`Import could not be saved: ${(e as Error).message}`));
+            }
+          };
+        }
+        for (const key of ['createContent', 'createSequence', 'qrProfiles', 'qrGreeting', 'qrScanLogging'] as const) {
           if (features[key] !== undefined) t.objectStore('kv').put(features[key], key === 'qrProfiles' ? 'qrGreetingProfiles' : key);
         }
       } catch (e) {
