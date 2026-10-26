@@ -163,6 +163,7 @@ function payloadFields(text: string): Partial<ExtractedName> {
   if (/^tel:/i.test(text)) return { phone: text.slice(4) };
   if (/^https?:\/\//i.test(text)) return { url: text };
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return { email: text };
+  if (!/[\r\n]/.test(text) && !/^[a-z][a-z\d+.-]*:/i.test(text)) return { name: text };
   return parseFreeText(text);
 }
 

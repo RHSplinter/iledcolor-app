@@ -404,10 +404,14 @@ export class GreetingUi {
     }
     const canvas = document.createElement('canvas');
     const inset = 0.15;
-    const sx = Math.round(video.videoWidth * inset);
-    const sy = Math.round(video.videoHeight * inset);
-    canvas.width = Math.round(video.videoWidth * (1 - inset * 2));
-    canvas.height = Math.round(video.videoHeight * (1 - inset * 2));
+    const bounds = video.getBoundingClientRect();
+    const scale = Math.max(bounds.width / video.videoWidth, bounds.height / video.videoHeight);
+    const visibleWidth = bounds.width / scale;
+    const visibleHeight = bounds.height / scale;
+    const sx = Math.round((video.videoWidth - visibleWidth) / 2 + visibleWidth * inset);
+    const sy = Math.round((video.videoHeight - visibleHeight) / 2 + visibleHeight * inset);
+    canvas.width = Math.round(visibleWidth * (1 - inset * 2));
+    canvas.height = Math.round(visibleHeight * (1 - inset * 2));
     const context = canvas.getContext('2d');
     if (!context) {
       this.error('Text recognition is unavailable because canvas rendering failed.');
