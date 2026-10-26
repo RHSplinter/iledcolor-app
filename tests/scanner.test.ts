@@ -40,15 +40,65 @@ describe('QR names and greeting settings', () => {
     ['BEGIN:VCARD\r\nFN:Rob Bos\r\nEND:VCARD', 'Rob Bos'],
     ['BEGIN:VCARD\nN:Bos;Rob;;;\nEND:VCARD', 'Rob Bos'],
     ['BEGIN:VCARD\nFN:Rob\n Bos\nEND:VCARD', 'RobBos'],
+    ['MECARD:N:Bos,Rob;ORG:Xebia;EMAIL:rob@example.org;;', 'Rob Bos'],
+    ['Xebia Build\n7 Rob\nBos\nSoftware Engineer\nXebia', 'Rob Bos'],
   ])('extracts supported data without a regex: %s', (raw, name) => expect(extractName(raw, '').name).toBe(name));
+  it('parses badge contact fields and makes them available to greeting templates', () => {
+    const parsed = extractName(
+      'BEGIN:VCARD\nFN:Rob Bos\nORG:Xebia\nTITLE:Software Engineer\nEMAIL:rob@example.org\nTEL:+31 20 123 4567\nURL:https://example.org\nNOTE:Speaker\nEND:VCARD',
+      '',
+    );
+    expect(parsed).toEqual({
+      name: 'Rob Bos', company: 'Xebia', title: 'Software Engineer', email: 'rob@example.org',
+      phone: '+31 20 123 4567', url: 'https://example.org', notes: 'Speaker',
+    });
+    expect(greetingText('Hi {name}, {title} at {company}: {email}', parsed))
+      .toBe('Hi Rob Bos, Software Engineer at Xebia: rob@example.org');
+  });
+  it('keeps oversized optional vCard notes from blocking a valid name', () => {
+    const notes = 'S'.repeat(350);
+    const parsed = extractName(`BEGIN:VCARD\nFN:Rob Bos\nNOTE:${notes}\nEND:VCARD`, '');
+    expect(parsed).toMatchObject({ name: 'Rob Bos', notes });
+    expect(greetingText('Hi {name}!', parsed)).toBe('Hi Rob Bos!');
+    expect(() => greetingText('Hi {name}: {notes}', parsed)).toThrow(/too long/);
+  });
+  it('respects escaped delimiters in MECARD values', () => {
+    const parsed = extractName(String.raw`MECARD:N:Doe\, Jr.,John;NOTE:Speaker\;Tier\;ORG:Ignored;ORG:Xebia;;`, '');
+    expect(parsed).toEqual({ name: 'John Doe, Jr.', company: 'Xebia', notes: 'Speaker;Tier;ORG:Ignored' });
+  });
+  it('does not interpret escaped MECARD delimiters as fields or structured-name separators', () => {
+    expect(extractName(String.raw`MECARD:N:Bos,Rob;NOTE:Contact\;TEL:12345678;;`, ''))
+      .toEqual({ name: 'Rob Bos', notes: 'Contact;TEL:12345678' });
+    expect(extractName(String.raw`MECARD:N:Smith\, Jr.,Jane;;`, ''))
+      .toEqual({ name: 'Jane Smith, Jr.' });
+  });
+  it('reconstructs noisy OCR names and extracts contacts from printed text', () => {
+    const parsed = extractName('Conference\n7Rob\nBos\nSoftware Engineer\nXebia\nrob@example.org\n+31 20 123 4567', '');
+    expect(parsed).toMatchObject({
+      name: 'Rob Bos', title: 'Software Engineer', company: 'Xebia',
+      email: 'rob@example.org', phone: '+31 20 123 4567',
+    });
+    expect(extractName('Rob Bos\nSoftware Engineer\nXebia\nSpeaker', '').notes).toBe('Badge tier: Speaker');
+  });
+  it('preserves Unicode letters in OCR names and reconstructs names without a title', () => {
+    expect(extractName('José Nuñez\nSoftware Engineer\nXebia', '').name).toBe('José Nuñez');
+    expect(extractName('Zoë\nSoftware Engineer\nXebia', '').name).toBe('Zoë');
+    expect(extractName('Rob\nBos\nXebia', '')).toMatchObject({ name: 'Rob Bos', company: 'Xebia' });
+  });
   it('supports a named group, first capture group, full match and literal replacement', () => {
     expect(extractName('id=3;name=Rob Bos;', 'name=(?<name>[^;]+)')).toEqual({ name: 'Rob Bos' });
     expect(extractName('id=3;name=Rob;', 'name=([^;]+)')).toEqual({ name: 'Rob' });
     expect(extractName('id=3;name=Rob;', 'Rob')).toEqual({ name: 'Rob' });
     expect(extractName('Rob|Bos|Xebia', '([^|]+)\\|([^|]+)\\|([^|]+)')).toEqual({ name: 'Rob', lastname: 'Bos', company: 'Xebia' });
+    expect(extractName('Rob|Bos|Xebia|Engineer|rob@example.org', '(?<name>[^|]+)\\|(?<lastname>[^|]+)\\|(?<company>[^|]+)\\|(?<title>[^|]+)\\|(?<email>[^|]+)'))
+      .toMatchObject({ name: 'Rob', lastname: 'Bos', company: 'Xebia', title: 'Engineer', email: 'rob@example.org' });
     expect(extractName('Rob,Bos,Xebia', '(?<name>[^,]+),(?<lastname>[^,]+),(?<company>[^,]+)')).toEqual({
       name: 'Rob', lastname: 'Bos', company: 'Xebia',
     });
+    expect(extractName('Rob|Engineer|rob@example.org', '(?<name>[^|]+)\\|(?<title>[^|]+)\\|(?<email>[^|]+)'))
+      .toEqual({ name: 'Rob', title: 'Engineer', email: 'rob@example.org' });
+    expect(extractName('Rob|Bos|Xebia|Engineer', '(?<name>[^|]+)\\|([^|]+)\\|([^|]+)\\|(?<title>[^|]+)'))
+      .toEqual({ name: 'Rob', lastname: 'Bos', company: 'Xebia', title: 'Engineer' });
     expect(greetingText('Hi {name}, {lastname} at {company}!', extractName('Rob|Bos|Xebia', '([^|]+)\\|([^|]+)\\|([^|]+)')))
       .toBe('Hi Rob, Bos at Xebia!');
     expect(greetingText('Hi {name} {lastname} {company}!', { name: 'Rob' })).toBe('Hi Rob  !');

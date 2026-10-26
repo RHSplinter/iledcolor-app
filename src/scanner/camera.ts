@@ -13,25 +13,39 @@ export class QrCamera {
     this.stream = undefined;
   }
 
-  async start(video: HTMLVideoElement, onResult: (text: string) => void, onError: (error: Error) => void) {
-    this.stop();
-    const generation = this.generation;
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access is unavailable. Use HTTPS or the native app, or enter QR data below.');
+  private async open(video: HTMLVideoElement, generation: number): Promise<MediaStream | undefined> {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access is unavailable. Use HTTPS or the native app, or enter scan data below.');
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
     } catch (e) {
-      if (generation !== this.generation) return;
+      if (generation !== this.generation) return undefined;
       throw e;
     }
-    if (generation !== this.generation) { stream.getTracks().forEach((track) => track.stop()); return; }
+    if (generation !== this.generation) { stream.getTracks().forEach((track) => track.stop()); return undefined; }
     this.stream = stream;
+    video.srcObject = stream;
+    await video.play();
+    return stream;
+  }
+
+  async preview(video: HTMLVideoElement) {
+    this.stop();
+    const generation = this.generation;
+    await this.open(video, generation);
+  }
+
+  async start(video: HTMLVideoElement, onResult: (text: string) => void, onError: (error: Error) => void) {
+    this.stop();
+    const generation = this.generation;
     try {
-      const [{ BrowserQRCodeReader }, { NotFoundException, ChecksumException, FormatException }] = await Promise.all([
+      const stream = await this.open(video, generation);
+      if (!stream || generation !== this.generation) return;
+      const [{ BrowserMultiFormatReader }, { NotFoundException, ChecksumException, FormatException }] = await Promise.all([
         import('@zxing/browser'), import('@zxing/library'),
       ]);
       if (generation !== this.generation) return;
-      const reader = new BrowserQRCodeReader();
+      const reader = new BrowserMultiFormatReader();
       const controls = await reader.decodeFromStream(stream, video, (result, error) => {
         if (generation !== this.generation) return;
         if (result) {

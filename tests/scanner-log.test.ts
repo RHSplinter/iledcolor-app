@@ -37,6 +37,13 @@ describe('local scan log', () => {
     expect(JSON.parse(options.data)).toEqual(entry);
   });
 
+  it('records OCR captures as a distinct scan source', async () => {
+    const ocrEntry = { ...entry, source: 'ocr' as const };
+    await appendScanLog(ocrEntry);
+    const options = vi.mocked(Filesystem.appendFile).mock.calls[0]![0];
+    expect(JSON.parse(options.data)).toEqual(ocrEntry);
+  });
+
   it('does not hide write failures or missing native support', async () => {
     vi.mocked(Filesystem.appendFile).mockRejectedValue(new Error('Disk full'));
     await expect(appendScanLog(entry)).rejects.toThrow('Disk full');
