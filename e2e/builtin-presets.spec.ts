@@ -74,7 +74,7 @@ test('built-ins load, send, save, back up and remain available offline', async (
   await expect.poll(pixels).not.toBe(firstFrame);
   await page.click('nav [data-tab=settings]');
   await page.locator('#builtin-presets [data-id=builtin-copilot-head] [data-act=load]').click();
-  await expect(page.locator('#c-kind')).toHaveValue('image');
+  await expect(page.locator('#custom-image')).toHaveAttribute('open', '');
   await expect(page.locator('#c-err')).toBeEmpty();
   expect(external).toEqual([]);
 });
