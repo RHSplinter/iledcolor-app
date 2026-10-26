@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { openCustomSection, connectHat, waitForOfflineReady } from './hat';
+import { openCustomSection, connectHat, waitForServiceWorker } from './hat';
 
 test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page, context }) => {
   const external: string[] = [];
@@ -7,7 +7,7 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
 
   await page.goto('/#mock');
   await connectHat(page);
-  await waitForOfflineReady(page);
+  await waitForServiceWorker(page);
 
 
   await page.click('nav [data-tab=custom]');

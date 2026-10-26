@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openCustomSection, connectHat, waitForOfflineReady } from './hat';
+import { openCustomSection, connectHat, waitForServiceWorker } from './hat';
 
 const fonts = ['silkscreen', 'tiny5', 'press-start', 'dotgothic', 'bitcount', 'monaspace'];
 
@@ -18,7 +18,7 @@ test('six distinct, crisp fonts have one-pixel spacing and match preview and moc
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#mock');
   await connectHat(page);
-  await waitForOfflineReady(page);
+  await waitForServiceWorker(page);
   await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Hi!');
   await page.click('nav [data-tab=settings]');

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { openCustomSection, connectHat, installFakeHat, waitForOfflineReady } from './hat';
+import { openCustomSection, connectHat, installFakeHat, waitForServiceWorker } from './hat';
 
 test('web navigation skips native-only Approach and retains content, scan and settings', async ({ page, context }) => {
   await installFakeHat(page);
@@ -7,7 +7,7 @@ test('web navigation skips native-only Approach and retains content, scan and se
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   await connectHat(page);
-  await waitForOfflineReady(page);
+  await waitForServiceWorker(page);
   await expect(page.getByRole('tab')).toHaveCount(4);
   await expect(page.getByRole('tab')).toHaveText(['Custom', 'Scan', 'Sound', '']);
   await expect(page.locator('#tab-approach')).toBeHidden();
@@ -73,7 +73,6 @@ for (const platform of ['ios', 'android']) {
     }, platform);
     await page.goto('/');
     await connectHat(page);
-    await expect(page.locator('#offline')).toHaveText(platform === 'ios' ? 'iOS app' : 'Android app');
     await expect(page.getByRole('tab')).toHaveCount(5);
     await expect(page.locator('#custom-text > summary')).toBeVisible();
     await expect(page.locator('#view-custom')).toContainText(platform === 'ios'

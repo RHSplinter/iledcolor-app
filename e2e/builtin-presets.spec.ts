@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { openCustomSection, connectHat, installFakeHat, waitForOfflineReady } from './hat';
+import { openCustomSection, connectHat, installFakeHat, waitForServiceWorker } from './hat';
 import { readFile } from 'node:fs/promises';
 
 test('built-ins load, send, save, back up and remain available offline', async ({ page, context }) => {
@@ -7,7 +7,7 @@ test('built-ins load, send, save, back up and remain available offline', async (
   page.on('request', (r) => { if (!r.url().startsWith('http://localhost:4173')) external.push(r.url()); });
   await page.goto('/#mock');
   await connectHat(page);
-  await waitForOfflineReady(page);
+  await waitForServiceWorker(page);
 
   for (const [id, kind] of [['xebia-github', 'text'], ['header', 'text'], ['lgtm', 'text'], ['xebia-logo', 'image'], ['github-copilot-logo', 'image'], ['party-popper', 'image']]) {
     await page.click('nav [data-tab=settings]');

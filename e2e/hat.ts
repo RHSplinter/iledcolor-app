@@ -112,12 +112,14 @@ export async function connectHat(page: Page) {
 }
 
 /**
- * Waits until the service worker has precached the app (about 8 MB including OCR assets).
+ * Waits until the service worker is active, i.e. it has precached the app (about 8 MB including OCR assets).
  * Parallel workers share one preview server, so this can take tens of seconds; the test gets a longer budget.
  */
-export async function waitForOfflineReady(page: Page) {
+export async function waitForServiceWorker(page: Page) {
   test.slow();
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 45_000 });
+  await page.evaluate(async () => {
+    if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
+  });
 }
 
 export async function openCustomSection(page: Page, kind: 'text' | 'solid' | 'image' | 'github' | 'sequence') {

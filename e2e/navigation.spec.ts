@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { openCustomSection, connectHat, waitForOfflineReady } from './hat';
+import { openCustomSection, connectHat, waitForServiceWorker } from './hat';
 
 test('five icon tabs keep content on Connect and device controls on Settings', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/#mock');
   await connectHat(page);
-  await waitForOfflineReady(page);
+  await waitForServiceWorker(page);
   const tabs = page.getByRole('tab');
   await expect(tabs).toHaveCount(5);
   expect(await tabs.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-tab'))))
@@ -64,7 +64,7 @@ test('five icon tabs keep content on Connect and device controls on Settings', a
 test('keyboard tabs, scan-first ordering and every marquee choice are accessible', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
-  await waitForOfflineReady(page);
+  await waitForServiceWorker(page);
   const connect = page.getByRole('tab', { name: 'Custom' });
   await connect.focus();
   await page.keyboard.press('ArrowRight');
