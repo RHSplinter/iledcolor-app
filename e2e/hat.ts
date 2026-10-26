@@ -110,3 +110,9 @@ export async function connectHat(page: Page) {
   await page.click('#btn-connect');
   await expect(page.locator('#status')).toContainText('Ready', { timeout: 15000 });
 }
+
+export async function waitForServiceWorker(page: Page) {
+  await page.evaluate(async () => {
+    if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
+  });
+}

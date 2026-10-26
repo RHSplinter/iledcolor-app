@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { connectHat } from './hat';
+import { connectHat, waitForServiceWorker } from './hat';
 
 test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page, context }) => {
   const external: string[] = [];
@@ -7,7 +7,7 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
 
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20_000 });
+  await waitForServiceWorker(page);
 
 
   await page.click('nav [data-tab=connect]');

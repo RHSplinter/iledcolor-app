@@ -7,6 +7,7 @@ test.describe('web tab navigation @smoke', () => {
     page.on('pageerror', (error) => errors.push(error.message));
     await installFakeHat(page);
     await page.goto('./');
+    await expect(page.locator('header #offline')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Hat connection', exact: true })).toBeVisible();
     await expect(page.locator('#btn-connect')).toBeEnabled();
     await expect(page.locator('#connection-card').getByRole('button', { name: 'Disconnect', exact: true })).toHaveCount(0);
