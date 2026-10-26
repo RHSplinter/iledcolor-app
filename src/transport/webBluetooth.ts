@@ -42,24 +42,28 @@ export async function connectWebBluetooth(
  */
 export async function reconnectWebBluetooth(
   deviceId: string,
-  timeoutMs = 30000,
+  timeoutMs = 10000,
   retryMs = 1000,
 ): Promise<{ transport: Transport; deviceName: string; deviceId: string }> {
   if (!navigator.bluetooth?.getDevices) throw new SelectionCancelledError();
-  const device = (await navigator.bluetooth.getDevices()).find((d) => d.id === deviceId);
-  if (!device) throw new SelectionCancelledError();
   const deadline = Date.now() + timeoutMs;
+  const devices = await withTimeout(navigator.bluetooth.getDevices(), timeoutMs, 'Finding the hat');
+  const device = devices.find((d) => d.id === deviceId);
+  if (!device) throw new SelectionCancelledError();
   const watch = new AbortController();
   let seen: () => void = () => undefined;
   const onAdvert = () => seen();
   device.addEventListener('advertisementreceived', onAdvert);
   try {
-    if (typeof device.watchAdvertisements === 'function') await device.watchAdvertisements({ signal: watch.signal }).catch(() => undefined);
+    // Do not await discovery: some Windows stacks never settle it or emit advertisements.
+    if (typeof device.watchAdvertisements === 'function') {
+      try { void device.watchAdvertisements({ signal: watch.signal }).catch(() => undefined); } catch { /* discovery unavailable */ }
+    }
     for (;;) {
       try {
-        return await openDevice(device, Math.max(1000, Math.min(10000, deadline - Date.now())));
+        return await openDevice(device, deadline);
       } catch (e) {
-        if (Date.now() + retryMs >= deadline) throw e;
+        if (e instanceof BluetoothTimeoutError || Date.now() + retryMs >= deadline) throw e;
       }
       await new Promise<void>((resolve) => { const t = setTimeout(resolve, retryMs); seen = () => { clearTimeout(t); resolve(); }; });
     }
@@ -69,29 +73,37 @@ export async function reconnectWebBluetooth(
   }
 }
 
+class BluetoothTimeoutError extends Error {}
+
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${what} timed out`)), ms);
+    const t = setTimeout(() => reject(new BluetoothTimeoutError(`${what} timed out`)), ms);
     p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
   });
 }
 
 async function openDevice(
   device: BluetoothDevice,
-  connectTimeoutMs?: number,
+  deadline?: number,
 ): Promise<{ transport: Transport; deviceName: string; deviceId: string }> {
   if (!device.gatt) throw new Error('Device has no GATT server');
-  const connecting = device.gatt.connect();
-  const server = connectTimeoutMs
-    ? await withTimeout(connecting, connectTimeoutMs, 'Connecting to the hat').catch((e) => { device.gatt?.disconnect(); throw e; })
-    : await connecting;
+  const bounded = <T>(p: Promise<T>) => deadline === undefined ? p
+    : withTimeout(p, Math.max(0, deadline - Date.now()), 'Connecting to the hat');
+  let expired = false;
+  const connecting = device.gatt.connect().then((server) => {
+    if (expired) { server.disconnect(); throw new BluetoothTimeoutError('Connecting to the hat timed out'); }
+    return server;
+  });
+  let server: BluetoothRemoteGATTServer;
+  try { server = await bounded(connecting); }
+  catch (e) { expired = true; device.gatt.disconnect(); throw e; }
   try {
-    const service = await server.getPrimaryService(SERVICE_A950);
-    const [cmd, data, notify] = await Promise.all([
+    const service = await bounded(server.getPrimaryService(SERVICE_A950));
+    const [cmd, data, notify] = await bounded(Promise.all([
       service.getCharacteristic(CHAR_CMD),
       service.getCharacteristic(CHAR_DATA),
       service.getCharacteristic(CHAR_NOTIFY),
-    ]);
+    ]));
     if (!cmd.properties.writeWithoutResponse) throw new Error('A951 lacks write-without-response');
     if (!data.properties.writeWithoutResponse) throw new Error('A952 lacks write-without-response');
     if (!notify.properties.notify) throw new Error('A953 lacks notify');
@@ -109,7 +121,7 @@ async function openDevice(
       if (!closing) dropListeners.forEach((cb) => cb());
     });
     // Notifications must be live before any command is written.
-    await notify.startNotifications();
+    await bounded(notify.startNotifications());
 
     const transport: Transport = {
       writeCommand: (d) => cmd.writeValueWithoutResponse(d as BufferSource),

@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
  * Installs a fake LED hat behind both Web Bluetooth and the native BluetoothLe plugin bridge, so
@@ -105,8 +105,26 @@ export async function installFakeHat(page: Page) {
   });
 }
 
-/** Connects through the Connect tab and waits until the hat is ready. */
+/** Connects through the Custom tab and waits until the hat is ready. */
 export async function connectHat(page: Page) {
   await page.click('#btn-connect');
   await expect(page.locator('#status')).toContainText('Ready', { timeout: 15000 });
+}
+
+/**
+ * Waits until the service worker is active, i.e. it has precached the app (about 8 MB including OCR assets).
+ * Parallel workers share one preview server, so this can take tens of seconds; the test gets a longer budget.
+ */
+export async function waitForServiceWorker(page: Page) {
+  test.slow();
+  await page.evaluate(async () => {
+    if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
+  });
+}
+
+export async function openCustomSection(page: Page, kind: 'text' | 'solid' | 'image' | 'github' | 'sequence') {
+  const section = page.locator(`#custom-${kind}`);
+  if (!(await section.evaluate((element: HTMLDetailsElement) => element.open))) {
+    await section.locator('summary').click();
+  }
 }

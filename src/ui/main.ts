@@ -11,13 +11,14 @@ import { DEFAULT_TEXT_FONT, TEXT_FONTS, isTextFont } from '../render/fonts';
 import { deletePreset, listPresets, loadKv, loadSettings, restoreBackup, requestPersistence, saveKv, savePreset, saveSettings } from '../storage/db';
 import { builtinPresets } from '../storage/builtinPresets';
 import {
-  DEFAULT_SETTINGS, DEFAULT_SPEED, DEFAULT_STEP_SECONDS, MAX_SEQUENCE_STEPS, MAX_STEP_SECONDS, isGroupPreset, validateContent, validateSequenceSteps,
-  type Content, type Preset, type SequenceStep, type Settings, type SingleContent,
+  DEFAULT_SETTINGS, DEFAULT_SPEED, DEFAULT_STEP_SECONDS, MAX_SEQUENCE_STEPS, MAX_STEP_SECONDS, isGroupPreset, mergeCustomDrafts, validateContent, validateCustomDrafts, validateSequenceSteps,
+  type Content, type CustomDrafts, type Preset, type SequenceStep, type Settings, type SingleContent,
 } from '../storage/presets';
 import { composeSequence } from '../render/sequence';
 import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSelection } from '../storage/sharedBackup';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
+import { forgetWebHat, loadWebHat, saveWebHat } from '../transport/webBluetoothMemory';
 import { bluetoothSupport, connectWebBluetooth, reconnectWebBluetooth } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
@@ -30,7 +31,9 @@ import { initConnectionStatus } from './connectionStatus';
 import { GreetingUi } from '../scanner/ui';
 import { SoundUi } from '../sound/ui';
 import { UpdateUi } from '../update/ui';
-import { GitHubUi } from '../github/ui';
+import { contributionFrames, GitHubUi, todayUtc } from '../github/ui';
+import { fetchContributions } from '../github/contributions';
+import { initPresetSave, presetSaveInlineMarkup, presetSaveNoteMarkup } from './presetSave';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -42,8 +45,6 @@ const native = isNativeApp();
 let useMock = location.hash === '#mock'; // dev/test only: in-memory hat
 const approachAvailable = native || useMock;
 let lastImage: RgbImage | null = null; // retained across disconnects
-let lastFrames: RgbImage[] | null = null; // set when the content is a marquee
-let lastDelays: number[] = [];
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
 /** Scroll speed 1 (slow) .. 10 (fast) -> per-frame delay at 2 px per frame. */
 const marqueeDelay = (speed: number) => Math.round(220 / speed);
@@ -54,7 +55,10 @@ let displayNote = '';
 let imageDataUrl = '';
 let renderSeq = 0;
 let savedCreateContent: Content | undefined;
-/** Connect tab sequence steps; kept as a draft while `sequenceOn` is false. */
+let savedCustomDrafts: Partial<CustomDrafts> = {};
+let activeKind: keyof CustomDrafts = 'text';
+let sendingContent = false;
+/** Custom tab sequence steps; kept as a draft while `sequenceOn` is false. */
 let sequence: SequenceStep[] = [];
 let sequenceOn = false;
 let scanner: GreetingUi | undefined;
@@ -81,19 +85,17 @@ function newController() {
   });
   controller.subscribe(renderStatus);
 }
-/** In the app (and mock mode) the Connect tab's cap is cap 1 of approach mode: one shared connection. */
+/** In the app (and mock mode) the Custom tab's cap is cap 1 of approach mode: one shared connection. */
 const sharedCap = () => native || useMock;
 const updateConnectionStatus = initConnectionStatus($('#connection-status'), () => {
   if (sharedCap()) disconnectPrimary();
   else { forgetLastHat(); controller.disconnect(); }
 });
 
-/** Browser-only: id of the last hat connected via Web Bluetooth, so a page reload can reconnect. Never exported. */
-const LAST_HAT_KEY = 'iledcolor.lastWebBluetoothHat';
-function rememberLastHat(id: string) { try { localStorage.setItem(LAST_HAT_KEY, id); } catch { /* storage unavailable */ } }
-function forgetLastHat() { try { localStorage.removeItem(LAST_HAT_KEY); } catch { /* storage unavailable */ } }
+// Browser permission and the active GATT link are separate from our saved hat identity.
+function forgetLastHat() { forgetWebHat(); restoreNote = ''; }
 let restoreNote = '';
-function lastHat(): string | null { try { return localStorage.getItem(LAST_HAT_KEY); } catch { return null; } }
+let restoringWebConnection = false;
 const watched = new WeakSet<DeviceController>();
 function onPrimaryChange(p: PrimaryCap | null) {
   scanner?.stopCamera();
@@ -121,10 +123,10 @@ function renderStatus() {
   const connected = s === 'Ready' || s === 'Uploading';
   updateConnectionStatus(connected);
   const p = controller.progress;
-  $('#status-label').textContent = s === 'Uploading' && p ? `Uploading ${p.sent}/${p.total}` : s === 'Ready' && deviceName ? `Ready: ${deviceName}` : s;
+  $('#status-label').textContent = s === 'Uploading' && p ? `Uploading ${p.sent}/${p.total}` : s === 'Ready' && deviceName ? `Ready: ${deviceName}` : restoringWebConnection && s === 'Selecting' ? `Reconnecting to ${deviceName || 'your hat'}...` : s;
   const err = controller.error;
   const msg = $('#conn-msg', document);
-  if (msg) msg.textContent = err ?? restoreNote;
+  if (msg) msg.textContent = [restoreNote, err].filter(Boolean).join(' ');
   const prog = document.querySelector<HTMLProgressElement>('#progress');
   if (prog && p) { prog.max = p.total; prog.value = p.sent; }
   updateButtons();
@@ -140,7 +142,10 @@ function updateButtons() {
   const busy = s === 'Selecting' || s === 'Connecting' || s === 'Handshaking' || s === 'Uploading';
   const set = (id: string, v: boolean) => { const b = document.getElementById(id) as HTMLButtonElement | null; if (b) b.disabled = v; };
   set('btn-connect', busy || ready || controller.temporaryActive);
-  set('btn-send', !ready || !lastImage);
+  for (const kind of ['text', 'solid', 'image', 'sequence']) {
+    set(kind === 'text' ? 'btn-send' : `btn-send-${kind}`,
+      !ready || sendingContent || (kind === 'image' && !imageDataUrl) || (kind === 'sequence' && !sequence.length));
+  }
   const help = document.getElementById('send-help');
   if (help) help.textContent = controller.temporaryActive ? 'Wait for the current cap reaction to finish before sending.'
     : !ready ? 'Wait for the hat to be ready before sending.'
@@ -153,7 +158,7 @@ function updateButtons() {
   const prog = document.getElementById('progress');
   if (prog) prog.hidden = s !== 'Uploading';
   const label = document.getElementById('btn-connect');
-  if (label) label.textContent = s === 'Error' || controller.error ? 'Reconnect' : 'Connect';
+  if (label) label.textContent = restoringWebConnection ? 'Reconnecting...' : 'Connect';
 }
 
 /** Until a hat is connected only the connection controls are shown; everything else needs a hat. */
@@ -169,7 +174,7 @@ function applyConnectionGate() {
   if (connectionCard) connectionCard.hidden = connected;
   const approachTab = document.getElementById('tab-approach');
   if (approachTab) approachTab.hidden = !connected || !approachAvailable;
-  if (!connected && showTab && $('#view-connect').hidden) showTab('connect');
+  if (!connected && showTab && $('#view-custom').hidden) showTab('custom');
 }
 
 function banner(html: string | null) {
@@ -178,11 +183,11 @@ function banner(html: string | null) {
   if (html) b.innerHTML = html;
 }
 
-// ---------- Connect view ---------------------------------------------------------
+// ---------- Custom view ---------------------------------------------------------
 
-function renderConnect() {
+function renderCustom() {
   const sup: ReturnType<typeof bluetoothSupport> = native ? { ok: true } : bluetoothSupport();
-  const root = $('#view-connect');
+  const root = $('#view-custom');
   root.innerHTML = `
     <div class="card" id="connection-card">
       <h2>Hat connection</h2>
@@ -196,8 +201,7 @@ function renderConnect() {
       <p class="small">Close other controller apps first. ${native ? `${platformName() === 'ios' ? 'iOS' : 'Android'} will ask for Bluetooth permission the first time you connect.` : 'Choose your hat in the browser Bluetooth picker. Connecting requires Web Bluetooth; editing and presets are available after connecting.'}</p>
       <p class="small" id="install-help" hidden>To install: use your browser's Install app or Add to Home Screen option.</p>
     </div>
-    <div id="content-editor"></div>
-    <div id="github-section"></div>`;
+    <div id="content-editor"></div>`;
   $('#btn-connect').onclick = onConnect;
   renderStatus();
 }
@@ -210,7 +214,7 @@ function renderDeviceSettings() {
       <h2>Display</h2>
       <label for="s-font">LED text font</label>
       <select id="s-font" aria-describedby="s-font-help">${TEXT_FONTS.map((f) => `<option value="${f.id}" ${f.id === (settings.textFont ?? DEFAULT_TEXT_FONT) ? 'selected' : ''}>${f.label}</option>`).join('')}</select>
-      <p id="s-font-help" class="small">Applies to all LED text: Connect, sequences, Approach, Scan greetings and Sound reactions. Tiny5 and Bitcount use crisp 2x pixel sizes; Bitcount fills all 16 rows. Monaspace Neon is scaled to fill the full display height. The other fonts use their native size. Letters have a one-pixel gap and emoji a two-pixel gap. Send again to update Connect content already on the hat.</p>
+      <p id="s-font-help" class="small">Default for LED text: Custom, sequences, Approach, Scan greetings and Sound reactions. Custom text and presets can choose their own font. Tiny5 and Bitcount use crisp 2x pixel sizes; Bitcount fills all 16 rows. Monaspace Neon is scaled to fill the full display height. The other fonts use their native size. Letters have a one-pixel gap and emoji a two-pixel gap. Send again to update Custom content already on the hat.</p>
       <canvas id="font-preview" width="32" height="16" role="img" aria-label="LED font sample: Hi!"></canvas>
       <label for="brightness">Dimming level: <b id="bval">${settings.brightness}</b> (0 = brightest, 10 = dimmest) <span id="bstate" class="small">${esc(brightnessNote)}</span></label>
       <input id="brightness" type="range" min="0" max="10" step="1" value="${settings.brightness}" />
@@ -343,7 +347,9 @@ async function onConnect() {
     if (!sup.ok) throw new Error(sup.reason);
     const r = await connectWebBluetooth();
     deviceName = r.deviceName;
-    rememberLastHat(r.deviceId);
+    if (!saveWebHat({ id: r.deviceId, name: r.deviceName })) {
+      restoreNote = 'Connected, but browser storage is unavailable. This hat cannot be remembered after refresh.';
+    }
     return r.transport;
   });
   await afterWebConnect();
@@ -351,23 +357,30 @@ async function onConnect() {
 
 /** After a page reload, silently reconnect to the hat the user already chose (no picker, no tap needed). */
 async function restoreWebConnection() {
-  const id = lastHat();
-  if (sharedCap() || !id || !bluetoothSupport().ok || controller.state !== 'Disconnected') return;
+  const saved = loadWebHat();
+  if (sharedCap() || !saved || !bluetoothSupport().ok || restoringWebConnection) return;
+  if (!['Disconnected', 'Error'].includes(controller.state)) return;
+  deviceName = saved.name;
   if (!navigator.bluetooth.getDevices) {
-    // This browser cannot reuse a Bluetooth permission without the picker, which needs a tap.
-    restoreNote = 'The page reload closed the Bluetooth connection. Tap Connect and choose your hat again.';
+    restoreNote = `Remembered hat: ${saved.name}. This browser does not support automatic Bluetooth reconnect. Use Connect to choose your hat.`;
     renderStatus();
     return;
   }
-  restoreNote = 'Reconnecting to your last hat…';
+  restoringWebConnection = true;
+  restoreNote = `Reconnecting to remembered hat ${saved.name}... Keep it switched on and close other controller sessions.`;
   renderStatus();
-  await controller.connect(async () => {
-    try {
-      const r = await reconnectWebBluetooth(id);
+  try {
+    await controller.connect(async () => {
+      const r = await reconnectWebBluetooth(saved.id);
       deviceName = r.deviceName;
+      saveWebHat({ id: r.deviceId, name: r.deviceName });
       return r.transport;
-    } finally { restoreNote = ''; }
-  });
+    });
+  } finally {
+    restoringWebConnection = false;
+    restoreNote = ['Ready'].includes(controller.state) ? ''
+      : `Remembered hat: ${saved.name}. Could not reconnect automatically. Check the hat is on, then use Connect.`;
+  }
   await afterWebConnect();
 }
 
@@ -402,56 +415,123 @@ function physical(img: RgbImage): RgbImage { return transformImage(img, settings
 
 function renderCreate() {
   $('#content-editor').innerHTML = `
-    <div class="card">
-      <h2>Create content</h2>
-      <label for="c-kind">Content</label>
-      <select id="c-kind"><option value="text">Text</option><option value="solid">Solid color</option><option value="image">Image (PNG/JPEG/GIF)</option></select>
-      <div id="c-text">
-        <label for="c-str">Text</label><input id="c-str" type="text" maxlength="200" value="HI" />
-        <label for="c-speed">Scroll speed: <b id="c-speed-val">${DEFAULT_SPEED}</b></label>
-        <input id="c-speed" type="range" min="1" max="10" step="1" value="${DEFAULT_SPEED}" />
-        <p id="c-warn" class="warn small"></p>
+    <h1>Custom</h1>
+    <details class="card custom-section" id="custom-text">
+      <summary>Text</summary>
+      <p class="section-intro">Shows text and turns into a marquee when it does not fit the cap. Emoji can be used.</p>
+      <div class="section-fields">
+        <div class="field"><label for="c-str">Text</label><input id="c-str" type="text" maxlength="200" value="HI" /></div>
+        <div class="field">
+          <label for="c-speed">Scroll speed <b id="c-speed-val" class="field-value">${DEFAULT_SPEED}</b></label>
+          <input id="c-speed" type="range" min="1" max="10" step="1" value="${DEFAULT_SPEED}" />
+        </div>
+        <div class="field-pair">
+          <div class="field"><label for="c-fg">Text color</label><input id="c-fg" type="color" value="#ffffff" /></div>
+          <div class="field"><label for="c-bg">Background color</label><input id="c-bg" type="color" value="#000000" /></div>
+        </div>
+        <div class="field">
+          <label for="c-font">Font</label>
+          <select id="c-font"><option value="">Use Settings default</option>${TEXT_FONTS.map((f) => `<option value="${f.id}">${f.label}</option>`).join('')}</select>
+        </div>
       </div>
-      <div class="row">
-        <div><label for="c-fg">Color</label><input id="c-fg" type="color" value="#ffffff" /></div>
-        <div><label for="c-bg">Background</label><input id="c-bg" type="color" value="#000000" /></div>
+      <div class="section-output"></div>
+      ${presetSaveNoteMarkup('c')}
+      <div class="section-actions"><button id="btn-send" class="primary" disabled>Send to cap</button>${presetSaveInlineMarkup('c')}</div>
+    </details>
+    <details class="card custom-section" id="custom-solid">
+      <summary>Solid color</summary>
+      <p class="section-intro">Shows a solid color on the cap.</p>
+      <div class="section-fields">
+        <div class="field"><label for="c-solid">Color</label><input id="c-solid" type="color" value="#ffffff" /></div>
       </div>
-      <div id="c-image" hidden>
-        <label for="c-file">Image file</label><input id="c-file" type="file" accept="image/png,image/jpeg,image/gif" />
-        <label for="c-fit">Fit</label><select id="c-fit"><option>contain</option><option>cover</option><option>stretch</option></select>
-        <p class="small">Transparent areas are filled with the background color.</p>
+      <div class="section-output"></div>
+      ${presetSaveNoteMarkup('solid')}
+      <div class="section-actions"><button id="btn-send-solid" class="primary" disabled>Send to cap</button>${presetSaveInlineMarkup('solid')}</div>
+    </details>
+    <details class="card custom-section" id="custom-image">
+      <summary>Image</summary>
+      <p class="section-intro">Upload a PNG/JPG/GIF image. Animated GIF is supported.</p>
+      <div class="section-fields">
+        <div class="field"><label for="c-file">Choose file</label><input id="c-file" type="file" accept="image/png,image/jpeg,image/gif" /></div>
+        <div class="field"><label for="c-fit">Fit</label><select id="c-fit"><option>contain</option><option>cover</option><option>stretch</option></select></div>
+        <div class="field">
+          <label for="c-image-bg">Background color</label><input id="c-image-bg" type="color" value="#000000" aria-describedby="c-image-bg-help" />
+          <p id="c-image-bg-help" class="field-hint">Transparent areas are filled with the background color.</p>
+        </div>
       </div>
-      <section class="sequence" aria-labelledby="c-seq-title">
-        <h3 id="c-seq-title">Sequence</h3>
-        <p class="small">Add the content above or saved presets as steps. The hat plays all steps in order, then loops.</p>
-        <ol id="c-seq-list" class="seq-list"></ol>
-        <div class="row"><button id="btn-seq-add">Add current content</button></div>
-        <div class="row"><select id="c-seq-preset" aria-label="Saved preset to add"></select><button id="btn-seq-add-preset">Add preset</button></div>
-        <label class="seq-toggle"><input type="checkbox" id="c-seq-on" /> Play sequence</label>
-        <p id="c-seq-help" class="small"></p>
-      </section>
+      <div class="section-output"></div>
+      ${presetSaveNoteMarkup('image')}
+      <div class="section-actions"><button id="btn-send-image" class="primary" disabled>Send to cap</button>${presetSaveInlineMarkup('image')}</div>
+    </details>
+    <div id="github-section"></div>
+    <details class="card custom-section" id="custom-sequence">
+      <summary>Sequence</summary>
+      <p class="section-intro">Add the last edited Text, Solid color or Image content, or saved presets as steps. The hat plays all steps in order, then loops.</p>
+      <div class="section-fields">
+        <div class="field">
+          <h3 class="field-title" id="c-seq-title">Steps</h3>
+          <ol id="c-seq-list" class="seq-list" aria-labelledby="c-seq-title"></ol>
+        </div>
+        <div class="field">
+          <h3 class="field-title">Add steps</h3>
+          <div class="row"><button id="btn-seq-add">Add current content</button></div>
+          <label for="c-seq-preset" class="field-sublabel">Saved preset</label>
+          <div class="row seq-preset-row"><select id="c-seq-preset" aria-label="Saved preset to add"></select><button id="btn-seq-add-preset">Add preset</button></div>
+        </div>
+        <div class="field">
+          <label class="seq-toggle"><input type="checkbox" id="c-seq-on" aria-describedby="c-seq-help" /> Play sequence</label>
+          <p id="c-seq-help" class="field-hint"></p>
+        </div>
+      </div>
+      <div class="section-output"></div>
+      ${presetSaveNoteMarkup('sequence')}
+      <div class="section-actions"><button id="btn-send-sequence" class="primary" disabled>Send to cap</button>${presetSaveInlineMarkup('sequence')}</div>
+    </details>
+    <div id="content-output" hidden>
+      <p id="c-warn" class="warn small"></p>
       <p id="c-err" class="bad small"></p>
       <canvas id="preview" aria-label="Pixel preview"></canvas>
-      <div class="row"><button id="btn-send" class="primary" disabled>Send to &lt;head&gt;</button><button id="btn-cancel" class="danger" hidden>Cancel</button></div>
+      <button id="btn-cancel" class="danger" hidden>Cancel upload</button>
       <p id="send-help" class="small"></p>
       <progress id="progress" aria-label="Content upload progress" hidden value="0" max="1"></progress>
       <p id="send-note" class="small" role="status">${esc(sendNote)}</p>
-      <label for="c-name">Preset name</label>
-      <div class="row preset-save"><input id="c-name" type="text" placeholder="e.g. My greeting" maxlength="60" /><button id="btn-save">Save preset</button></div>
     </div>`;
-  $('#c-kind').onchange = () => { syncKind(); void refreshPreview(); };
-  ['#c-str', '#c-fg', '#c-bg', '#c-fit', '#c-speed'].forEach((s) => ($(s).oninput = () => void refreshPreview()));
+  for (const kind of ['text', 'solid', 'image'] as const) {
+    const section = $<HTMLDetailsElement>(`#custom-${kind}`);
+    section.ontoggle = () => {
+      if (section.open) {
+        activeKind = kind;
+        if (!sequenceOn) { moveContentOutput(kind); void refreshPreview(); }
+      }
+    };
+    section.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input:not([type=file]), select').forEach((field) => {
+      if (field.closest('form')) return;
+      field.oninput = () => {
+        activeKind = kind;
+        $('#c-speed-val').textContent = $<HTMLInputElement>('#c-speed').value;
+        persistCustomDrafts();
+        if (!sequenceOn) moveContentOutput(kind);
+        void refreshPreview();
+      };
+    });
+    const content = () => editorContent(kind);
+    $(kind === 'text' ? '#btn-send' : `#btn-send-${kind}`).onclick = () => void sendSection(kind, content);
+    initPresetSave(section, kind === 'text' ? 'c' : kind, (name) => saveNamedPreset(name, content()));
+  }
+  $('#btn-send-sequence').onclick = () => void sendSection('sequence', sequenceContent);
+  initPresetSave($('#custom-sequence'), 'sequence', (name) => saveNamedPreset(name, sequenceContent()));
   $<HTMLInputElement>('#c-file').onchange = async (ev) => {
     const f = (ev.target as HTMLInputElement).files?.[0];
     if (!f) return;
     $('#c-err').textContent = '';
-    try { imageDataUrl = f.type === 'image/gif' ? await gifDataUrl(f) : await shrinkForStorage(f); } catch (e) { imageDataUrl = ''; $('#c-err').textContent = (e as Error).message; }
+    try { imageDataUrl = f.type === 'image/gif' ? await gifDataUrl(f) : await shrinkForStorage(f); }
+    catch (e) { moveContentOutput('image'); $('#c-err').textContent = (e as Error).message; return; }
+    activeKind = 'image';
+    persistCustomDrafts();
+    if (!sequenceOn) moveContentOutput('image');
     void refreshPreview();
   };
-  $<HTMLInputElement>('#c-speed').addEventListener('input', (e) => { $('#c-speed-val').textContent = (e.target as HTMLInputElement).value; });
-  $('#btn-send').onclick = () => (lastFrames ? sendMarquee(lastFrames, lastDelays) : lastImage && sendImage(lastImage));
   $('#btn-cancel').onclick = () => controller.cancelUpload();
-  $('#btn-save').onclick = savePresetClick;
   $('#btn-seq-add').onclick = () => {
     try { addSequenceSteps([{ content: editorContent(), seconds: DEFAULT_STEP_SECONDS }]); } catch (e) { $('#c-err').textContent = (e as Error).message; }
   };
@@ -465,12 +545,18 @@ function renderCreate() {
       addSequenceSteps(p.content.kind === 'sequence' ? structuredClone(p.content.steps) : [{ content: p.content, seconds: DEFAULT_STEP_SECONDS }]);
     } catch (e) { $('#c-err').textContent = (e as Error).message; }
   };
-  $<HTMLInputElement>('#c-seq-on').onchange = (e) => { sequenceOn = (e.target as HTMLInputElement).checked && sequence.length > 0; renderSequence(); void refreshPreview(); };
-  syncKind();
+  $<HTMLInputElement>('#c-seq-on').onchange = (e) => {
+    sequenceOn = (e.target as HTMLInputElement).checked && sequence.length > 0;
+    moveContentOutput(sequenceOn ? 'sequence' : activeKind);
+    renderSequence();
+    void refreshPreview();
+  };
   if (savedCreateContent) {
     if (savedCreateContent.kind === 'image') imageDataUrl = savedCreateContent.dataUrl;
-    setCreateFrom(savedCreateContent);
+    setCreateFrom(savedCreateContent, false);
   }
+  applyCustomDrafts(savedCustomDrafts);
+  moveContentOutput(sequenceOn ? 'sequence' : activeKind);
   renderSequence();
   void refreshSequencePresets();
   void refreshPreview();
@@ -479,7 +565,7 @@ function renderCreate() {
 
 // ---------- Sequence editor ---------------------------------------------------------
 
-const stepLabel = (c: SingleContent) => c.kind === 'text' ? `Text "${c.text}"` : c.kind === 'solid' ? `Solid ${c.color}` : 'Image';
+const stepLabel = (c: SingleContent) => c.kind === 'text' ? `Text "${c.text}"` : c.kind === 'solid' ? `Solid ${c.color}` : c.kind === 'github' ? `GitHub ${c.handle}` : 'Image';
 
 function renderSequence() {
   const list = document.getElementById('c-seq-list');
@@ -527,6 +613,7 @@ function addSequenceSteps(steps: SequenceStep[]) {
 
 function sequenceChanged() {
   if (!sequence.length) sequenceOn = false;
+  moveContentOutput(sequenceOn ? 'sequence' : activeKind);
   void saveKv('createSequence', sequence).catch((e) => { $('#c-err').textContent = `Could not save the sequence: ${(e as Error).message}`; });
   renderSequence();
   void refreshPreview();
@@ -544,15 +631,59 @@ async function refreshSequencePresets() {
   renderSequence();
 }
 
-function syncKind() {
-  const k = $<HTMLSelectElement>('#c-kind').value;
-  $('#c-text').hidden = k !== 'text';
-  $('#c-image').hidden = k !== 'image';
+function moveContentOutput(kind: keyof CustomDrafts | 'sequence') {
+  const output = $('#content-output');
+  const section = $(`#custom-${kind}`);
+  (section.querySelector(':scope > .section-output') ?? section).append(output);
+  output.hidden = false;
+}
+
+function customDrafts(): CustomDrafts {
+  const font = $<HTMLSelectElement>('#c-font').value;
+  if (font && !isTextFont(font)) throw new Error('Invalid text font.');
+  return {
+    text: { kind: 'text', text: $<HTMLInputElement>('#c-str').value,
+      fg: $<HTMLInputElement>('#c-fg').value, bg: $<HTMLInputElement>('#c-bg').value,
+      speed: Number($<HTMLInputElement>('#c-speed').value), font: isTextFont(font) ? font : null },
+    solid: { kind: 'solid', color: $<HTMLInputElement>('#c-solid').value },
+    image: { kind: 'image', dataUrl: imageDataUrl, fit: $<HTMLSelectElement>('#c-fit').value as Fit,
+      bg: $<HTMLInputElement>('#c-image-bg').value },
+  };
+}
+
+function persistCustomDrafts() {
+  try {
+    const drafts = customDrafts();
+    void saveKv('customDrafts', drafts).catch((e) => { banner(`<b>Could not save Custom drafts:</b> ${esc((e as Error).message)}`); });
+  } catch (e) { $('#c-err').textContent = (e as Error).message; }
+}
+
+function applyCustomDrafts(drafts: Partial<CustomDrafts>) {
+  if (drafts.text) {
+    const c = drafts.text;
+    $<HTMLInputElement>('#c-str').value = c.text;
+    $<HTMLInputElement>('#c-fg').value = c.fg;
+    $<HTMLInputElement>('#c-bg').value = c.bg;
+    $<HTMLInputElement>('#c-speed').value = String(c.speed ?? DEFAULT_SPEED);
+    $('#c-speed-val').textContent = String(c.speed ?? DEFAULT_SPEED);
+    $<HTMLSelectElement>('#c-font').value = c.font ?? '';
+  }
+  if (drafts.solid) $<HTMLInputElement>('#c-solid').value = drafts.solid.color;
+  if (drafts.image) {
+    imageDataUrl = drafts.image.dataUrl;
+    $<HTMLInputElement>('#c-image-bg').value = drafts.image.bg;
+    $<HTMLSelectElement>('#c-fit').value = drafts.image.fit;
+    $<HTMLInputElement>('#c-file').value = '';
+  }
+}
+
+function sequenceContent(): Content {
+  return validateContent({ kind: 'sequence', steps: structuredClone(sequence) });
 }
 
 function currentContent(): Content {
-  if (!document.getElementById('c-kind')) {
-    if (!savedCreateContent) throw new Error('Choose content on the Connect tab first.');
+  if (!document.getElementById('c-str')) {
+    if (!savedCreateContent) throw new Error('Choose content on the Custom tab first.');
     return savedCreateContent;
   }
   if (sequenceOn && sequence.length) return { kind: 'sequence', steps: structuredClone(sequence) };
@@ -560,13 +691,9 @@ function currentContent(): Content {
 }
 
 /** The single content currently in the editor fields, ignoring the sequence. */
-function editorContent(): SingleContent {
-  const k = $<HTMLSelectElement>('#c-kind').value;
-  const fg = $<HTMLInputElement>('#c-fg').value, bg = $<HTMLInputElement>('#c-bg').value;
-  if (k === 'solid') return { kind: 'solid', color: fg };
-  if (k === 'text') return { kind: 'text', text: $<HTMLInputElement>('#c-str').value, fg, bg, speed: Number($<HTMLInputElement>('#c-speed').value) };
-  if (!imageDataUrl) throw new Error('Choose an image first.');
-  return { kind: 'image', dataUrl: imageDataUrl, fit: $<HTMLSelectElement>('#c-fit').value as Fit, bg };
+function editorContent(kind: keyof CustomDrafts = activeKind): SingleContent {
+  if (kind === 'image' && !imageDataUrl) throw new Error('Choose an image first.');
+  return customDrafts()[kind];
 }
 
 async function renderContent(c: Content): Promise<{ image: RgbImage; frames?: RgbImage[]; delays?: number[]; warnings: string[] }> {
@@ -583,11 +710,17 @@ async function renderContent(c: Content): Promise<{ image: RgbImage; frames?: Rg
     return frames.length > 1 ? { image: frames[0]!, frames, delays, warnings } : { image: frames[0]!, warnings };
   }
   if (c.kind === 'solid') return { image: physical(solid(w, h, parseHexColor(c.color))), warnings: [] };
+  if (c.kind === 'github') {
+    const graph = c.days && c.asOf ? { asOf: c.asOf, days: c.days } : { asOf: todayUtc(), days: await fetchContributions(c.handle, AbortSignal.timeout(15000)) };
+    await ensureFont();
+    const frames = contributionFrames(c, graph, w, h).map(physical);
+    return { image: frames[0]!, frames, delays: frames.map(() => marqueeDelay(c.speed ?? DEFAULT_SPEED)), warnings: [] };
+  }
   if (c.kind === 'text') {
     await ensureFont();
-    const r = renderText(c.text, w, h, parseHexColor(c.fg), parseHexColor(c.bg));
+    const r = renderText(c.text, w, h, parseHexColor(c.fg), parseHexColor(c.bg), c.font ?? undefined);
     if (r.clipped) { // too wide for the display: scroll it instead
-      const m = renderMarquee(c.text, w, h, parseHexColor(c.fg), parseHexColor(c.bg));
+      const m = renderMarquee(c.text, w, h, parseHexColor(c.fg), parseHexColor(c.bg), 2, c.font ?? undefined);
       const frames = m.frames.map(physical);
       const warnings = m.unsupported.length ? [`Unsupported characters skipped: ${m.unsupported.join(' ')}`] : [];
       return { image: frames[0]!, frames, delays: frames.map(() => marqueeDelay(c.speed ?? DEFAULT_SPEED)), warnings };
@@ -605,20 +738,18 @@ async function renderContent(c: Content): Promise<{ image: RgbImage; frames?: Rg
   return { image: physical(await imageToMatrix(blob, w, h, c.fit, parseHexColor(c.bg))), warnings: [] };
 }
 
-async function refreshPreview(content?: Content) {
+async function refreshPreview(content?: Content, rendered?: Awaited<ReturnType<typeof renderContent>>) {
   const seq = ++renderSeq;
   const canvas = document.getElementById('preview') as HTMLCanvasElement | null;
   if (!canvas) return;
   try {
     const selected = content ?? currentContent();
-    const { image, frames, delays, warnings } = await renderContent(selected);
+    const { image, frames, delays, warnings } = rendered ?? await renderContent(selected);
     if (seq !== renderSeq) return;
     savedCreateContent = selected;
     createContentChanged();
-    void saveKv('createContent', selected).catch((e) => { $('#c-err').textContent = `Could not save Connect content: ${(e as Error).message}`; });
+    void saveKv('createContent', selected).catch((e) => { $('#c-err').textContent = `Could not save Custom content: ${(e as Error).message}`; });
     lastImage = image;
-    lastFrames = frames ?? null;
-    lastDelays = delays ?? [];
     clearTimeout(previewTimer);
     drawPreview(canvas, image);
     if (frames) {
@@ -634,7 +765,7 @@ async function refreshPreview(content?: Content) {
     $('#c-err').textContent = '';
   } catch (e) {
     if (seq !== renderSeq) return;
-    lastImage = null; lastFrames = null;
+    lastImage = null;
     clearTimeout(previewTimer);
     $('#c-err').textContent = (e as Error).message;
   }
@@ -675,16 +806,26 @@ async function gifDataUrl(f: File): Promise<string> {
 }
 function setNote() { const n = document.getElementById('send-note'); if (n) n.textContent = sendNote; }
 
-async function savePresetClick() {
-  const name = $<HTMLInputElement>('#c-name').value.trim();
-  if (!name) { $('#c-err').textContent = 'Enter a preset name.'; return; }
+async function saveNamedPreset(name: string, content: Content) {
+  await savePreset({ id: crypto.randomUUID(), name, content: validateContent(content), updatedAt: Date.now() });
+  await refreshSequencePresets();
+}
+
+async function sendSection(kind: keyof CustomDrafts | 'sequence', content: () => Content) {
+  if (sendingContent) return;
+  sendingContent = true;
+  moveContentOutput(kind);
+  updateButtons();
   try {
-    await savePreset({ id: crypto.randomUUID(), name, content: currentContent(), updatedAt: Date.now() });
-    $('#c-err').textContent = '';
-    $<HTMLInputElement>('#c-name').value = '';
-    sendNote = `Saved "${name}".`; setNote();
-    void refreshSequencePresets();
+    const selected = content();
+    const rendered = await renderContent(selected);
+    if (kind !== 'sequence') { activeKind = kind; sequenceOn = false; renderSequence(); }
+    else { sequenceOn = true; renderSequence(); }
+    await refreshPreview(selected, rendered);
+    if (rendered.frames) await sendMarquee(rendered.frames, rendered.delays ?? []);
+    else await sendImage(rendered.image);
   } catch (e) { $('#c-err').textContent = (e as Error).message; }
+  finally { sendingContent = false; updateButtons(); }
 }
 
 // ---------- Presets view ---------------------------------------------------------
@@ -701,7 +842,7 @@ async function renderPresets(message = '') {
     <div class="card">
       <h2>Presets</h2>
       ${err ? `<p class="bad">${esc(err)}</p>` : ''}
-      <ul class="list preset-list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? `group content${approachAvailable ? '' : ' - requires the native app; kept for backup'}` : p.content.kind === 'sequence' ? `sequence (${p.content.steps.length} step${p.content.steps.length === 1 ? '' : 's'})` : p.content.kind}</small></span><button data-act="load" ${isGroupPreset(p) && !approachAvailable ? 'disabled' : ''}>Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || `<li class="muted">No presets yet. Save content on Connect${approachAvailable ? ' or a group preset on Approach' : ''} to find it here.</li>`}</ul>
+      <ul class="list preset-list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? `group content${approachAvailable ? '' : ' - requires the native app; kept for backup'}` : p.content.kind === 'sequence' ? `sequence (${p.content.steps.length} step${p.content.steps.length === 1 ? '' : 's'})` : p.content.kind}</small></span><button data-act="load" ${isGroupPreset(p) && !approachAvailable ? 'disabled' : ''}>Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || `<li class="muted">No presets yet. Save content on Custom${approachAvailable ? ' or a group preset on Approach' : ''} to find it here.</li>`}</ul>
       ${approachAvailable ? '' : '<p class="small">Nearby Approach detection and phone-to-phone BLE sharing require the Android or iOS app. Imported group presets remain available for backup and export.</p>'}
     </div>
     <div class="card">
@@ -714,7 +855,7 @@ async function renderPresets(message = '') {
       <h2>Backup</h2>
       <fieldset class="share-options">
         <legend>Include in shared file</legend>
-        <label><input type="checkbox" id="p-include-creations" ${backupSelection.creations ? 'checked' : ''} /> <span>Creations <small>Saved text, colors, images, GIFs and sequences (${presets.filter((p) => !isGroupPreset(p)).length}), current Connect content and sequence, and GitHub handle, prefix and postfix text</small></span></label>
+        <label><input type="checkbox" id="p-include-creations" ${backupSelection.creations ? 'checked' : ''} /> <span>Creations <small>Saved text, colors, images, GIFs, GitHub presets and sequences (${presets.filter((p) => !isGroupPreset(p)).length}), all Custom editor drafts and text fonts, current content and sequence, and GitHub handle, captions, font and scroll speed</small></span></label>
         <label><input type="checkbox" id="p-include-approach" ${backupSelection.approach ? 'checked' : ''} /> <span>Approach settings <small>Saved group presets (${presets.filter(isGroupPreset).length}), current group content, mode, beacon and nearby-cap detection</small></span></label>
         <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Proximity thresholds, timing, QR profiles, current greeting, repetitions, speed and logging preference (not log contents)</small></span></label>
         <label><input type="checkbox" id="p-include-settings" ${backupSelection.settings ? 'checked' : ''} /> <span>Display &amp; transport settings <small>LED text font, dimensions, brightness, rotation, mirroring and Bluetooth write settings</small></span></label>
@@ -734,12 +875,18 @@ async function renderPresets(message = '') {
     if (b.dataset.act === 'share') { openShare(p); return; }
     if (b.dataset.act === 'del') { await deletePreset(id).catch((e) => ($('#p-msg').textContent = e.message)); void renderPresets(); return; }
     if (isGroupPreset(p)) { applyGroupContent(p.groups); showTab?.('approach'); return; }
+    if (p.content.kind === 'github') {
+      showTab?.('custom');
+      await github?.loadPreset(p.content);
+      return;
+    }
     if (p.content.kind === 'image') imageDataUrl = p.content.dataUrl;
     try {
       const { image } = await renderContent(p.content);
       lastImage = image;
-      showTab?.('connect');
+      showTab?.('custom');
       setCreateFrom(p.content);
+      persistCustomDrafts();
       await refreshPreview(p.content);
     } catch (e) { $('#p-msg').textContent = (e as Error).message; }
   });
@@ -765,7 +912,7 @@ async function renderPresets(message = '') {
       const json = exportSelectedJson(all, getApproachSettings(), backupSelection,
         backupSelection.scan ? scanner?.exportProfiles() : undefined, {
           settings: { ...settings, keepBlack: Boolean(settings.keepBlack) },
-          ...(backupSelection.creations ? { createContent: currentContent(), createSequence: sequence } : {}),
+          ...(backupSelection.creations ? { createContent: activeKind === 'image' && !imageDataUrl && !sequenceOn ? undefined : currentContent(), customDrafts: customDrafts(), createSequence: sequence } : {}),
           ...(backupSelection.creations && github ? { github: github.exportSettings() } : {}),
           ...(backupSelection.scan ? scanner?.exportSettings() : {}),
           ...(backupSelection.sound && sound ? { sound: sound.exportPreferences() } : {}),
@@ -793,6 +940,7 @@ async function renderPresets(message = '') {
       const scanSettings = scanner?.prepareImport(data);
       const createContent = data.version === 2 ? data.createContent : undefined;
       const createSequence = data.version === 2 ? data.createSequence : undefined;
+      const drafts = data.version === 2 ? data.customDrafts : undefined;
       const soundSettings = data.version === 2 && data.sound && sound ? sound.prepareImport(data.sound) : undefined;
       const nextSettings = data.settings ? {
         ...data.settings,
@@ -802,7 +950,11 @@ async function renderPresets(message = '') {
       } : undefined;
       const githubSettings = data.version === 2 && data.github ? github?.prepareImport(data.github) ?? data.github : undefined;
       if (soundSettings) await sound?.stop();
-      await restoreBackup(merged, nextSettings, nextApproach, { ...scanSettings, createContent, createSequence, sound: soundSettings, github: githubSettings });
+      const importedDraft = createContent && createContent.kind !== 'sequence' && createContent.kind !== 'github'
+        ? { [createContent.kind]: createContent } : {};
+      const nextDrafts = drafts || Object.keys(importedDraft).length
+        ? mergeCustomDrafts(mergeCustomDrafts(customDrafts(), importedDraft), drafts ?? {}) : undefined;
+      await restoreBackup(merged, nextSettings, nextApproach, { ...scanSettings, createContent, createSequence, customDrafts: nextDrafts, sound: soundSettings, github: githubSettings });
       if (nextSettings) {
         settings = nextSettings;
         setTextFont(settings.textFont ?? DEFAULT_TEXT_FONT);
@@ -814,8 +966,9 @@ async function renderPresets(message = '') {
       if (createContent) {
         savedCreateContent = createContent;
         if (createContent.kind === 'image') imageDataUrl = createContent.dataUrl;
-        setCreateFrom(createContent);
+        setCreateFrom(createContent, false);
       }
+      if (nextDrafts) applyCustomDrafts(nextDrafts);
       if (nextApproach) applyImportedApproachSettings(nextApproach);
       if (scanSettings) scanner?.applyImportedSettings(scanSettings);
       if (soundSettings) sound?.applyImported(soundSettings);
@@ -964,11 +1117,12 @@ function initShareReceiver() {
   }).then((r) => { receiver = r; }, (e) => console.warn('Preset sharing unavailable', e));
 }
 
-function setCreateFrom(c: Content) {
+function setCreateFrom(c: Content, expand = true) {
+  const isSequence = c.kind === 'sequence';
   if (c.kind === 'sequence') {
     sequence = structuredClone(c.steps);
     sequenceOn = true;
-    void saveKv('createSequence', sequence).catch(() => undefined);
+    void saveKv('createSequence', sequence).catch((e) => { $('#c-err').textContent = `Could not save sequence: ${(e as Error).message}`; });
     renderSequence();
     c = c.steps[0]!.content;
     if (c.kind === 'image') imageDataUrl = c.dataUrl;
@@ -976,11 +1130,13 @@ function setCreateFrom(c: Content) {
     sequenceOn = false;
     renderSequence();
   }
-  $<HTMLSelectElement>('#c-kind').value = c.kind;
-  syncKind();
-  if (c.kind === 'solid') $<HTMLInputElement>('#c-fg').value = c.color;
-  if (c.kind === 'text') { $<HTMLInputElement>('#c-str').value = c.text; $<HTMLInputElement>('#c-fg').value = c.fg; $<HTMLInputElement>('#c-bg').value = c.bg; $<HTMLInputElement>('#c-speed').value = String(c.speed ?? DEFAULT_SPEED); $('#c-speed-val').textContent = $<HTMLInputElement>('#c-speed').value; }
-  if (c.kind === 'image') { $<HTMLInputElement>('#c-bg').value = c.bg; $<HTMLSelectElement>('#c-fit').value = c.fit; }
+  if (c.kind !== 'github') {
+    activeKind = c.kind;
+    applyCustomDrafts({ [c.kind]: c });
+  }
+  const section = isSequence ? 'sequence' : c.kind;
+  if (expand) $<HTMLDetailsElement>(`#custom-${section}`).open = true;
+  if (section !== 'github') moveContentOutput(section);
 }
 
 // ---------- tabs, offline, install, updates ---------------------------------------
@@ -991,16 +1147,14 @@ function onTabSelected(name: string) {
   if (name !== 'scan') scanner?.stopCamera();
   if (name !== 'sound') void sound?.stop();
   if (name === 'settings') void renderPresets();
-  if (name === 'connect') void refreshSequencePresets();
+  if (name === 'custom') void refreshSequencePresets();
   if (name === 'approach') renderApproach();
   window.scrollTo(0, 0);
 }
 
 function setupPwa() {
-  const offline = $('#offline');
-  if (native) { offline.textContent = platformName() === 'ios' ? 'iOS app' : 'Android app'; offline.className = 'pill ok'; return; }
+  if (native) return;
   const updateSW = registerSW({
-    onOfflineReady() { offline.textContent = 'Ready for offline use'; offline.className = 'pill ok'; },
     onNeedRefresh() {
       const show = () => {
         if (controller.state === 'Uploading' || controller.temporaryActive) { setTimeout(show, 2000); return; } // never reload mid-transfer
@@ -1009,11 +1163,8 @@ function setupPwa() {
       };
       show();
     },
-    onRegisterError(e) { offline.textContent = 'Offline cache failed'; offline.className = 'pill err'; console.error(e); },
+    onRegisterError(e) { console.error(e); },
   });
-  navigator.serviceWorker?.ready.then(() => {
-    if (offline.textContent === 'Checking offline…') offline.textContent = 'Caching for offline…';
-  }).catch(() => undefined);
 
   let deferred: (Event & { prompt: () => Promise<void> }) | null = null;
   window.addEventListener('beforeinstallprompt', (e) => {
@@ -1065,18 +1216,26 @@ async function main() {
   try {
     const saved = await loadKv('createContent');
     if (saved !== undefined) savedCreateContent = validateContent(saved);
-  } catch (e) { banner(`<b>Could not restore Connect content:</b> ${esc((e as Error).message)}`); }
+  } catch (e) { banner(`<b>Could not restore Custom content:</b> ${esc((e as Error).message)}`); }
+  try {
+    const drafts = await loadKv('customDrafts');
+    if (drafts !== undefined) savedCustomDrafts = validateCustomDrafts(drafts);
+  } catch (e) { banner(`<b>Could not restore Custom drafts:</b> ${esc((e as Error).message)}`); }
   try {
     const draft = await loadKv('createSequence');
     if (draft !== undefined) sequence = validateSequenceSteps(draft);
-  } catch (e) { banner(`<b>Could not restore the Connect sequence:</b> ${esc((e as Error).message)}`); }
+  } catch (e) { banner(`<b>Could not restore the Custom sequence:</b> ${esc((e as Error).message)}`); }
   await initApproach(approachContext());
   initShareReceiver();
-  renderConnect();
+  renderCustom();
   renderDeviceSettings();
   // Navigation must not wait for optional features to restore storage or query native capabilities.
   showTab = initTabs($('#tab-bar'), onTabSelected);
   applyConnectionGate();
+  void restoreWebConnection().catch((error: unknown) => {
+    restoreNote = `Could not reconnect to the remembered hat: ${error instanceof Error ? error.message : String(error)}`;
+    renderStatus();
+  });
   renderCreate();
   setupPwa();
   setupAppUpdates();
@@ -1084,8 +1243,8 @@ async function main() {
   scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
   const scannerReady = scanner.init();
   sound = new SoundUi({ controller: () => controller, logicalDims, physical });
-  github = new GitHubUi({ root: $('#github-section'), controller: () => controller, logicalDims, physical, frameDelayMs: () => marqueeDelay(Number($<HTMLInputElement>('#c-speed').value) || DEFAULT_SPEED) });
-  void restoreWebConnection().catch(() => renderStatus());
+  github = new GitHubUi({ root: $('#github-section'), controller: () => controller, logicalDims, physical, savePreset: saveNamedPreset,
+    initialSpeed: Number($<HTMLInputElement>('#c-speed').value) || DEFAULT_SPEED });
   await Promise.all([scannerReady, sound.init(), github.init()]);
 }
 void main().catch((error: unknown) => {

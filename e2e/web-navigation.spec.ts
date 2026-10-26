@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { connectHat, installFakeHat } from './hat';
+import { openCustomSection, connectHat, installFakeHat } from './hat';
 
 test.describe('web tab navigation @smoke', () => {
   test('only the connection controls are shown until a hat is connected', async ({ page }) => {
@@ -7,6 +7,7 @@ test.describe('web tab navigation @smoke', () => {
     page.on('pageerror', (error) => errors.push(error.message));
     await installFakeHat(page);
     await page.goto('./');
+    await expect(page.locator('header #offline')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Hat connection', exact: true })).toBeVisible();
     await expect(page.locator('#btn-connect')).toBeEnabled();
     await expect(page.locator('#connection-card').getByRole('button', { name: 'Disconnect', exact: true })).toHaveCount(0);
@@ -15,20 +16,20 @@ test.describe('web tab navigation @smoke', () => {
     await expect(page.locator('#status-linked')).toBeHidden();
     await expect(page.locator('#tab-bar')).toBeHidden();
     await expect(page.getByRole('tab')).toHaveCount(0);
-    for (const hidden of ['#content-editor', '#github-section', '#c-kind'])
+    for (const hidden of ['#content-editor', '#github-section', '#custom-text > summary'])
       await expect(page.locator(hidden)).toBeHidden();
     await connectHat(page);
     await expect(page.locator('#status-linked')).toBeVisible();
     await expect(page.locator('#status-unlinked')).toBeHidden();
     await expect(page.locator('#status-linked')).toHaveCSS('color', 'rgb(76, 217, 100)');
     await expect(page.getByRole('tab')).toHaveCount(4);
-    await expect(page.locator('#c-kind')).toBeVisible();
+    await expect(page.locator('#custom-text > summary')).toBeVisible();
     await expect(page.locator('#connection-card')).toBeHidden();
     await expect(page.getByRole('heading', { name: 'Hat connection', exact: true })).toBeHidden();
-    await expect(page.locator('#view-connect').getByLabel(/Keep cap black/)).toHaveCount(0);
+    await expect(page.locator('#view-custom').getByLabel(/Keep cap black/)).toHaveCount(0);
     await page.getByRole('tab', { name: 'Settings', exact: true }).click();
     await expect(page.locator('#s-keep-black')).toBeVisible();
-    await page.getByRole('tab', { name: 'Connect', exact: true }).click();
+    await page.getByRole('tab', { name: 'Custom', exact: true }).click();
     await expect(page.locator('#btn-status-disconnect')).toBeHidden();
     await page.locator('#status-toggle').click();
     await expect(page.locator('#btn-status-disconnect')).toBeVisible();
@@ -44,9 +45,70 @@ test.describe('web tab navigation @smoke', () => {
     await expect(page.locator('#status-unlinked')).toHaveCSS('color', 'rgb(255, 90, 90)');
     await expect(page.locator('#status-label')).toHaveCSS('color', 'rgb(255, 90, 90)');
     await expect(page.locator('#tab-bar')).toBeHidden();
-    await expect(page.locator('#c-kind')).toBeHidden();
-    await expect(page.getByRole('tabpanel', { name: 'Connect', exact: true })).toBeVisible();
+    await expect(page.locator('#custom-text > summary')).toBeHidden();
+    await expect(page.getByRole('tabpanel', { name: 'Custom', exact: true })).toBeVisible();
     expect(errors).toEqual([]);
+  });
+
+  test('reload restores the remembered hat and explicit disconnect forgets it', async ({ page }) => {
+    await installFakeHat(page);
+    await page.addInitScript(() => {
+      const bluetooth = navigator.bluetooth;
+      const requestDevice = bluetooth.requestDevice.bind(bluetooth);
+      bluetooth.requestDevice = async (options) => {
+        if (localStorage.getItem('iledcolor.lastWebBluetoothHat')) throw new Error('Refresh must not reopen the picker');
+        return requestDevice(options);
+      };
+    });
+    await page.goto('./');
+    await connectHat(page);
+    await page.reload();
+    await expect(page.locator('#status')).toContainText('Ready');
+    await expect(page.locator('#connection-card')).toBeHidden();
+    await page.locator('#status-toggle').click();
+    await page.locator('#btn-status-disconnect').click();
+    expect(await page.evaluate(() => localStorage.getItem('iledcolor.lastWebBluetoothHat'))).toBeNull();
+    await page.reload();
+    await expect(page.locator('#status')).toHaveText('Disconnected');
+    await expect(page.locator('#btn-connect')).toBeEnabled();
+  });
+
+  test('shows reconnect progress while Windows rediscovers a remembered hat', async ({ page }) => {
+    await installFakeHat(page);
+    await page.addInitScript(() => {
+      const bluetooth = navigator.bluetooth;
+      const getDevices = bluetooth.getDevices.bind(bluetooth);
+      bluetooth.getDevices = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        return getDevices();
+      };
+    });
+    await page.goto('./');
+    await connectHat(page);
+    await page.reload();
+    await expect(page.locator('#status')).toContainText('Reconnecting');
+    await expect(page.locator('#conn-msg')).toContainText('remembered hat');
+    await expect(page.locator('#status')).toContainText('Ready');
+  });
+
+  test('failed automatic lookup preserves the hat and returns to normal Connect', async ({ page }) => {
+    await installFakeHat(page);
+    await page.addInitScript(() => {
+      const bluetooth = navigator.bluetooth;
+      const getDevices = bluetooth.getDevices.bind(bluetooth);
+      bluetooth.getDevices = async () => sessionStorage.getItem('hide-hat') ? [] : getDevices();
+    });
+    await page.goto('./');
+    await connectHat(page);
+    await page.evaluate(() => sessionStorage.setItem('hide-hat', 'yes'));
+    await page.reload();
+    await expect(page.locator('#conn-msg')).toContainText('Remembered hat: iledcolor-FAKE');
+    await expect(page.locator('#btn-connect')).toHaveText('Connect');
+    await expect(page.locator('#btn-connect')).toBeEnabled();
+    expect(await page.evaluate(() => localStorage.getItem('iledcolor.lastWebBluetoothHat'))).toBe('fake-hat');
+    await page.evaluate(() => sessionStorage.removeItem('hide-hat'));
+    await page.reload();
+    await expect(page.locator('#status')).toContainText('Ready: iledcolor-FAKE');
   });
 
   test('disconnecting from another tab returns to the connection controls', async ({ page }) => {
@@ -57,7 +119,7 @@ test.describe('web tab navigation @smoke', () => {
     await page.evaluate(() => (navigator as unknown as { bluetooth: { getDevices: () => Promise<Array<{ gatt: { disconnect: () => void } }>> } })
       .bluetooth.getDevices().then(([d]) => d!.gatt.disconnect()));
     await expect(page.locator('#status')).toHaveText('Disconnected');
-    await expect(page.getByRole('tabpanel', { name: 'Connect', exact: true })).toBeVisible();
+    await expect(page.getByRole('tabpanel', { name: 'Custom', exact: true })).toBeVisible();
     await expect(page.locator('#view-settings')).toBeHidden();
     await expect(page.locator('#tab-bar')).toBeHidden();
   });
@@ -70,14 +132,15 @@ test.describe('web tab navigation @smoke', () => {
       await installFakeHat(page);
       await page.goto('./');
       await connectHat(page);
-      await expect(page.locator('#c-kind')).toBeVisible();
+      await expect(page.locator('#custom-text > summary')).toBeVisible();
       await expect(page.getByRole('tab')).toHaveCount(4);
       await expect(page.locator('#tab-approach')).toBeHidden();
+      await openCustomSection(page, 'text');
       await page.getByLabel('Text', { exact: true }).fill('Navigation regression');
 
       for (const [name, heading] of [
         ['Scan', 'Badge greeting'], ['Sound', 'Sound & voice'],
-        ['Settings', 'Settings'], ['Connect', 'Create content'],
+        ['Settings', 'Settings'], ['Custom', 'Custom'],
       ] as const) {
         const tab = page.getByRole('tab', { name, exact: true });
         await tab.click();
@@ -102,12 +165,12 @@ test.describe('web tab navigation @smoke', () => {
     await installFakeHat(page);
     await page.goto('./');
     await connectHat(page);
-    await expect(page.locator('#c-kind')).toBeVisible();
+    await expect(page.locator('#custom-text > summary')).toBeVisible();
     for (let launch = 0; launch < 2; launch++) {
-      await page.getByRole('tab', { name: 'Connect', exact: true }).focus();
+      await page.getByRole('tab', { name: 'Custom', exact: true }).focus();
       for (const [key, name] of [
         ['ArrowRight', 'Scan'], ['ArrowRight', 'Sound'], ['ArrowRight', 'Settings'],
-        ['ArrowRight', 'Connect'], ['ArrowLeft', 'Settings'], ['Home', 'Connect'],
+        ['ArrowRight', 'Custom'], ['ArrowLeft', 'Settings'], ['Home', 'Custom'],
         ['End', 'Settings'], ['ArrowLeft', 'Sound'], ['ArrowLeft', 'Scan'],
       ] as const) {
         await page.keyboard.press(key);
@@ -118,8 +181,8 @@ test.describe('web tab navigation @smoke', () => {
       }
       if (launch === 0) {
         await page.reload();
-        await connectHat(page);
-        await expect(page.locator('#c-kind')).toBeVisible();
+        await expect(page.locator('#status')).toContainText('Ready');
+        await expect(page.locator('#custom-text > summary')).toBeVisible();
       }
     }
     expect(errors).toEqual([]);

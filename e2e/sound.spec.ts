@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { connectHat } from './hat';
+import { openCustomSection, connectHat } from './hat';
 
 async function setup(page: Page) {
   await page.addInitScript(() => {
@@ -23,8 +23,8 @@ async function setup(page: Page) {
   });
   await page.goto('/#mock');
   await connectHat(page);
-  await page.selectOption('#c-kind', 'solid');
-  await page.click('#btn-send');
+  await openCustomSection(page, 'solid');
+  await page.click('#btn-send-solid');
   await expect(page.locator('#send-note')).toContainText('Upload confirmed');
   await page.getByRole('tab', { name: 'Sound', exact: true }).click();
 }
@@ -163,7 +163,7 @@ test('voice enrollment, utterance filtering and microphone shutdown work end to 
   await page.clock.runFor(10000);
   await expect(page.locator('#sound-status')).toContainText('Previous content restored');
   expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
-  await page.getByRole('tab', { name: 'Connect', exact: true }).click();
+  await page.getByRole('tab', { name: 'Custom', exact: true }).click();
   await expect(page.locator('#status-listening')).toHaveText('Listening: off');
   await expect(page.locator('#status-listening')).toHaveClass('pill muted');
   await page.getByRole('tab', { name: 'Sound', exact: true }).click();

@@ -1,26 +1,30 @@
 import { expect, test } from '@playwright/test';
-import { connectHat } from './hat';
+import { openCustomSection, connectHat, waitForServiceWorker } from './hat';
 
 test('five icon tabs keep content on Connect and device controls on Settings', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
+  await waitForServiceWorker(page);
   const tabs = page.getByRole('tab');
   await expect(tabs).toHaveCount(5);
   expect(await tabs.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-tab'))))
-    .toEqual(['connect', 'approach', 'scan', 'sound', 'settings']);
+    .toEqual(['custom', 'approach', 'scan', 'sound', 'settings']);
   for (const tab of await tabs.all()) await expect(tab.locator('svg')).toHaveCount(1);
   await expect(page.locator('#view-create, #view-presets')).toHaveCount(0);
-  await expect(page.locator('#c-kind')).toBeVisible();
+  await expect(page.locator('#custom-text > summary')).toBeVisible();
   await expect(page.locator('#brightness')).toBeHidden();
+  await openCustomSection(page, 'text');
   await expect(page.locator('#send-help')).toContainText('Send it to your connected hat');
   await expect(page.locator('#btn-send')).toBeEnabled();
+  await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Hi');
+  await openCustomSection(page, 'text');
+  await page.click('#c-save-start');
   await page.fill('#c-name', 'My saved greeting');
-  await page.click('#btn-save');
-  await expect(page.locator('#send-note')).toContainText('Saved');
+  await page.locator('#c-save-form').getByRole('button', { name: 'Save preset' }).click();
+  await expect(page.locator('#c-save-note')).toContainText('Saved');
   await page.getByRole('tab', { name: 'Settings' }).click();
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
   await expect(page.locator('#brightness')).toBeEnabled();
@@ -44,7 +48,7 @@ test('five icon tabs keep content on Connect and device controls on Settings', a
   await page.fill('#s-delay', '25');
   await page.locator('#s-delay').dispatchEvent('change');
   await page.locator('.preset-list li', { hasText: 'My saved greeting' }).locator('[data-act=load]').click();
-  await expect(page.getByRole('tab', { name: 'Connect' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Custom' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#c-str')).toHaveValue('Hi');
   await page.reload();
   await connectHat(page);
@@ -60,8 +64,8 @@ test('five icon tabs keep content on Connect and device controls on Settings', a
 test('keyboard tabs, scan-first ordering and every marquee choice are accessible', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
-  const connect = page.getByRole('tab', { name: 'Connect' });
+  await waitForServiceWorker(page);
+  const connect = page.getByRole('tab', { name: 'Custom' });
   await connect.focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Approach' })).toBeFocused();
@@ -88,13 +92,15 @@ test('keyboard tabs, scan-first ordering and every marquee choice are accessible
 test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
+  await openCustomSection(page, 'text');
+  await page.click('#c-save-start');
   await page.fill('#c-name', 'A'.repeat(60));
-  await page.click('#btn-save');
-  await expect(page.locator('#send-note')).toContainText('Saved');
+  await page.locator('#c-save-form').getByRole('button', { name: 'Save preset' }).click();
+  await expect(page.locator('#c-save-note')).toContainText('Saved');
   for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 },
     { width: 844, height: 390 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
-    for (const name of ['Connect', 'Approach', 'Scan', 'Sound', 'Settings']) {
+    for (const name of ['Custom', 'Approach', 'Scan', 'Sound', 'Settings']) {
       await page.getByRole('tab', { name, exact: true }).click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const tab = await page.getByRole('tab', { name, exact: true }).boundingBox();
@@ -108,7 +114,7 @@ test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async 
   }
   await page.setViewportSize({ width: 360, height: 800 });
   await page.addStyleTag({ content: 'body { font-size:32px; }' });
-  for (const name of ['Connect', 'Approach', 'Scan', 'Sound', 'Settings']) {
+  for (const name of ['Custom', 'Approach', 'Scan', 'Sound', 'Settings']) {
     await page.getByRole('tab', { name, exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
