@@ -1,5 +1,6 @@
 import logo from '../assets/presets/xebia-logo.png?inline';
 import copilotLogo from '../assets/presets/github-copilot-logo.png?inline';
+import copilotHead from '../assets/presets/copilot-head.png?inline';
 import partyPopper from '../assets/presets/party-popper.gif?inline';
 import type { ContentPreset } from './presets';
 
@@ -17,6 +18,10 @@ export function builtinPresets(): ContentPreset[] {
     {
       id: 'builtin-github-copilot-logo', name: 'GitHub Copilot logo', updatedAt: 0,
       content: { kind: 'image', dataUrl: copilotLogo, fit: 'contain', bg: '#000000' },
+    },
+    {
+      id: 'builtin-copilot-head', name: 'GitHub Copilot head', updatedAt: 0,
+      content: { kind: 'image', dataUrl: copilotHead, fit: 'contain', bg: '#000000' },
     },
     {
       id: 'builtin-party-popper', name: 'Party Popper', updatedAt: 0,

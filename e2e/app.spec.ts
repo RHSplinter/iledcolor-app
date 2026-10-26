@@ -244,7 +244,7 @@ test('keepBlack keeps cap black when idle while displaying approach, sound and s
   await page.locator('#view-scan summary').click();
   await page.fill('#qr-raw', 'Ada');
   await page.click('#qr-submit');
-  await expect(page.locator('#qr-status')).toContainText('Hi Ada!');
+  await expect(page.locator('#qr-status')).toContainText('Hi Ada!', { timeout: 15_000 });
   await expect(page.locator('#status')).toContainText('Ready', { timeout: 15_000 });
   await page.click('#qr-cancel');
   await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15_000 });

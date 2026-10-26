@@ -4,10 +4,11 @@ import { readFile } from 'node:fs/promises';
 
 async function expectCaptionPixels(page: Page) {
   // The contribution graph is green-only; white pixels belong to ASCII captions.
+  // A postfix only scrolls into view after the whole graph, which takes ~5s at the default speed.
   await expect.poll(() => page.locator('#github-preview').evaluate((canvas: HTMLCanvasElement) => {
     const { data } = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
     return data.some((value, i) => i % 4 === 0 && value > 0 && value === data[i + 1] && value === data[i + 2]);
-  })).toBe(true);
+  }), { timeout: 15_000 }).toBe(true);
 }
 
 test('GitHub graph previews, uploads, persists and round-trips through Creations backup', async ({ page }) => {

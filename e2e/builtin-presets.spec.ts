@@ -9,9 +9,9 @@ test('built-ins load, send, save, back up and remain available offline', async (
   await connectHat(page);
   await waitForServiceWorker(page);
 
-  for (const [id, kind] of [['xebia-github', 'text'], ['header', 'text'], ['lgtm', 'text'], ['xebia-logo', 'image'], ['github-copilot-logo', 'image'], ['party-popper', 'image']]) {
+  for (const [id, kind] of [['xebia-github', 'text'], ['header', 'text'], ['lgtm', 'text'], ['xebia-logo', 'image'], ['github-copilot-logo', 'image'], ['copilot-head', 'image'], ['party-popper', 'image']]) {
     await page.click('nav [data-tab=settings]');
-    await expect(page.locator('#builtin-presets li')).toHaveCount(6);
+    await expect(page.locator('#builtin-presets li')).toHaveCount(7);
     await expect(page.locator('#builtin-presets [data-act=del]')).toHaveCount(0);
     if (id === 'header') {
       await expect(page.locator('#builtin-presets [data-id=builtin-header]')).toContainText('<header>');
@@ -66,12 +66,16 @@ test('built-ins load, send, save, back up and remain available offline', async (
   await expect(page.locator('#custom-image')).not.toHaveAttribute('open');
   await expect(page.locator('#c-seq-list li')).toHaveCount(1);
   await page.click('nav [data-tab=settings]');
-  await expect(page.locator('#builtin-presets li')).toHaveCount(6);
+  await expect(page.locator('#builtin-presets li')).toHaveCount(7);
   await expect(page.locator('.preset-list:not(#builtin-presets)')).toContainText('My party');
   await page.locator('#builtin-presets [data-id=builtin-party-popper] [data-act=load]').click();
   await expect(page.locator('#view-custom')).toBeVisible();
   await expect(page.locator('#c-err')).toBeEmpty();
   await expect.poll(pixels).not.toBe(firstFrame);
+  await page.click('nav [data-tab=settings]');
+  await page.locator('#builtin-presets [data-id=builtin-copilot-head] [data-act=load]').click();
+  await expect(page.locator('#c-kind')).toHaveValue('image');
+  await expect(page.locator('#c-err')).toBeEmpty();
   expect(external).toEqual([]);
 });
 
@@ -87,7 +91,7 @@ test('built-ins survive replacement imports on web and cannot shadow personal pr
   };
   await page.setInputFiles('#p-import', { name: 'personal.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) });
   await expect(page.locator('#p-msg')).toContainText('Imported');
-  await expect(page.locator('#builtin-presets li')).toHaveCount(6);
+  await expect(page.locator('#builtin-presets li')).toHaveCount(7);
   await page.locator('.preset-list:not(#builtin-presets) [data-act=load]').click();
   await expect(page.locator('#c-str')).toHaveValue('Keep mine');
   await openCustomSection(page, 'sequence');
@@ -105,6 +109,6 @@ test('built-ins survive replacement imports on web and cannot shadow personal pr
   await page.setInputFiles('#p-import', { name: 'empty.json', mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ ...file, creations: [] })) });
   await expect(page.locator('#p-msg')).toContainText('Imported');
-  await expect(page.locator('#builtin-presets li')).toHaveCount(6);
+  await expect(page.locator('#builtin-presets li')).toHaveCount(7);
   await expect(page.locator('.preset-list:not(#builtin-presets)')).not.toContainText('Personal text');
 });
