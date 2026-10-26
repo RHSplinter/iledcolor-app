@@ -133,7 +133,6 @@ function updateButtons() {
   const busy = s === 'Selecting' || s === 'Connecting' || s === 'Handshaking' || s === 'Uploading';
   const set = (id: string, v: boolean) => { const b = document.getElementById(id) as HTMLButtonElement | null; if (b) b.disabled = v; };
   set('btn-connect', busy || ready || controller.temporaryActive);
-  set('btn-disconnect', s === 'Disconnected');
   set('btn-send', !ready || !lastImage);
   const help = document.getElementById('send-help');
   if (help) help.textContent = controller.temporaryActive ? 'Wait for the current cap reaction to finish before sending.'
@@ -184,7 +183,6 @@ function renderConnect() {
       ${useMock ? '<p class="warn">Mock mode: no real hat is used.</p>' : ''}
       <div class="row">
         <button id="btn-connect" class="primary">Connect</button>
-        <button id="btn-disconnect">Disconnect</button>
         <button id="btn-install" hidden>Install app</button>
       </div>
       <p id="conn-msg" class="small"></p>
@@ -194,7 +192,6 @@ function renderConnect() {
     <div id="content-editor"></div>
     <div id="github-section"></div>`;
   $('#btn-connect').onclick = onConnect;
-  $('#btn-disconnect').onclick = () => (sharedCap() ? disconnectPrimary() : controller.disconnect());
   renderStatus();
 }
 

@@ -10,7 +10,8 @@ connection status and install help); the tab bar, content editor and all other t
 once the cap is ready and stay available during uploads. If the connection is lost or you
 disconnect, the app returns to the connection controls. The whole **Hat connection**
 section is hidden while the cap is connected, including during uploads.
-To disconnect, tap the connection status pill at the top and select **Disconnect**.
+The **Hat connection** section has no Disconnect button. To disconnect a connected cap,
+tap the connection status pill at the top and select **Disconnect**.
 Tap the pill again, tap elsewhere or press Escape to dismiss the button.
 The top status bar shows live pills across every tab for primary cap connection,
 with a green link icon when connected (including uploads) and a red broken-link icon otherwise,

@@ -9,6 +9,7 @@ test.describe('web tab navigation @smoke', () => {
     await page.goto('./');
     await expect(page.getByRole('heading', { name: 'Hat connection', exact: true })).toBeVisible();
     await expect(page.locator('#btn-connect')).toBeEnabled();
+    await expect(page.locator('#connection-card').getByRole('button', { name: 'Disconnect', exact: true })).toHaveCount(0);
     await expect(page.locator('#status')).toHaveText('Disconnected');
     await expect(page.locator('#status-unlinked')).toBeVisible();
     await expect(page.locator('#status-linked')).toBeHidden();
@@ -36,6 +37,7 @@ test.describe('web tab navigation @smoke', () => {
     await expect(page.locator('#btn-status-disconnect')).toBeHidden();
     await expect(page.locator('#status-toggle')).toBeDisabled();
     await expect(page.locator('#connection-card')).toBeVisible();
+    await expect(page.locator('#connection-card').getByRole('button', { name: 'Disconnect', exact: true })).toHaveCount(0);
     await expect(page.locator('#btn-connect')).toBeVisible();
     await expect(page.locator('#status-unlinked')).toBeVisible();
     await expect(page.locator('#status-linked')).toBeHidden();
