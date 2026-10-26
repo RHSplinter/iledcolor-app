@@ -5,6 +5,8 @@ export const TEXT_FONTS = [
   { id: 'dotgothic', label: 'DotGothic16 - tall pixel', family: '"DotGothic16"', size: 16 },
   // A 2x scale of an 8-row grid: letters, ascenders and descenders fill all 16 rows.
   { id: 'bitcount', label: 'Bitcount - full height', family: '"Bitcount Prop Single"', size: 20 },
+  // A vector font: `fit` scales it so its full ASCII extent uses every row of the display.
+  { id: 'monaspace', label: 'Monaspace Neon - full height', family: '"Monaspace Neon"', size: 16, fit: true },
 ] as const;
 
 export type TextFont = typeof TEXT_FONTS[number]['id'];
