@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { connectHat } from './hat';
 
 const fonts = ['silkscreen', 'tiny5', 'press-start', 'dotgothic', 'bitcount', 'monaspace'];
 
@@ -16,6 +17,7 @@ async function pixels(page: Page, selector: string) {
 test('six distinct, crisp fonts have one-pixel spacing and match preview and mock uploads offline', async ({ page, context }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#mock');
+  await connectHat(page);
   await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20_000 });
   await page.fill('#c-str', 'Hi!');
   await page.click('nav [data-tab=settings]');
@@ -43,7 +45,6 @@ test('six distinct, crisp fonts have one-pixel spacing and match preview and moc
     samples.push(sample);
     await page.click('nav [data-tab=connect]');
     await expect.poll(() => pixels(page, '#preview')).toEqual(sample);
-    if (font === fonts[0]) await page.click('#btn-connect');
     await expect(page.locator('#status')).toContainText('Ready');
     await page.click('#btn-send');
     await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
@@ -66,6 +67,7 @@ test('six distinct, crisp fonts have one-pixel spacing and match preview and moc
 
   await context.setOffline(true);
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-font')).toHaveValue('monaspace');
   for (const [index, font] of fonts.entries()) {
@@ -76,6 +78,7 @@ test('six distinct, crisp fonts have one-pixel spacing and match preview and moc
 
 test('emoji keep their full bitmap and two blank columns on both sides in every font', async ({ page }) => {
   await page.goto('/#mock');
+  await connectHat(page);
   const background = '0,0,0';
   const readText = async (text: string) => {
     const previous = await pixels(page, '#preview');
@@ -115,6 +118,7 @@ test('emoji keep their full bitmap and two blank columns on both sides in every 
 
 test('old backups preserve the current font, excluded settings stay intact, invalid fonts fail atomically', async ({ page }) => {
   await page.goto('/#mock');
+  await connectHat(page);
   await page.click('nav [data-tab=settings]');
   await page.selectOption('#s-font', 'tiny5');
   const settings = {
@@ -139,6 +143,7 @@ test('old backups preserve the current font, excluded settings stay intact, inva
   await expect(page.locator('#s-font')).toHaveValue('tiny5');
   await expect(page.locator('#brightness')).toHaveValue('4');
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-font')).toHaveValue('tiny5');
   await expect(page.locator('#brightness')).toHaveValue('4');
@@ -146,8 +151,7 @@ test('old backups preserve the current font, excluded settings stay intact, inva
 
 test('changing the global font refreshes running Approach content without restarting', async ({ page }) => {
   await page.goto('/#mock');
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
+  await connectHat(page);
   await page.click('nav [data-tab=approach]');
   await page.locator('[data-tier=solo][data-field=text]').fill('Hi!');
   await page.locator('[data-tier=solo][data-field=text]').dispatchEvent('change');

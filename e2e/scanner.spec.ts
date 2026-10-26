@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { connectHat } from './hat';
 import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 
@@ -35,11 +36,11 @@ test('camera decodes a QR code offline and greets the primary cap before restori
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { value: getUserMedia });
   }, { pixels });
   await page.goto('/#mock');
+  await connectHat(page);
   await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20000 });
   await context.setOffline(true);
   await page.reload();
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
+  await connectHat(page);
   await page.click('nav [data-tab=connect]');
   await page.selectOption('#c-kind', 'solid');
   await page.click('#btn-send');
@@ -77,7 +78,7 @@ test('a greeting pauses only the primary cap while approach updates keep reachin
     } });
   });
   await page.goto('/#mock');
-  await page.click('#btn-connect');
+  await connectHat(page);
   await page.click('nav [data-tab=approach]');
   await page.check('input[name=ap-mode][value=hub]');
   await page.click('#ap-add');
@@ -112,9 +113,9 @@ test('a greeting pauses only the primary cap while approach updates keep reachin
 
 test('regex errors leave content alone and settings persist without badge data', async ({ page }) => {
   await page.goto('/#mock');
-  await page.click('#btn-connect');
-  await page.click('nav [data-tab=connect]');
-  await page.check('#c-keep-black');
+  await connectHat(page);
+  await page.click('nav [data-tab=settings]');
+  await page.check('#s-keep-black');
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
   await page.fill('#qr-pattern', '([^|]+)\\|([^|]+)\\|([^|]+)');
@@ -143,16 +144,18 @@ test('regex errors leave content alone and settings persist without badge data',
   await page.fill('#qr-pattern', 'name=(?<name>[^;]+)');
   await page.locator('#qr-pattern').dispatchEvent('change');
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-pattern')).toHaveValue('name=(?<name>[^;]+)');
   await expect(page.locator('#qr-template')).toHaveValue('Welcome {name}!');
   await expect(page.locator('#qr-raw')).toHaveValue('');
-  await expect(page.locator('#qr-submit')).toBeDisabled();
+  await expect(page.locator('#qr-submit')).toBeEnabled();
 });
 
 test('saves three QR profiles with notes, restores them on reload, and supports none', async ({ page }) => {
   const tourPattern = String.raw`^[^^]*\^(?<firstname>[^^]+)\^(?<lastname>[^^]+)\^(?<company>[^^]+)\^`;
   await page.goto('/#mock');
+  await connectHat(page);
   await page.click('nav [data-tab=scan]');
   await page.fill('#qr-note', 'MS AI Tour');
   await page.fill('#qr-pattern', tourPattern);
@@ -161,6 +164,7 @@ test('saves three QR profiles with notes, restores them on reload, and supports 
   await expect(page.locator('#qr-profile')).toHaveValue('1');
 
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-profile')).toHaveValue('1');
   await expect(page.locator('#qr-note')).toHaveValue('MS AI Tour');
@@ -206,7 +210,7 @@ test('saves three QR profiles with notes, restores them on reload, and supports 
 
 test('scan logging is opt-in, persists, includes failed manual entries, and stops when disabled', async ({ page }) => {
   await page.goto('/#mock');
-  await page.click('#btn-connect');
+  await connectHat(page);
   await page.click('nav [data-tab=settings]');
   await page.getByText('Test patterns (dim, static)', { exact: true }).click();
   await page.click('#btn-test-color');
@@ -234,13 +238,13 @@ test('scan logging is opt-in, persists, includes failed manual entries, and stop
   await expect(page.locator('#qr-error')).toContainText('did not match');
   await expect(page.locator('#qr-log-status')).toContainText('Scan saved');
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-log-enabled')).toBeChecked();
   await page.uncheck('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toContainText('Existing log kept');
 
   await page.click('nav [data-tab=connect]');
-  await page.click('#btn-connect');
   await page.click('nav [data-tab=settings]');
   await page.getByText('Test patterns (dim, static)', { exact: true }).click();
   await page.click('#btn-test-color');

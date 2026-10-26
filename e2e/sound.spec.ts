@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { connectHat } from './hat';
 
 async function setup(page: Page) {
   await page.addInitScript(() => {
@@ -21,7 +22,7 @@ async function setup(page: Page) {
     } });
   });
   await page.goto('/#mock');
-  await page.click('#btn-connect');
+  await connectHat(page);
   await page.selectOption('#c-kind', 'solid');
   await page.click('#btn-send');
   await expect(page.locator('#send-note')).toContainText('Upload confirmed');
@@ -59,6 +60,7 @@ test('sound tab is opt-in, shows bilingual dictionary, and requires a wearer sam
   await expect(page.locator('#sound-error')).toBeEmpty();
   expect(await page.locator('#sound-preview').evaluate((node: HTMLCanvasElement) => node.width)).toBeGreaterThan(0);
   await page.reload();
+  await connectHat(page);
   await page.getByRole('tab', { name: 'Sound', exact: true }).click();
   await expect(page.locator('#sound-language')).toHaveValue('de-DE');
   await page.locator('#sound-reactions summary').first().click();

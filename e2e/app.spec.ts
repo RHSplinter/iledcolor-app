@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test';
+import { connectHat } from './hat';
 
 test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page, context }) => {
   const external: string[] = [];
   page.on('request', (r) => { if (!r.url().startsWith('http://localhost:4173')) external.push(r.url()); });
 
   await page.goto('/#mock');
+  await connectHat(page);
   await expect(page.locator('#offline')).toHaveText('Ready for offline use', { timeout: 20_000 });
 
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
 
   await page.click('nav [data-tab=connect]');
   await page.fill('#c-str', 'Hi');
@@ -24,18 +24,18 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
   // Offline relaunch: cached shell loads and presets are still editable.
   await context.setOffline(true);
   await page.reload();
+  await connectHat(page);
   await expect(page.locator('#status')).toBeVisible();
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('ul.list li').first()).toContainText('Greeting');
   await page.click('nav [data-tab=connect]');
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
 
   expect(external).toEqual([]); // privacy: no off-origin requests
 });
 
 test('rejects a corrupt preset import visibly', async ({ page }) => {
   await page.goto('/#mock');
+  await connectHat(page);
   await page.click('nav [data-tab=settings]');
   await page.setInputFiles('#p-import', { name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{nope') });
   await expect(page.locator('#p-msg')).toContainText('Import failed');
@@ -43,6 +43,7 @@ test('rejects a corrupt preset import visibly', async ({ page }) => {
 
 test('group content presets: save, export, load', async ({ page }) => {
   await page.goto('/#mock');
+  await connectHat(page);
   await page.click('nav button[data-tab=approach]');
   const pairText = page.locator('[data-tier=pair][data-field=text]');
   await pairText.fill('Servus {other}!');
@@ -77,6 +78,7 @@ test('group content presets: save, export, load', async ({ page }) => {
 test('share categories: scan-only file excludes creations and approach content, import preserves them', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#mock');
+  await connectHat(page);
   await page.click('nav [data-tab=connect]');
   await page.fill('#c-name', 'Keep this creation');
   await page.click('#btn-save');
@@ -108,6 +110,7 @@ test('share categories: scan-only file excludes creations and approach content, 
   await expect(page.locator('#ap-enter')).toHaveValue('-60');
   await expect(page.locator('[data-tier=pair][data-field=text]')).toHaveValue('Keep my greeting');
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-enter')).toHaveValue('-60');
   await expect(page.locator('[data-tier=pair][data-field=text]')).toHaveValue('Keep my greeting');
@@ -116,7 +119,7 @@ test('share categories: scan-only file excludes creations and approach content, 
 test('solo uses Connect content, restores it after approaching, and remembers the choice', async ({ page }) => {
   test.setTimeout(60000);
   await page.goto('/#mock');
-  await page.click('#btn-connect');
+  await connectHat(page);
   await page.click('nav [data-tab=connect]');
   await page.selectOption('#c-kind', 'solid');
   await page.locator('#c-fg').fill('#ff0000');
@@ -145,6 +148,7 @@ test('solo uses Connect content, restores it after approaching, and remembers th
   await expect(page.locator('#ap-caps .cap-note')).toHaveText('Connect tab content', { timeout: 15000 });
   await expect.poll(pixel).toEqual([0, 255, 0]);
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-solo-create')).toBeChecked();
   await page.click('nav [data-tab=connect]');
@@ -161,13 +165,13 @@ test('approach mode (mock): two caps greet each other, peers grow the group', as
     } });
   });
   await page.goto('/#mock');
+  await connectHat(page);
   await expect(page.locator('#status-approach')).toHaveText('Approach: off');
   await expect(page.locator('#status-approach')).toHaveClass('pill muted');
   await page.click('nav button[data-tab=approach]');
   await expect(page.locator('#ap-beacon')).toHaveCount(0); // P2P is the default: multi-cap settings hidden
   await page.check('input[name=ap-mode][value=hub]');
-  await page.click('#ap-add');
-  await page.click('#ap-add');
+  await page.click('#ap-add'); // the connected primary cap is cap 1
   await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(2);
   await page.locator('input[data-tier=solo][data-field=text]').fill('SOLO');
   await page.locator('input[data-tier=solo][data-field=text]').dispatchEvent('change');
@@ -200,10 +204,9 @@ test('approach mode (mock): two caps greet each other, peers grow the group', as
 test('keepBlack keeps cap black when idle while displaying approach, sound and scan events', async ({ page }) => {
   test.setTimeout(60000);
   await page.goto('/#mock');
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
-  await page.check('#c-keep-black');
+  await connectHat(page);
   await page.click('nav [data-tab=settings]');
+  await page.check('#s-keep-black');
   await expect(page.locator('#s-keep-black')).toBeChecked();
 
   await page.click('nav [data-tab=approach]');
@@ -247,8 +250,8 @@ test('keepBlack keeps cap black when idle while displaying approach, sound and s
 
 test('approach calibration and walk record/replay (mock)', async ({ page }) => {
   await page.goto('/#mock');
+  await connectHat(page);
   await page.click('nav button[data-tab=approach]');
-  await page.click('#ap-add');
   await page.click('#ap-sim-peer');
   await page.click('#ap-start');
   await expect(page.locator('#ap-cal-src')).toContainText('(phone)', { timeout: 15_000 });
@@ -272,8 +275,7 @@ test('approach calibration and walk record/replay (mock)', async ({ page }) => {
 
 test('the Connect tab cap is cap 1 of approach mode', async ({ page }) => {
   await page.goto('/#mock');
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
+  await connectHat(page);
   await page.click('nav button[data-tab=approach]');
   await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(1);
   await expect(page.locator('#ap-caps li[data-key]').first()).toContainText('Ready');
@@ -282,18 +284,20 @@ test('the Connect tab cap is cap 1 of approach mode', async ({ page }) => {
   await page.click('#ap-add');
   await expect(page.locator('#ap-caps li[data-key]')).toHaveCount(2);
   await page.click('nav [data-tab=connect]');
-  await page.click('#btn-disconnect');
+  await page.locator('#status-toggle').click();
+  await page.locator('#btn-status-disconnect').click();
   await expect(page.locator('#status')).toHaveText('Disconnected');
+  // Without the primary cap only the connection controls remain, even while another cap is connected.
+  await expect(page.locator('#tab-bar')).toBeHidden();
+  await expect(page.locator('#view-approach')).toBeHidden();
+  await connectHat(page);
   await page.click('nav button[data-tab=approach]');
-  await expect(page.locator('#ap-caps li[data-key]').first()).toContainText('Disconnected');
-  await expect(page.locator('#ap-caps li[data-key]').nth(1)).toContainText('Ready');
-  await page.locator('#ap-caps li[data-key]').first().locator('[data-act=connect]').click();
-  await page.click('nav [data-tab=connect]');
-  await expect(page.locator('#status')).toContainText('Ready');
+  await expect(page.locator('#ap-caps li[data-key]').first()).toContainText('Ready');
 });
 
 test('approach switch is remembered across reloads', async ({ page }) => {
   await page.goto('/#mock');
+  await connectHat(page);
   await page.click('nav button[data-tab=approach]');
   await expect(page.locator('#view-approach .card').first().evaluate((card) => {
     const toggle = card.querySelector('#ap-start')!;
@@ -306,18 +310,20 @@ test('approach switch is remembered across reloads', async ({ page }) => {
   await expect(sw).toBeChecked();
   await expect(page.locator('#ap-status')).toContainText('Group');
   await page.reload();
+  await connectHat(page);
   await page.click('nav button[data-tab=approach]');
   await expect(page.getByRole('switch')).toBeChecked();
   await page.getByRole('switch').click();
   await expect(page.locator('#ap-status')).toContainText('Stopped');
   await page.reload();
+  await connectHat(page);
   await page.click('nav button[data-tab=approach]');
   await expect(page.getByRole('switch')).not.toBeChecked();
 });
 
 test('nearby cap texts: compare two phones and adopt the other text', async ({ page }) => {
   await page.goto('/#mock');
-  await page.click('#btn-connect');
+  await connectHat(page);
   await page.click('nav [data-tab=approach]');
   await page.selectOption('[data-tier=pair][data-field=mode]', 'span');
   await page.locator('[data-tier=pair][data-field=text]').fill('LOCAL');
@@ -337,6 +343,7 @@ test('nearby cap texts: compare two phones and adopt the other text', async ({ p
   await expect(page.locator('[data-tier=pair][data-field=text]')).toHaveValue('<REMOTE> & 👋');
   await expect(page.locator('#ap-texts [data-use-text]')).toBeDisabled();
   await page.reload();
+  await connectHat(page);
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('[data-tier=pair][data-field=text]')).toHaveValue('<REMOTE> & 👋');
 });
@@ -345,7 +352,7 @@ test('nearby cap texts: automatic most-common selection is marked, ties preserve
   test.setTimeout(60000);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#mock');
-  await page.click('#btn-connect');
+  await connectHat(page);
   await page.click('nav [data-tab=approach]');
   await page.fill('#ap-settle', '0');
   await page.locator('#ap-settle').dispatchEvent('change');
@@ -373,8 +380,7 @@ test('nearby cap texts: automatic most-common selection is marked, ties preserve
 
 test('sequence: compose, send, save, reload, add preset and back up', async ({ page }) => {
   await page.goto('/#mock');
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
+  await connectHat(page);
   const steps = page.locator('#c-seq-list li[data-index]');
   await expect(page.locator('#c-seq-on')).toBeDisabled();
 
@@ -400,6 +406,7 @@ test('sequence: compose, send, save, reload, add preset and back up', async ({ p
   await page.click('#btn-save');
   await expect(page.locator('#send-note')).toHaveText('Saved "Show".');
   await page.reload();
+  await connectHat(page);
   await expect(steps).toHaveCount(2);
   await expect(page.locator('#c-seq-on')).toBeChecked();
   await expect(page.getByLabel('Seconds for step 1')).toHaveValue('5');

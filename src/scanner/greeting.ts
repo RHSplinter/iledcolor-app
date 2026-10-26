@@ -38,7 +38,7 @@ export const DEFAULT_GREETING: GreetingSettings = {
   pattern: '',
   template: 'Hi {name}!',
   repetitions: 3,
-  speed: 5,
+  speed: 3,
 };
 
 const PROFILE_IDS = ['1', '2', '3'];

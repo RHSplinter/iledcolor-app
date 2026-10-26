@@ -9,7 +9,18 @@
 </head>
 <body>
   <header>
-    <div id="status" class="pill" role="status" aria-live="polite">Disconnected</div>
+    <div id="connection-status">
+      <div id="status" class="pill err" role="status" aria-live="polite">
+        <button id="status-toggle" type="button" aria-expanded="false" aria-controls="connection-actions" disabled>
+          <svg id="status-linked" class="connection-icon connected" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 11a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-1 1"/></svg>
+          <svg id="status-unlinked" class="connection-icon disconnected" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 15-1 1a4 4 0 0 1-6-6l3-3m12 2 1-1a4 4 0 0 1 6 6l-3 3M2 2l20 20M9 3v3m6 12v3M3 9h3m12 6h3"/></svg>
+          <span id="status-label">Disconnected</span>
+        </button>
+      </div>
+      <div id="connection-actions" hidden>
+        <button id="btn-status-disconnect" type="button" class="danger">Disconnect</button>
+      </div>
+    </div>
     <div id="status-approach" class="pill muted" role="status" aria-live="polite">Approach: off</div>
     <div id="status-listening" class="pill muted" role="status" aria-live="polite">Listening: off</div>
     <div id="offline" class="pill muted">Checking offline…</div>
