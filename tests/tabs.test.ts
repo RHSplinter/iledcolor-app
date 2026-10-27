@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { initTabs } from '../src/ui/tabs';
 import shell from '../index.html?raw';
 
-const names = ['custom', 'approach', 'scan', 'sound', 'settings'];
+const names = ['presets', 'custom', 'approach', 'scan', 'sound', 'settings'];
 const button = (name: string) => document.getElementById(`tab-${name}`) as HTMLButtonElement;
 const panel = (name: string) => document.getElementById(`view-${name}`)!;
 const selected = vi.fn();
@@ -30,8 +30,8 @@ describe('tab navigation using the actual app shell', () => {
     select = initTabs(document.getElementById('tab-bar')!, selected);
   });
 
-  it('keeps Custom selected initially and Approach unavailable on web', () => {
-    expectSelection('custom');
+  it('keeps Presets selected initially and Approach unavailable on web', () => {
+    expectSelection('presets');
     expect(button('approach').hidden).toBe(true);
     expect(selected).not.toHaveBeenCalled();
   });
@@ -63,7 +63,7 @@ describe('tab navigation using the actual app shell', () => {
     expect(select('sound')).toBe(false);
     button('scan').setAttribute('aria-controls', 'missing');
     expect(select('scan')).toBe(false);
-    expectSelection('custom');
+    expectSelection('presets');
     expect(selected).not.toHaveBeenCalled();
   });
 
@@ -71,7 +71,7 @@ describe('tab navigation using the actual app shell', () => {
     button('custom').focus();
     for (const [key, name] of [
       ['ArrowRight', 'scan'], ['ArrowRight', 'sound'], ['ArrowRight', 'settings'],
-      ['ArrowRight', 'custom'], ['ArrowLeft', 'settings'], ['ArrowLeft', 'sound'],
+      ['ArrowRight', 'presets'], ['ArrowLeft', 'settings'], ['ArrowLeft', 'sound'],
     ] as const) {
       expect(press(key).defaultPrevented).toBe(true);
       expect(document.activeElement).toBe(button(name));
@@ -85,11 +85,12 @@ describe('tab navigation using the actual app shell', () => {
     press('End');
     expectSelection('sound');
     press('Home');
-    expectSelection('custom');
+    expectSelection('presets');
     button('approach').hidden = false;
+    button('approach').focus();
     press('ArrowRight');
-    expectSelection('approach');
-    expect(document.activeElement).toBe(button('approach'));
+    expectSelection('scan');
+    expect(document.activeElement).toBe(button('scan'));
   });
 
   it('leaves ordinary and modified keys and focus outside the tab bar alone', () => {
@@ -101,7 +102,7 @@ describe('tab navigation using the actual app shell', () => {
     document.body.tabIndex = -1;
     document.body.focus();
     expect(press('End').defaultPrevented).toBe(false);
-    expectSelection('custom');
+    expectSelection('presets');
     expect(selected).not.toHaveBeenCalled();
   });
 });
