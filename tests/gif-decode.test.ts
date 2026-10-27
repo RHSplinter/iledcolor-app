@@ -94,6 +94,14 @@ describe('JS GIF decoder', () => {
     expect(new Set(frames.map((f) => f.join())).size).toBeGreaterThan(1);
   });
 
+  it('decodes the 32×16 rainbow cat and star animation with distinct timed frames', () => {
+    const { frames, delays, size } = decode(new Uint8Array(readFileSync(join('src', 'assets', 'presets', 'rainbow-cat-star.gif'))));
+    expect(size).toEqual([32, 16]);
+    expect(frames).toHaveLength(12);
+    expect(delays).toEqual(Array(12).fill(100));
+    expect(new Set(frames.map((f) => f.join())).size).toBeGreaterThan(1);
+  });
+
   it('rejects invalid, truncated and oversized GIFs', () => {
     const gif = encodeGif([image(4, 4, () => RED), image(4, 4, () => BLUE)], 100);
     expect(() => decode(new TextEncoder().encode('PNG not a gif'))).toThrow(/header/);

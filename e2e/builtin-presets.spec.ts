@@ -10,9 +10,9 @@ test('built-ins send directly, stay separate from backups and remain available o
   await connectHat(page);
   await waitForServiceWorker(page);
 
-  for (const [id, kind] of [['xebia-github', 'text'], ['header', 'text'], ['lgtm', 'text'], ['xebia-logo', 'image'], ['github-copilot-logo', 'image'], ['copilot-head', 'image'], ['copilot-blinking-head', 'gif'], ['party-popper', 'image']]) {
+  for (const [id, kind] of [['xebia-github', 'text'], ['header', 'text'], ['lgtm', 'text'], ['xebia-logo', 'image'], ['github-copilot-logo', 'image'], ['copilot-head', 'image'], ['copilot-blinking-head', 'gif'], ['party-popper', 'image'], ['rainbow-cat-star', 'gif']]) {
     await page.click('nav [data-tab=presets]');
-    await expect(page.locator('#builtin-presets li')).toHaveCount(8);
+    await expect(page.locator('#builtin-presets li')).toHaveCount(9);
     await expect(page.locator('#builtin-presets [data-act=del]')).toHaveCount(0);
     if (id === 'header') {
       await expect(page.locator('#builtin-presets [data-id=builtin-header]')).toContainText('<header>');
@@ -72,7 +72,7 @@ test('built-ins send directly, stay separate from backups and remain available o
   await expect(page.locator('#custom-image')).not.toHaveAttribute('open');
   await expect(page.locator('#c-seq-list li')).toHaveCount(1);
   await page.click('nav [data-tab=presets]');
-  await expect(page.locator('#builtin-presets li')).toHaveCount(8);
+  await expect(page.locator('#builtin-presets li')).toHaveCount(9);
   await expect(page.locator('.preset-list:not(#builtin-presets)')).toContainText('My party');
   await page.locator('#builtin-presets [data-id=builtin-party-popper] [data-act=send]').click();
   await expect(page.locator('#presets-msg')).toContainText('Animation upload confirmed.');
@@ -92,7 +92,7 @@ test('animated GIF presets send without WebCodecs ImageDecoder (iOS WebKit)', as
   await connectHat(page);
   expect(await page.evaluate(() => typeof (window as { ImageDecoder?: unknown }).ImageDecoder)).toBe('undefined');
 
-  for (const id of ['party-popper', 'copilot-blinking-head']) {
+  for (const id of ['party-popper', 'copilot-blinking-head', 'rainbow-cat-star']) {
     await page.click('nav [data-tab=presets]');
     await page.locator(`#builtin-presets [data-id=builtin-${id}] [data-act=send]`).click();
     await expect(page.locator('#presets-msg')).toContainText('Animation upload confirmed.', { timeout: 15_000 });
@@ -120,7 +120,7 @@ test('built-ins survive replacement imports on web and cannot shadow personal pr
   };
   await page.setInputFiles('#p-import', { name: 'personal.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) });
   await expect(page.locator('#p-msg')).toContainText('Imported');
-  await expect(page.locator('#builtin-presets li')).toHaveCount(8);
+  await expect(page.locator('#builtin-presets li')).toHaveCount(9);
   await page.click('nav [data-tab=presets]');
   await page.locator('.preset-list:not(#builtin-presets) [data-act=send]').click();
   await expect(page.locator('#presets-msg')).toContainText('"Personal text":');
@@ -143,6 +143,6 @@ test('built-ins survive replacement imports on web and cannot shadow personal pr
   await page.setInputFiles('#p-import', { name: 'empty.json', mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ ...file, creations: [] })) });
   await expect(page.locator('#p-msg')).toContainText('Imported');
-  await expect(page.locator('#builtin-presets li')).toHaveCount(8);
+  await expect(page.locator('#builtin-presets li')).toHaveCount(9);
   await expect(page.locator('.preset-list:not(#builtin-presets)')).not.toContainText('Personal text');
 });

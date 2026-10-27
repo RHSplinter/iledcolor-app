@@ -19,10 +19,10 @@ describe('built-in presets', () => {
       .toBe('72c7443855bd7fafabf7b386094c08fb3fafceaf4fe82d3f3360cc2edf0aad36');
   });
 
-  it('provides eight valid, independent presets without changing settings', () => {
+  it('provides nine valid, independent presets without changing settings', () => {
     const presets = builtinPresets();
-    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', '<header>', 'LGTM 👍']);
-    expect(new Set(presets.map((p) => p.id)).size).toBe(8);
+    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', 'Rainbow Cat ⭐', '<header>', 'LGTM 👍']);
+    expect(new Set(presets.map((p) => p.id)).size).toBe(9);
     for (const p of presets) expect(validateContent(p.content)).toEqual(p.content);
     expect(parseImport(exportJson(DEFAULT_SETTINGS, presets)).presets).toEqual(presets);
     const first = presets[0]!;
@@ -36,6 +36,16 @@ describe('built-in presets', () => {
     expect(preset.content.dataUrl).toMatch(/^data:image\/gif;base64,/);
     const gif = Buffer.from(preset.content.dataUrl.split(',')[1]!, 'base64');
     expect(gif.toString('ascii', 0, 6)).toBe('GIF89a');
+    expect(gif.toString('ascii')).toContain('NETSCAPE2.0');
+  });
+
+  it('bundles the rainbow cat and twinkling star at the display resolution', () => {
+    const preset = builtinPresets().find((p) => p.id === 'builtin-rainbow-cat-star')!;
+    if (preset.content.kind !== 'image') throw new Error('Expected image content');
+    expect(preset.content.dataUrl).toMatch(/^data:image\/gif;base64,/);
+    const gif = Buffer.from(preset.content.dataUrl.split(',')[1]!, 'base64');
+    expect(gif.toString('ascii', 0, 6)).toBe('GIF89a');
+    expect([gif.readUInt16LE(6), gif.readUInt16LE(8)]).toEqual([32, 16]);
     expect(gif.toString('ascii')).toContain('NETSCAPE2.0');
   });
 

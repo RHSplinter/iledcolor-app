@@ -50,9 +50,10 @@ tab navigation and responsive controls on Android, iOS and web.
 
 **Settings → Built-in presets** includes **Xebia 💜 GitHub**, **LGTM 👍** and literal
 `<header>` scrolling text, the supplied **Xebia logo**, the **GitHub Copilot logo**,
-and an animated **Party Popper** GIF. The artwork is bundled for offline use on web,
-Android and iOS. Logos preserve their aspect ratio on black and the party animation
-is supplied at the 32×16 display resolution. Load a built-in to preview or send it,
+an animated **Party Popper** GIF, and the dithered **Rainbow Cat ⭐** animation. The
+artwork is bundled for offline use on web, Android and iOS. Logos preserve their aspect
+ratio on black; the party and rainbow-cat animations are supplied at the 32×16 display
+resolution. Load a built-in to preview or send it,
 add it to a Custom sequence, or save an editable personal copy. Animated GIFs are
 decoded locally: browsers with WebCodecs use the native decoder, while Bluefy on
 iPhone uses the app's built-in JavaScript decoder. The same fallback applies to
