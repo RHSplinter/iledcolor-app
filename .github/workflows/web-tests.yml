@@ -50,6 +50,9 @@ jobs:
       # Playwright builds and serves production assets, including the service worker.
       - run: npm run e2e
         timeout-minutes: 5
+        env:
+          # Firefox requires its home directory to belong to the container user.
+          HOME: /root
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -85,6 +88,8 @@ jobs:
         run: node -e "if (require('@playwright/test/package.json').version !== '1.63.0') throw new Error('Update the Playwright container image to match the lockfile')"
       - run: npm run e2e:smoke
         timeout-minutes: 5
+        env:
+          HOME: /root
       - uses: actions/upload-artifact@v4
         if: always()
         with:
