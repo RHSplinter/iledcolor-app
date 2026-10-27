@@ -161,4 +161,8 @@ fieldset.tier legend { padding:0 6px; font-weight:600; }
 @media (prefers-reduced-motion:reduce) {
   .switch input, .switch input::after { transition:none; }
 }
-body.disconnected { padding-bottom:env(safe-area-inset-bottom); }
+body.disconnected { padding-bottom:calc(70px + env(safe-area-inset-bottom)); }
+
+.action-link { display:inline-block; padding:10px 14px; border:1px solid #555; border-radius:6px; color:inherit; background:#303030; text-decoration:none; font:inherit; cursor:pointer; }
+.action-link.primary { background:#1264a3; border-color:#2684c7; }
+.action-link[aria-disabled="true"] { opacity:.5; pointer-events:none; }

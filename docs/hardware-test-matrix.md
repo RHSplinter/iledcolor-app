@@ -17,24 +17,18 @@ Automated coverage (`npm test`, `npm run e2e`) uses a mocked transport and canno
 
 ## Windows browser reload reconnect (issue #19)
 
-Use one Edge/Chrome tab on the same origin throughout the test. Apply any pending app Update before testing a new build.
+The original direct-reconnect approach could not restore the physical hat in the user's Edge configuration: the saved name/ID survived, but the saved-device browser API was unavailable. The current browser flow instead holds the Bluetooth link in a separate LED Hat Connection tab; no experimental flag is required.
 
-1. Connect to a physical hat. Verify the full name in the header.
-2. Press F5. Without opening the picker, verify the header immediately shows Reconnecting to the remembered name, then Ready with that same name.
-3. Repeat three times, and verify a command still reaches the hat after reconnect.
-4. With a different authorized hat available, verify reload still targets only the saved ID.
-5. Switch the saved hat off and reload. Verify progress and a useful failure message; the ID/name must remain saved. The attempt must stop within 10 seconds and restore normal Connect controls. Switch it on and refresh again; it should reconnect without a picker.
-6. Open the connected status menu and Disconnect. Reload must remain disconnected. Connect may now show the picker, which can still label previously authorized devices as paired.
+1. Open the site. Verify the actions are Connect LED hat, Go to LED Hat Controller, Install app.
+2. Choose Go without pairing. Verify Scan is selected and works without a hat; Sound is visible with its controls disabled.
+3. Select Hat, then Connect hat. Verify the existing connection tab receives focus.
+4. Select Connect LED hat and pair the physical device. Verify the controller receives focus with Hat selected, retaining any scan data.
+5. Refresh the controller three times without reopening the picker. Verify the same hat is Ready and receives a command after each refresh.
+6. Return to the connection tab and use Return. Verify it focuses the same controller without reloading. Close the controller and use Return again; verify a replacement attaches to the held link.
+7. Disconnect in the controller. Verify Scan is selected and the owner reports disconnected. Go must select Scan even if the disconnected controller was left on Hat.
+8. Close the connection tab. Verify Hat offers Connect hat; use it, pair again, and verify the existing controller is reused.
+9. Install and launch the web app on desktop and mobile. Repeat pairing, controller refresh, and both tab directions. If automatic opening is blocked, Return must open the controller without another pairing.
 
-Local validation on Windows, 2026-10-26: 452 unit tests and the production build pass. Simulated browser tests cover automatic refresh, exact-ID selection, visible progress, ten-second timeout, and explicit disconnect. The physical Edge session retained iledcolor-231B in local storage but reported that getDevices() was unavailable. Automatic physical reconnect is therefore blocked in this browser configuration; seeing Ready during an earlier interactive session did not establish an automatic-reconnect pass. The full browser run also exposed a badge-greeting failure in the existing mock keepBlack test, outside the browser-reconnect path.
+Physical Windows Edge feedback on 2026-10-26: the user reported successful pairing and F5 recovery with the held connection tab. They then reported action ordering, disconnected navigation, and tab-return failures. Those navigation fixes require another physical review; physical BLE commands and mobile installation are not yet verified.
 
-## Connection tab fallback (no experimental reconnect API required)
-
-- Select Keep Bluetooth in an LED Hat Connection tab, then Connect.
-- Verify the new tab is titled LED Hat Connection and explains that it owns the hat link and must remain open.
-- Choose the physical hat once in that tab; verify focus returns to the main app.
-- Refresh the main app three times without selecting Connect or reopening the picker. Verify the same hat is ready and can receive a command after each refresh.
-- Disconnect in the main app; verify the connection tab reports disconnected and the remembered identity is cleared.
-- Close the connection tab and refresh the main app. It must return to Connect within 10 seconds.
-
-Automated tests pass for the held-link flow with getDevices deliberately unavailable, including three main-page refreshes with exactly one picker and one GATT connection. Physical Windows verification remains pending.
+Automated validation uses a simulated hat for GATT and commands. It covers three controller refreshes with one picker/connection, tab reuse without document replacement, disabled Sound and local scanning without a hat, stale saved identity, and a blocked scripted opening followed by the normal Return link. The real Chromium/Edge chooser is separately exercised through a genuine click with test adapter emulation. Disposable installed-app tests exercise actual installation and standalone launch; they do not establish physical radio compatibility.

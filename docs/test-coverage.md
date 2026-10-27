@@ -101,3 +101,13 @@ These checks followed the Windows web validation above:
   iOS manifest acceptance, signing/provisioning and installer handoff.
   The update adapter tests prove argument/ordering/cleanup contracts, not that
   the native downloader verifies bytes or that an app installs successfully.
+
+## Connection tab and browser installation
+
+- `tests/connection-tab.test.ts`: protocol write/notification forwarding, exact hat ID, live-owner probe without taking a lease, stale channel keys, page reattachment, idle-page races, and explicit disconnect.
+- `tests/install.test.ts`: user-triggered browser install prompt, app-installed state, and standalone display mode.
+- `e2e/connection-tab.spec.ts`: connection-first entry, held Bluetooth link across refresh, Go/Return focus and reopening, scanning without a hat, stale saved identity, and installation action.
+- `e2e/native-picker.spec.ts`: invokes the real browser Bluetooth chooser through a user click with test-only adapter emulation, before any tab switch. No physical-radio compatibility is implied.
+- `e2e/installed-app.spec.ts`: installs into a disposable full-browser profile, launches in standalone display mode, opens/refreshes/refocuses the controller with a fake hat, then uninstalls and removes the profile. Full Chromium is required; the stripped-down headless shell does not expose PWA installation.
+
+Windows validation on 2026-10-26: 461 unit tests and the production build passed. The browser regression run passed 79 of 80 tests; the remaining existing greeting-cancellation test waited for Ready before cancelling, so the greeting had already ended. After correcting that assertion order, its targeted rerun passed. Separate Microsoft Edge runs passed both the actual chooser test and visible installed-app test, including disconnect/reconnect and bidirectional tab focus. BLE transport in these automated runs is simulated; the hardware matrix records the user's physical feedback separately.

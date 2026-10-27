@@ -245,9 +245,10 @@ test('keepBlack keeps cap black when idle while displaying approach, sound and s
   await page.fill('#qr-raw', 'Ada');
   await page.click('#qr-submit');
   await expect(page.locator('#qr-status')).toContainText('Hi Ada!', { timeout: 15_000 });
-  await expect(page.locator('#status')).toContainText('Ready', { timeout: 15_000 });
+  // End the greeting while it is active; Ready can mean playback has already finished.
   await page.click('#qr-cancel');
   await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15_000 });
+  await expect(page.locator('#status')).toContainText('Ready', { timeout: 15_000 });
 
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-caps .cap-note')).toHaveText('keep black (idle)');
@@ -293,7 +294,7 @@ test('the Custom tab cap is cap 1 of approach mode', async ({ page }) => {
   await page.locator('#btn-status-disconnect').click();
   await expect(page.locator('#status')).toHaveText('Disconnected');
   // Without the primary cap only the connection controls remain, even while another cap is connected.
-  await expect(page.locator('#tab-bar')).toBeHidden();
+  await expect(page.locator('#tab-bar')).toBeVisible();
   await expect(page.locator('#view-approach')).toBeHidden();
   await connectHat(page);
   await page.click('nav button[data-tab=approach]');

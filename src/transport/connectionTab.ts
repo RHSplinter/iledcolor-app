@@ -5,9 +5,13 @@ const links = new Map<string, ConnectionTabClient>();
 export function savedConnectionTab(): string | null {
   try { return localStorage.getItem(LINK_KEY); } catch { return null; }
 }
-export function connectionTabClient(): ConnectionTabClient {
+export function ensureConnectionTabKey(): string {
   let key = savedConnectionTab();
   if (!key) { key = crypto.randomUUID(); localStorage.setItem(LINK_KEY, key); }
+  return key;
+}
+export function connectionTabClient(): ConnectionTabClient {
+  const key = ensureConnectionTabKey();
   let client = links.get(key);
   if (!client) { client = new ConnectionTabClient(key); links.set(key, client); }
   return client;
@@ -23,9 +27,11 @@ export class ConnectionTabClient {
   private pending = new Map<string, { resolve: (m: Message) => void; reject: (e: Error) => void }>();
   private notes = new Set<(bytes: Uint8Array) => void>();
   private drops = new Set<() => void>();
+  private available = new Set<() => void>();
   constructor(key: string) {
     this.channel = new BroadcastChannel(`iledcolor.hat.${key}`);
     this.channel.onmessage = ({ data: m }: MessageEvent<Message>) => {
+      if (m.kind === 'available') { this.available.forEach((cb) => cb()); return; }
       if (m.client !== this.client) return;
       if (m.kind === 'reply' && m.id) {
         const pending = this.pending.get(m.id);
@@ -35,6 +41,7 @@ export class ConnectionTabClient {
       if (m.kind === 'disconnected') this.drops.forEach((cb) => cb());
     };
   }
+  onAvailable(cb: () => void) { this.available.add(cb); return () => this.available.delete(cb); }
   close() {
     this.pending.forEach(({ reject }) => reject(new Error('LED Hat Connection client closed')));
     this.channel.close();
@@ -47,6 +54,12 @@ export class ConnectionTabClient {
       this.pending.set(id, { resolve: (m) => { finish(); resolve(m); }, reject: (e) => { finish(); reject(e); } });
       this.channel.postMessage({ ...fields, kind: 'request', client: this.client, id, op });
     });
+  }
+  async status(timeout = 400): Promise<{ deviceId: string; deviceName: string } | null> {
+    try {
+      const m = await this.request('status', {}, timeout);
+      return m.deviceId && m.deviceName ? { deviceId: m.deviceId, deviceName: m.deviceName } : null;
+    } catch { return null; }
   }
   async connect(deviceId?: string, timeout = 10000, isClosed?: () => boolean): Promise<TabConnection> {
     const deadline = Date.now() + timeout;
@@ -90,8 +103,13 @@ export function hostConnectionTab(key: string, onChange: (name: string | null) =
     if (r.kind !== 'request') return;
     const reply = (fields: object = {}) => channel.postMessage({ kind: 'reply', client: r.client, id: r.id, ...fields });
     try {
+      if (r.op === 'status') {
+        if (active) reply({ deviceId: active.deviceId, deviceName: active.deviceName });
+        return;
+      }
       if (r.op === 'attach') {
-        if (!active) throw new Error('Choose your hat in the LED Hat Connection tab');
+        // An idle connection page must not race the live owner to reject an attach.
+        if (!active) return;
         if (r.deviceId && r.deviceId !== active.deviceId) throw new Error('The connection tab is holding a different LED hat');
         if (client && client !== r.client) send({ kind: 'disconnected' });
         client = r.client;
@@ -111,6 +129,7 @@ export function hostConnectionTab(key: string, onChange: (name: string | null) =
       unsub = [connection.transport.onNotification((bytes) => send({ kind: 'notification', bytes: [...bytes] })),
         connection.transport.onDisconnect(disconnect)];
       onChange(connection.deviceName);
+      channel.postMessage({ kind: 'available' });
     },
     disconnect,
     close() { disconnect(); channel.close(); },

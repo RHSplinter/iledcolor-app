@@ -81,7 +81,7 @@ test('built-ins load, send, save, back up and remain available offline', async (
 
 test('built-ins survive replacement imports on web and cannot shadow personal preset IDs', async ({ page }) => {
   await installFakeHat(page);
-  await page.goto('/');
+  await page.goto('/?controller=1');
   await connectHat(page);
   await page.click('nav [data-tab=settings]');
   const file = {

@@ -5,11 +5,11 @@ test('web navigation skips native-only Approach and retains content, scan and se
   await installFakeHat(page);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/?controller=1');
   await connectHat(page);
   await waitForServiceWorker(page);
   await expect(page.getByRole('tab')).toHaveCount(4);
-  await expect(page.getByRole('tab')).toHaveText(['Custom', 'Scan', 'Sound', '']);
+  await expect(page.getByRole('tab')).toHaveText(['Hat', 'Sound', 'Scan', '']);
   await expect(page.locator('#tab-approach')).toBeHidden();
   await expect(page.locator('#custom-text > summary')).toBeVisible();
   await openCustomSection(page, 'text');
@@ -19,12 +19,12 @@ test('web navigation skips native-only Approach and retains content, scan and se
   await page.fill('#c-name', 'Browser creation');
   await page.locator('#c-save-form').getByRole('button', { name: 'Save preset' }).click();
   await expect(page.locator('#c-save-note')).toContainText('Saved');
-  await page.getByRole('tab', { name: 'Custom' }).focus();
+  await page.getByRole('tab', { name: 'Hat' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Sound' })).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Scan' })).toBeFocused();
   await expect(page.locator('#qr-start')).toBeVisible();
-  await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('tab', { name: 'Sound' })).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
   await expect(page.locator('#brightness')).toBeVisible();
@@ -48,7 +48,7 @@ test('web preserves native group presets for backup without opening unsupported 
   await page.fill('#ap-preset-name', 'Native group');
   await page.click('#ap-preset-save');
   await expect(page.locator('#ap-preset-msg')).toContainText('Saved');
-  await page.goto('/');
+  await page.goto('/?controller=1');
   await connectHat(page);
   await expect(page.locator('#custom-text > summary')).toBeVisible();
   await page.getByRole('tab', { name: 'Settings' }).click();
@@ -71,7 +71,7 @@ for (const platform of ['ios', 'android']) {
         ? { webkit: { messageHandlers: { bridge: {} } } }
         : { androidBridge: {} });
     }, platform);
-    await page.goto('/');
+    await page.goto('/?controller=1');
     await connectHat(page);
     await expect(page.getByRole('tab')).toHaveCount(5);
     await expect(page.locator('#custom-text > summary')).toBeVisible();
@@ -108,7 +108,7 @@ for (const platform of ['ios', 'android']) {
     await page.addInitScript((name) => {
       Object.assign(window, name === 'ios' ? { webkit: { messageHandlers: { bridge: {} } } } : { androidBridge: {} });
     }, platform);
-    await page.goto('/');
+    await page.goto('/?controller=1');
     await connectHat(page);
     await expect(page.locator('#banner')).toContainText('LED Hat 999.0.0 is available', { timeout: 10000 });
     await page.click('#btn-app-update-later');
@@ -136,7 +136,7 @@ test('web app does not query GitHub Releases', async ({ page }) => {
   await installFakeHat(page);
   let calls = 0;
   await page.route('https://api.github.com/**', (route) => { calls++; return route.fulfill({ json: [] }); });
-  await page.goto('/');
+  await page.goto('/?controller=1');
   await connectHat(page);
   await page.getByRole('tab', { name: 'Settings' }).click();
   await expect(page.locator('#app-update')).toContainText('The web app updates itself');

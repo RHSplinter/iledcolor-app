@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { initTabs } from '../src/ui/tabs';
 import shell from '../index.html?raw';
 
-const names = ['custom', 'approach', 'scan', 'sound', 'settings'];
+const names = ['custom', 'approach', 'sound', 'scan', 'settings'];
 const button = (name: string) => document.getElementById(`tab-${name}`) as HTMLButtonElement;
 const panel = (name: string) => document.getElementById(`view-${name}`)!;
 const selected = vi.fn();
@@ -28,9 +28,10 @@ describe('tab navigation using the actual app shell', () => {
     document.body.innerHTML = new DOMParser().parseFromString(shell, 'text/html').body.innerHTML;
     selected.mockReset();
     select = initTabs(document.getElementById('tab-bar')!, selected);
+    document.getElementById('tab-bar')!.hidden = false;
   });
 
-  it('keeps Custom selected initially and Approach unavailable on web', () => {
+  it('keeps Hat selected in the static shell and Approach unavailable on web', () => {
     expectSelection('custom');
     expect(button('approach').hidden).toBe(true);
     expect(selected).not.toHaveBeenCalled();
@@ -66,8 +67,8 @@ describe('tab navigation using the actual app shell', () => {
   it('wraps arrows, skips hidden tabs, and moves focus with selection', () => {
     button('custom').focus();
     for (const [key, name] of [
-      ['ArrowRight', 'scan'], ['ArrowRight', 'sound'], ['ArrowRight', 'settings'],
-      ['ArrowRight', 'custom'], ['ArrowLeft', 'settings'], ['ArrowLeft', 'sound'],
+      ['ArrowRight', 'sound'], ['ArrowRight', 'scan'], ['ArrowRight', 'settings'],
+      ['ArrowRight', 'custom'], ['ArrowLeft', 'settings'], ['ArrowLeft', 'scan'],
     ] as const) {
       expect(press(key).defaultPrevented).toBe(true);
       expect(document.activeElement).toBe(button(name));
@@ -79,7 +80,7 @@ describe('tab navigation using the actual app shell', () => {
     button('custom').focus();
     button('settings').disabled = true;
     press('End');
-    expectSelection('sound');
+    expectSelection('scan');
     press('Home');
     expectSelection('custom');
     button('approach').hidden = false;

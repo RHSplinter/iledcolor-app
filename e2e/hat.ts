@@ -5,8 +5,10 @@ import { expect, test, type Page, type BrowserContext } from '@playwright/test';
  * plain web and app-shell pages can connect without hardware. It acks every write like the
  * in-app mock hat (`#mock`). Call it before `page.goto`.
  */
-export async function installFakeHat(page: Page | BrowserContext) {
-  await page.addInitScript(() => {
+export async function installFakeHat(page: Page | BrowserContext, nativePicker = false) {
+  const target = 'context' in page ? page.context() : page;
+  await target.addInitScript(({ nativePicker }) => {
+    const nativeRequest = navigator.bluetooth?.requestDevice.bind(navigator.bluetooth);
     const SERVICE = '0000a950-0000-1000-8000-00805f9b34fb';
     const CMD = '0000a951-0000-1000-8000-00805f9b34fb';
     const DATA = '0000a952-0000-1000-8000-00805f9b34fb';
@@ -55,7 +57,10 @@ export async function installFakeHat(page: Page | BrowserContext) {
     Object.assign(device, { id: 'fake-hat', name: NAME, gatt });
     const bluetooth = Object.assign(new EventTarget(), {
       getAvailability: async () => true,
-      requestDevice: async () => device,
+      requestDevice: async (options: RequestDeviceOptions) => {
+        if (nativePicker) await nativeRequest!(options);
+        return device;
+      },
       getDevices: async () => [device],
     });
     Object.defineProperty(Navigator.prototype, 'bluetooth', { configurable: true, get: () => bluetooth });
@@ -102,14 +107,26 @@ export async function installFakeHat(page: Page | BrowserContext) {
         return id;
       },
     });
-  });
+  }, { nativePicker });
 }
 
 /** Connects through the Custom tab and waits until the hat is ready. */
 export async function connectHat(page: Page) {
-  await page.click('#btn-connect');
+  const native = await page.evaluate(() => location.hash === '#mock' || Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.()));
+  if (await page.locator('#status').textContent().then((text) => text?.includes('Ready'))) return;
+  if (native) {
+    await page.getByRole('tab', { name: 'Hat', exact: true }).click();
+    await page.click('#btn-connect');
+  } else {
+    await page.getByRole('tab', { name: 'Hat', exact: true }).click();
+    const ownerReady = page.waitForEvent('popup');
+    await page.click('#btn-connect');
+    const owner = await ownerReady;
+    await owner.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
+  }
   await expect(page.locator('#status')).toContainText('Ready', { timeout: 15000 });
 }
+
 
 /**
  * Waits until the service worker is active, i.e. it has precached the app (about 8 MB including OCR assets).

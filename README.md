@@ -22,30 +22,29 @@ This is the Xebia Led hat used/introduced at GitHub Universe 2026.
 
 4. If you have an Android device, you'll need it to allow bluetooth access in order to pair with the cap.
 5. In the browser (Bluefy browser for iPhone), navigate to https://rhsplinter.github.io/iledcolor-app.
-6. Press the connect button at the top of the page and connect to the Bluetooth name of the cap you discovered in step 2.
-7. Open **Custom**, expand the content section you want, and use its **Send to cap** button to apply your changes.
-   The app saves the exact hat ID and name in this browser's local storage. Refresh starts an automatic reconnect to that same hat and shows **Reconnecting to [hat name]** while Bluetooth rediscovers it. After at most 10 seconds, a failed attempt returns to normal **Connect** controls. The saved hat remains available for the next automatic attempt on refresh. Explicit **Disconnect** (click the connected status at the top) clears the saved hat. The browser may still label the hat as paired: permission is separate from an active connection.
-   Automatic reconnect is optional. Without browser support, the app keeps the standard manual **Connect** flow. It detects the available Bluetooth APIs rather than requiring browser flags for everyone. Use the same browser profile and site address, and keep only one controller session open: a hat held by another tab or app may stop advertising.
+6. On **LED Hat Connection**, press **Connect LED hat**, select the cap name from step 2, and pair. The controller opens after connection. You can also choose **Go to LED Hat Controller** to scan without a hat.
+7. Open **Hat**, expand the content section you want, and use its **Send to cap** button to apply your changes.
+   Keep the LED Hat Connection tab open. Refreshing the controller reattaches to that live link. If the link is gone, Scan stays available and Hat shows **Connect hat** to return to the connection screen. Explicit **Disconnect** in the top connection status releases the link and clears the remembered hat.
 8. Familiarize yourself with the controls in the app and ask questions if you don't understand it. We have loaded the app with some presets you can use.
 
-## Keep the Bluetooth connection through refresh
+## Connect the hat or use the scanner
 
-If your browser cannot restore Bluetooth permission after refresh, enable **Keep Bluetooth in an LED Hat Connection tab** before pressing Connect. The app opens a separate tab titled **LED Hat Connection** with an explanation of why it must stay open.
+The website opens on **LED Hat Connection**, with **Connect LED hat**, **Go to LED Hat Controller**, and **Install app**. This tab explains that it holds the Bluetooth link and must stay open while using a connected hat.
 
-1. In that tab, press **Choose LED hat** and select your hat once. Browser permission requires this initial click in the tab that owns Bluetooth.
-2. Focus returns to the main LED Hat Controller; a Return button is also available in the connection tab. Leave the connection tab open in the background.
-3. Refresh the main app normally. Its top bar shows **Reconnecting to [hat name]** while it reattaches to the existing Bluetooth link, without a picker or experimental flags.
-4. Disconnect from the main app to release the link and forget the saved hat. Closing or refreshing the connection tab also ends its live connection; the main app returns to Connect if it cannot reattach within 10 seconds.
+- **Connect LED hat** opens the browser's device picker from that click. After pairing, the controller opens with **Hat** selected and receives focus. The connection tab stays open in the background.
+- **Go to LED Hat Controller** opens **Scan** immediately without attempting to pair or reconnect from an old saved device. Badge scanning works without a hat; results stay in the controller and nothing is sent to a hat.
+- The browser controller has four tabs: **Hat**, **Sound**, **Scan**, **Settings**. Hat retains the Bluetooth icon. Sound stays visible with its controls disabled until a hat is connected.
+- On Hat, **Connect hat** opens or focuses the connection tab. The picker runs only there. When the hat connects, the controller automatically selects Hat.
+- **Return to LED Hat Controller** focuses the existing controller without reloading it, or opens a replacement if it was closed.
+- Go/Return and Connect hat use normal named-tab links. If the browser blocks the automatic controller opening after pairing, use Return; the hat remains connected and no second pairing is needed.
+- Refreshing the controller reattaches only to a live connection tab. It does not call the device picker or use experimental saved-device APIs. If the connection is gone or reattachment fails, Scan remains available and Hat shows Connect hat.
+- Disconnect releases the held link and forgets the saved hat. Closing or refreshing the connection tab also ends the Bluetooth link.
 
-## Optional direct browser reconnect
+No experimental browser flags are needed. Install app is the third action and supports desktop and mobile browsers that offer installation. If the browser has not supplied an install prompt, the button explains the browser menu option. The connection page remains open while the controller runs in another tab or window. Native Android/iOS builds continue to use their native Bluetooth connection and retain Approach mode.
 
-Without a connection tab, automatic reconnect requires the browser to expose `navigator.bluetooth.getDevices()` and to retain the hat's permission after refresh. `BluetoothDevice.watchAdvertisements()` can help Bluetooth rediscovery. These APIs and persistent permissions may require browser-wide experimental settings; see the [Web Bluetooth implementation status](https://github.com/whatwg/bluetooth/blob/main/implementation-status.md).
+## Hat content and backups
 
-The tested Windows Edge 156 session exposes getDevices with Experimental Web Platform features enabled but returns an empty device list after refresh; that setting alone did not establish working direct reconnect, and Edge has no Bluetooth-specific flag in its experiments list. Use the connection-tab option above, which needs no experimental reconnect API, or use normal manual Connect. The app never opens a connection tab unless that option is selected.
-
-## Custom content and backups
-
-The **Custom** tab replaces Connect. **Text**, **Solid color**, **Image** and
+The **Hat** tab contains the hat controls. **Text**, **Solid color**, **Image** and
 **GitHub Contributions** each start collapsed; a right-pointing chevron expands a
 section and turns down while it is open. Text scrolls automatically when it is wider than the cap,
 supports emoji, and has its own font choice (or the Settings default). Images support

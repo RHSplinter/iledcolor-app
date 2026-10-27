@@ -29,7 +29,7 @@ test('Custom sections start collapsed and send/save their own content with keybo
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.getByRole('tab', { name: 'Custom', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Hat', exact: true })).toHaveAttribute('aria-selected', 'true');
   const sections = page.locator('#view-custom .custom-section');
   await expect(sections.locator(':scope > summary')).toHaveText(['Text', 'Solid color', 'Image', 'GitHub Contributions', 'Sequence']);
   await expect(page.locator('#view-custom details[open]')).toHaveCount(0);
@@ -92,7 +92,7 @@ test('Custom sections start collapsed and send/save their own content with keybo
   await expect(page.locator('#c-font')).toHaveValue('tiny5');
   await page.getByRole('tab', { name: 'Settings' }).click();
   await page.selectOption('#s-font', 'monaspace');
-  await page.getByRole('tab', { name: 'Custom' }).click();
+  await page.getByRole('tab', { name: 'Hat' }).click();
   await expect(page.locator('#c-font')).toHaveValue('tiny5');
   await page.reload();
   await connectHat(page);
@@ -126,7 +126,7 @@ test('GitHub presets save settings, load fresh graphs, and use their own scroll 
   const data = await backup(page);
   expect(data.github.speed).toBe(9);
   expect(data.creations[0].content).toEqual({ kind: 'github', handle: 'octocat', prefix: 'Hi ', postfix: '', speed: 9, font: null });
-  await page.getByRole('tab', { name: 'Custom' }).click();
+  await page.getByRole('tab', { name: 'Hat' }).click();
   await page.fill('#github-handle', 'different');
   await page.locator('#github-speed').fill('1');
   for (let i = 0; i < 2; i++) {
@@ -163,7 +163,7 @@ test('GitHub presets saved after loading keep the graph and replay it offline', 
 
   await page.unroute('https://github-contributions-api.jogruber.de/**');
   await page.route('https://github-contributions-api.jogruber.de/**', (route) => { requests++; return route.abort(); });
-  await page.getByRole('tab', { name: 'Custom' }).click();
+  await page.getByRole('tab', { name: 'Hat' }).click();
   await page.fill('#github-handle', 'someone-else');
   await page.getByRole('tab', { name: 'Settings' }).click();
   await page.locator('.preset-list li', { hasText: 'Offline graph' }).getByRole('button', { name: 'Load', exact: true }).click();
@@ -199,14 +199,14 @@ test('all drafts restore atomically, preserve excluded and older fields, and sur
   const data = await backup(page);
   expect(data.customDrafts.text.font).toBe('bitcount');
   expect(data.customDrafts.image).toEqual({ kind: 'image', dataUrl: '', fit: 'cover', bg: '#abcdef' });
-  await page.getByRole('tab', { name: 'Custom' }).click();
+  await page.getByRole('tab', { name: 'Hat' }).click();
   await page.fill('#c-str', 'Changed');
   await page.selectOption('#c-font', 'tiny5');
   await page.locator('#c-solid').fill('#ffffff');
   await page.selectOption('#c-fit', 'stretch');
   await restore(page, data);
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
-  await page.getByRole('tab', { name: 'Custom' }).click();
+  await page.getByRole('tab', { name: 'Hat' }).click();
   await expect(page.locator('#c-str')).toHaveValue('Draft text');
   await expect(page.locator('#c-font')).toHaveValue('bitcount');
   await expect(page.locator('#c-solid')).toHaveValue('#123456');

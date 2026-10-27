@@ -22,7 +22,7 @@ for (const feature of ['scan', 'sound']) {
         return request;
       };
     }, feature);
-    await page.goto('/');
+    await page.goto('/?controller=1');
     await connectHat(page);
     await expect(page.locator(feature === 'scan' ? '#qr-template' : '#sound-language')).toBeAttached();
     const settings = page.getByRole('tab', { name: 'Settings', exact: true });
@@ -33,11 +33,11 @@ for (const feature of ['scan', 'sound']) {
     await page.getByRole('tab', { name: feature === 'scan' ? 'Sound' : 'Scan', exact: true }).click();
     await expect(page.locator(feature === 'scan' ? '#sound-language' : '#qr-template'))
       .toHaveValue(feature === 'scan' ? 'en-US' : 'Hi {name}!');
-    await page.getByRole('tab', { name: 'Custom', exact: true }).click();
+    await page.getByRole('tab', { name: 'Hat', exact: true }).click();
     await expect(page.locator('#custom-text > summary')).toBeVisible();
-    await page.getByRole('tab', { name: 'Custom', exact: true }).focus();
+    await page.getByRole('tab', { name: 'Hat', exact: true }).focus();
     await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('tab', { name: 'Scan', exact: true })).toBeFocused();
+    await expect(page.getByRole('tab', { name: 'Sound', exact: true })).toBeFocused();
     expect(errors).toEqual([]);
   });
 }

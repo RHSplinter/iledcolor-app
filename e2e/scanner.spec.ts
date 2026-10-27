@@ -295,8 +295,7 @@ test('offline OCR recognizes a printed badge and greets the primary cap', async 
   await waitForServiceWorker(page);
   await context.setOffline(true);
   await page.reload();
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
+  await connectHat(page);
   await page.click('nav [data-tab=custom]');
   await openCustomSection(page, 'solid');
   await page.click('#btn-send-solid');

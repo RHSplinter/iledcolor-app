@@ -4,8 +4,7 @@ import type { Transport } from '../src/transport/types';
 const cleanups: Array<() => void> = [];
 afterEach(() => { cleanups.splice(0).forEach((close) => close()); });
 
-function fixture() {
-  const key = crypto.randomUUID();
+function fixture(key = crypto.randomUUID()) {
   const notes = new Set<(bytes: Uint8Array) => void>();
   const transport: Transport = {
     writeCommand: vi.fn(async () => { notes.forEach((cb) => cb(Uint8Array.of(84, 1))); }),
@@ -45,6 +44,26 @@ describe('connection tab transport', () => {
     expect((await nextPage.connect('hat-231B', 500)).deviceName).toBe('iledcolor-231B');
     // setConnection disposes the previous (empty) slot; reattach itself never disconnects.
     expect(transport.disconnect).not.toHaveBeenCalled();
+  });
+  it('ignores an idle connection page while attaching to the live owner', async () => {
+    const key = crypto.randomUUID();
+    const idle = hostConnectionTab(key, vi.fn());
+    cleanups.push(() => idle.close());
+    const { client } = fixture(key);
+    expect((await client.connect('hat-231B', 500)).deviceId).toBe('hat-231B');
+  });
+  it('probes a live owner without taking the existing controller connection', async () => {
+    const { key, client } = fixture();
+    const connection = await client.connect('hat-231B', 500);
+    const dropped = vi.fn(); connection.transport.onDisconnect(dropped);
+    const probe = new ConnectionTabClient(key); cleanups.push(() => probe.close());
+    expect(await probe.status()).toEqual({ deviceId: 'hat-231B', deviceName: 'iledcolor-231B' });
+    expect(dropped).not.toHaveBeenCalled();
+    await connection.transport.writeCommand(Uint8Array.of(1));
+  });
+  it('returns no live connection when only a stale channel key exists', async () => {
+    const client = new ConnectionTabClient(crypto.randomUUID()); cleanups.push(() => client.close());
+    expect(await client.status(30)).toBeNull();
   });
   it('explicit disconnect reaches the connection owner', async () => {
     const { client, transport } = fixture();
