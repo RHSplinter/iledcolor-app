@@ -2,8 +2,8 @@
 
 ## App navigation
 
-The native apps have five icon tabs: **Connect**, **Approach**, **Scan**, **Sound**, and
-**Settings** (the gear icon at the far right). The web app has **Connect**, **Scan**, **Sound**
+The native apps have five icon tabs: **Custom**, **Approach**, **Scan**, **Sound**, and
+**Settings** (the gear icon at the far right). The web app has **Custom**, **Scan**, **Sound**
 and **Settings**; native-only Approach detection is not offered in the browser.
 Until a cap is connected, the app shows only the **Hat connection** controls (connect,
 connection status and install help); the tab bar, content editor and all other tabs appear
@@ -21,8 +21,12 @@ with a green link icon when connected (including uploads) and a red broken-link 
 The same source supplies the content editor, scan-first layout, settings, accessible
 tab navigation and responsive controls on Android, iOS and web.
 
-- **Connect:** connect your primary cap, then create text, solid colours,
-  images or GIFs, preview and send them, or save a content preset. There is no separate Create tab.
+- **Custom:** after connecting your primary cap, expand **Text**, **Solid color**,
+  **Image**, or **GitHub Contributions** to edit and send content. All sections start
+  collapsed with a right-pointing chevron that turns down when expanded. Each has its own **Send to cap** and
+  **Save as preset** buttons. Saving reveals a name field and adjacent check button.
+  Text supports emoji, automatically scrolls when too wide, and can override the
+  Settings font per preset. Images support PNG/JPG/animated GIF and contain/cover/stretch fitting.
   Under **Sequence**, add the current content or saved presets as steps (up to 20), set how
   many seconds each step shows (animations play whole cycles for at least that long), reorder
   or remove steps, and turn on **Play sequence** to preview, send or save all steps as one
@@ -42,21 +46,21 @@ tab navigation and responsive controls on Android, iOS and web.
   phrase reactions, pocket-pause settings, dictionary and editable animation text.
 - **Settings:** saved presets and category-based sharing/import, then display brightness/on/off,
   **Keep cap black unless an approach, scan or sound event is active**, LED text font, expandable test patterns and protocol log, and rotation/mirroring/transport settings.
-  Loading a content preset opens Connect; loading a group preset opens Approach.
+  Loading a content preset opens its Custom section; loading a group preset opens Approach.
 
 **Settings → Built-in presets** includes **Xebia 💜 GitHub**, **LGTM 👍** and literal
 `<header>` scrolling text, the supplied **Xebia logo**, the **GitHub Copilot logo**,
 and an animated **Party Popper** GIF. The artwork is bundled for offline use on web,
 Android and iOS. Logos preserve their aspect ratio on black and the party animation
 is supplied at the 32×16 display resolution. Load a built-in to preview or send it,
-add it to a Connect sequence, or save an editable personal copy. GIF decoding
+add it to a Custom sequence, or save an editable personal copy. GIF decoding
 requires the same WebCodecs support as uploaded GIFs.
 
 Built-ins are not included in backups and cannot be removed by importing a backup.
 Personal copies, current editor content loaded from a built-in, and sequences using
 built-ins are embedded in **Creations** backups without remote image dependencies.
 
-Choose **Settings → Display → LED text font** for all text on the LED matrix:
+Choose **Settings → Display → LED text font** as the default for text on the LED matrix:
 **Silkscreen** (compact, the default), **Tiny5** (large), **Press Start 2P** (arcade),
 **DotGothic16** (tall), **Bitcount** (full height), or **Monaspace Neon** (full height). All six are bundled for offline use and rendered at their
 native pixel sizes, except Tiny5 and Bitcount Prop Single, which use crisp 2x sizes for readability on the
@@ -66,7 +70,7 @@ display height. Glyphs have trimmed side bearings and a one-pixel gap between le
 emoji get a two-pixel gap on each side so they never touch neighbouring letters.
 Emoji retain their system colour appearance and reserve their actual
 rendered width rather than an assumed square. The sample
-and Connect preview update immediately; send again to replace content already on the
+and Custom preview update immediately (unless the text has its own font); send again to replace content already on the
 hat. Running Approach content updates automatically; subsequent Scan greetings and
 Sound reactions use the chosen font. The app remembers the choice after reload.
 Font copyright and SIL Open Font License notices are bundled in [public/licenses](public/licenses/).
@@ -262,9 +266,10 @@ when sensors are unavailable. These sensors cannot locate other caps, so physica
 uses manual local cap order and deterministic phone-ID order across phones.
 
 In **Settings → Backup**, choose what to include before tapping **Share presets**:
-**Creations** (saved text, colors, images, GIFs and sequences plus current Connect content
-and sequence steps, including a paused sequence draft, plus the current GitHub handle,
-prefix and postfix text),
+**Creations** (saved text, colors, images, GIFs, GitHub configurations and sequences,
+all current Custom section drafts including text font and image fit/background before
+choosing a file, current content and sequence steps including a paused sequence draft,
+plus the current GitHub handle, prefix/postfix text and independent scroll speed),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
 **Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
 repetitions, speed and scan-logging preference), **Display & transport settings**
@@ -286,10 +291,10 @@ transport settings to apply the new write profile.
 
 ## GitHub contribution graph
 
-At the bottom of **Connect**, enter a public GitHub handle (without `@`), choose
-**Load graph**, then **Show on hat** once connected. The preview and hat scroll the
+Expand **Custom → GitHub Contributions**, enter a public GitHub handle (without `@`), choose
+**Load graph**, then **Send to cap** once connected. The preview and hat scroll the
 past year (53 calendar weeks, including the current partial week) from right to left
-as a looping marquee at the default text scroll speed: oldest week first, Sunday at the
+as a looping marquee at this section's scroll speed: oldest week first, Sunday at the
 top, with five green-only intensity levels (no red or blue,
 which the hat's LEDs would otherwise shift toward blue). Each day
 uses 2 x 2 LEDs, centered vertically, giving a 106-LED-wide strip that the hat plays
@@ -300,9 +305,10 @@ full-colour party-popper emojis (`🎉🎉`). Use `{handle}` in either field to 
 the loaded user's handle. Both fields accept up to 200 characters of printable ASCII
 and emoji; leave a field empty to omit that caption. Spaces are preserved. Editing
 captions immediately updates a loaded preview without fetching contributions again;
-choose **Show on hat** to upload the updated animation. Very long captions can exceed
+choose **Send to cap** to upload the updated animation. Very long captions can exceed
 the hat's upload-size limit; shorten them if an upload reports that limit.
-Emoji appearance follows the device's system emoji font. Caption colors are reduced
+**Font** picks the caption font, or **Use Settings default** to follow the LED text
+font in Settings. Emoji appearance follows the device's system emoji font. Caption colors are reduced
 to a GIF-safe palette before preview and upload so all five graph intensities remain exact.
 Loading or uploading a graph
 does not change the content editor.
@@ -311,8 +317,13 @@ Loading requires internet and sends the entered public handle to the third-party
 [GitHub Contributions API](https://github.com/grubersjoe/github-contributions-api).
 No token is needed; results may be cached for an hour. Errors are shown without
 uploading a placeholder graph. Reload the graph to refresh it; there is no background
-polling. The handle and both caption fields are saved locally and included in **Creations** backups,
-not fetched data or a live display state. Import updates the field immediately
+polling. **Save as preset** stores the handle, captions, caption font and speed, plus the loaded
+graph and its date when a graph is loaded for that handle. Such presets replay the
+stored graph offline (in the editor, sequences and Approach mode) until you load the
+graph again; presets saved without a graph fetch a fresh one each time they are shown.
+Sharing GitHub presets requires a receiving
+app version that supports them. The handle, both caption fields, caption font and speed are saved locally and included in **Creations** backups;
+the editor's fetched data and live display state are not. Import updates the field immediately
 without fetching or uploading; older backups that omit these fields preserve their
 local values, including handle-only backups from earlier versions.
 

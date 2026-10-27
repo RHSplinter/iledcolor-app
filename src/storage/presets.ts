@@ -3,11 +3,20 @@ import type { Transform } from '../render/matrix';
 import { DEFAULT_TEXT_FONT, isTextFont, type TextFont } from '../render/fonts';
 import { TIER_IDS, type TierConfig, type TierId } from '../approach/tiers';
 import { validateGreetingProfiles, type GreetingProfileState } from '../scanner/greeting';
+import { validateGitHubGraph, validateGitHubSettings, type GitHubGraph, type GitHubSettings } from '../github/contributions';
 
 export type SingleContent =
   | { kind: 'solid'; color: string }
-  | { kind: 'text'; text: string; fg: string; bg: string; speed?: number }
-  | { kind: 'image'; dataUrl: string; fit: Fit; bg: string };
+  | { kind: 'text'; text: string; fg: string; bg: string; speed?: number; font?: TextFont | null }
+  | { kind: 'image'; dataUrl: string; fit: Fit; bg: string }
+  /** Without a stored graph (`asOf` and `days`), the graph is fetched when the content is shown. */
+  | ({ kind: 'github' } & GitHubSettings & Partial<GitHubGraph>);
+export interface CustomDrafts {
+  text: Extract<SingleContent, { kind: 'text' }>;
+  solid: Extract<SingleContent, { kind: 'solid' }>;
+  /** An empty data URL represents an image editor without a selected file. */
+  image: Extract<SingleContent, { kind: 'image' }>;
+}
 /** One step of a sequence. Static content is shown for `seconds`; animations play whole cycles for at least `seconds`. */
 export interface SequenceStep { content: SingleContent; seconds: number }
 export type SequenceContent = { kind: 'sequence'; steps: SequenceStep[] };
@@ -73,7 +82,7 @@ export function validateContent(c: unknown): Content {
   return validateSingleContent(c);
 }
 
-/** Validates a (possibly empty) step list, e.g. the Connect tab's sequence draft. */
+/** Validates a (possibly empty) step list, e.g. the Custom tab's sequence draft. */
 export function validateSequenceSteps(raw: unknown): SequenceStep[] {
   if (!Array.isArray(raw) || raw.length > MAX_SEQUENCE_STEPS) throw new Error(`a sequence has at most ${MAX_SEQUENCE_STEPS} steps`);
   let imageChars = 0;
@@ -90,21 +99,50 @@ export function validateSequenceSteps(raw: unknown): SequenceStep[] {
   return steps;
 }
 
-function validateSingleContent(c: unknown): SingleContent {
+function validateSingleContent(c: unknown, imageDraft = false): SingleContent {
   if (!isObj(c)) throw new Error('content must be an object');
   const color = (v: unknown, n: string) => { if (typeof v !== 'string' || !HEX.test(v)) throw new Error(`invalid ${n}`); return v; };
   if (c.kind === 'solid') return { kind: 'solid', color: color(c.color, 'color') };
   if (c.kind === 'text') {
     if (typeof c.text !== 'string' || c.text.length > 200) throw new Error('invalid text');
-    return { kind: 'text', text: c.text, fg: color(c.fg, 'fg'), bg: color(c.bg, 'bg'), ...(c.speed === undefined ? {} : { speed: speedOf(c.speed) }) };
+    if (c.font !== undefined && c.font !== null && !isTextFont(c.font)) throw new Error('invalid text font');
+    return { kind: 'text', text: c.text, fg: color(c.fg, 'fg'), bg: color(c.bg, 'bg'), ...(c.speed === undefined ? {} : { speed: speedOf(c.speed) }),
+      ...(c.font === undefined ? {} : { font: c.font }) };
+  }
+  if (c.kind === 'github') {
+    const github = validateGitHubSettings(c);
+    if (!github.handle) throw new Error('Enter a GitHub handle first.');
+    const graph = 'asOf' in c || 'days' in c ? validateGitHubGraph(c) : undefined;
+    return { kind: 'github', ...github, ...graph };
   }
   if (c.kind === 'image') {
-    if (typeof c.dataUrl !== 'string' || !/^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(c.dataUrl)
+    if (typeof c.dataUrl !== 'string' || (!(imageDraft && c.dataUrl === '') && !/^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(c.dataUrl))
       || c.dataUrl.length > 1_500_000) throw new Error('invalid image data');
     if (c.fit !== 'contain' && c.fit !== 'cover' && c.fit !== 'stretch') throw new Error('invalid fit');
     return { kind: 'image', dataUrl: c.dataUrl, fit: c.fit, bg: color(c.bg, 'bg') };
   }
   throw new Error('unknown content kind');
+}
+
+export function validateCustomDrafts(raw: unknown): Partial<CustomDrafts> {
+  if (!isObj(raw)) throw new Error('Invalid Custom editor drafts.');
+  const result: Partial<CustomDrafts> = {};
+  for (const kind of ['text', 'solid', 'image'] as const) {
+    if (!(kind in raw)) continue;
+    const content = validateSingleContent(raw[kind], kind === 'image');
+    if (content.kind !== kind) throw new Error(`Invalid ${kind} editor draft.`);
+    if (content.kind === 'text') result.text = content;
+    if (content.kind === 'solid') result.solid = content;
+    if (content.kind === 'image') result.image = content;
+  }
+  return result;
+}
+
+export function mergeCustomDrafts(current: Partial<CustomDrafts>, incoming: Partial<CustomDrafts>): Partial<CustomDrafts> {
+  return {
+    ...current, ...incoming,
+    ...(incoming.text ? { text: { ...current.text, ...incoming.text } } : {}),
+  };
 }
 
 /** Strict: every group size must be present and valid. */

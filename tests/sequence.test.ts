@@ -97,8 +97,8 @@ describe('sequence presets', () => {
 
   it('rejects invalid or misplaced sequence drafts', () => {
     const file = (extra: object) => JSON.stringify({ app: 'iledcolor-app', version: 2, creations: [], ...extra });
-    expect(() => parseSharedBackup(file({ createSequence: [{ content: seq, seconds: 1 }] }))).toThrow(/Connect sequence/);
-    expect(() => parseSharedBackup(file({ createSequence: 'x' }))).toThrow(/Connect sequence/);
+    expect(() => parseSharedBackup(file({ createSequence: [{ content: seq, seconds: 1 }] }))).toThrow(/Custom sequence/);
+    expect(() => parseSharedBackup(file({ createSequence: 'x' }))).toThrow(/Custom sequence/);
     expect(() => parseSharedBackup(file({ createSequence: steps, createContent: seq }))).toThrow(/twice/);
     expect(() => parseSharedBackup(JSON.stringify({ app: 'iledcolor-app', version: 2, scan: { enterDbm: -70, leaveDbm: -75, settleMs: 0, confirmMs: 0, staleMs: 8000 }, createSequence: steps })))
       .toThrow(/included with creations/);
