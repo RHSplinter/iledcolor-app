@@ -37,17 +37,20 @@ test('installed web app keeps its connection while opening and refreshing the co
     await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
     await app.getByRole('link', { name: 'Return to LED Hat Controller', exact: true }).click();
     await expect.poll(() => controller.evaluate(() => document.hasFocus())).toBe(true);
-    await controller.locator('#status-toggle').click();
-    await controller.locator('#btn-status-disconnect').click();
-    await expect(controller.getByRole('tab', { name: 'Connect hat', exact: true })).toHaveAttribute('aria-selected', 'true');
-    const pageCount = appContext.pages().length;
-    await controller.getByRole('tab', { name: 'Connect hat', exact: true }).click();
-    await controller.locator('#btn-connect').click();
-    await expect.poll(() => app.evaluate(() => document.hasFocus())).toBe(true);
-    expect(appContext.pages()).toHaveLength(pageCount);
-    await app.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
-    await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
-    await expect(controller.getByRole('tab', { name: 'Presets', exact: true })).toHaveAttribute('aria-selected', 'true');
+    // Reuse the same named target even after its #connect URL has already been visited.
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await controller.locator('#status-toggle').click();
+      await controller.locator('#btn-status-disconnect').click();
+      await expect(controller.getByRole('tab', { name: 'Connect hat', exact: true })).toHaveAttribute('aria-selected', 'true');
+      const pageCount = appContext.pages().length;
+      await controller.getByRole('tab', { name: 'Connect hat', exact: true }).click();
+      await controller.locator('#btn-connect').click();
+      await expect.poll(() => app.evaluate(() => document.hasFocus())).toBe(true);
+      expect(appContext.pages()).toHaveLength(pageCount);
+      await app.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
+      await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
+      await expect(controller.getByRole('tab', { name: 'Presets', exact: true })).toHaveAttribute('aria-selected', 'true');
+    }
   } finally {
     await cdp.send('PWA.uninstall', { manifestId }).catch(() => undefined);
     await appContext.close();

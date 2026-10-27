@@ -235,7 +235,18 @@ function renderCustom() {
     </div>
     <div id="content-editor"></div>`;
   if (sharedCap()) $('#btn-connect').onclick = onConnect;
-  else $('#btn-connect').onclick = (event) => { if ($('#btn-connect').getAttribute('aria-disabled') === 'true') event.preventDefault(); };
+  else $('#btn-connect').onclick = (event) => {
+    const link = $('#btn-connect') as HTMLAnchorElement;
+    if (link.getAttribute('aria-disabled') === 'true') { event.preventDefault(); return; }
+    restoreNote = 'Opening LED Hat Connection. Choose Connect LED hat in that tab to pair your hat.';
+    renderStatus();
+    // Explicit focus is needed when the named connection tab is already open.
+    // Keep the normal link navigation as a fallback if scripted opening is blocked.
+    try {
+      const owner = window.open(link.href, link.target);
+      if (owner) { event.preventDefault(); owner.focus(); }
+    } catch { /* Follow the original link. */ }
+  };
   renderStatus();
 }
 

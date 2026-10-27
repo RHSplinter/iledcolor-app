@@ -170,3 +170,29 @@ test('Return uses a normal named link when scripted tab opening is blocked', asy
   await expect(controller.locator('#status')).toContainText('Ready');
   expect(await controller.evaluate(() => localStorage.getItem('test-picker-count'))).toBe('1');
 });
+
+test('Connect hat repeatedly focuses the existing idle connection tab without reloading it', async ({ page, context }) => {
+  await page.goto('./');
+  await page.evaluate(() => { (window as unknown as { marker: string }).marker = 'owner-document'; });
+  const opened = page.waitForEvent('popup');
+  await page.getByRole('link', { name: 'Go to LED Hat Controller', exact: true }).click();
+  const controller = await opened;
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await controller.getByRole('tab', { name: 'Connect hat', exact: true }).click();
+    await controller.getByRole('link', { name: 'Connect hat', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+    await expect(controller.locator('#conn-msg')).toContainText('Opening LED Hat Connection');
+    expect(context.pages()).toHaveLength(2);
+    expect(await page.evaluate(() => (window as unknown as { marker: string }).marker)).toBe('owner-document');
+  }
+});
+
+test('Connect hat follows its normal link when scripted opening is blocked', async ({ page }) => {
+  await page.goto('./?controller=1');
+  await page.evaluate(() => { window.open = () => null; });
+  const opened = page.waitForEvent('popup');
+  await page.getByRole('link', { name: 'Connect hat', exact: true }).click();
+  const owner = await opened;
+  await expect(owner).toHaveTitle('LED Hat Connection');
+  await expect(owner.getByRole('button', { name: 'Connect LED hat', exact: true })).toBeEnabled();
+});
