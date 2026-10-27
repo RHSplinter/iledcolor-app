@@ -48,6 +48,52 @@ test('connection tab holds the same Bluetooth link across three main-page refres
   expect(await controller.evaluate(() => localStorage.getItem('test-gatt-count'))).toBe('1');
 });
 
+test('disconnect and reconnect reuse both tabs even when new popups are blocked', async ({ page, context }) => {
+  const { owner, controller } = await connectThroughTab(page);
+  await owner.evaluate(() => { window.open = () => null; });
+  await controller.reload();
+  await expect(controller.locator('#status')).toContainText('Ready');
+  await controller.evaluate(() => { window.open = () => null; });
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await controller.locator('#status-toggle').click();
+    await controller.locator('#btn-status-disconnect').click();
+    await expect.poll(() => owner.evaluate(() => document.hasFocus())).toBe(true);
+    await expect(owner.locator('#link-status')).toContainText('disconnected');
+    await controller.bringToFront();
+    await controller.getByRole('tab', { name: 'Connect hat', exact: true }).click();
+    await expect.poll(() => owner.evaluate(() => document.hasFocus())).toBe(true);
+    expect(context.pages()).toHaveLength(2);
+    await owner.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
+    await expect(controller.locator('#status')).toContainText('Ready');
+    await expect.poll(() => controller.evaluate(() => document.hasFocus())).toBe(true);
+    expect(context.pages()).toHaveLength(2);
+  }
+});
+
+test('Connect hat follows its named link when script focus is ignored', async ({ page, context }) => {
+  const { owner, controller } = await connectThroughTab(page);
+  await controller.locator('#status-toggle').click();
+  await controller.locator('#btn-status-disconnect').click();
+  await expect(owner.locator('#link-status')).toContainText('disconnected');
+  await owner.evaluate(() => { window.focus = () => {}; });
+  await controller.evaluate(() => { window.open = () => null; });
+  await controller.bringToFront();
+  await controller.getByRole('tab', { name: 'Connect hat', exact: true }).click();
+  await expect.poll(() => owner.evaluate(() => document.hasFocus())).toBe(true);
+  expect(context.pages()).toHaveLength(2);
+  await controller.bringToFront();
+  await controller.evaluate(() => {
+    document.addEventListener('click', (event) => {
+      if ((event.target as Element).closest('#btn-connect'))
+        (window as unknown as { connectClickCancelled: boolean }).connectClickCancelled = event.defaultPrevented;
+    });
+  });
+  await controller.locator('#btn-connect').click();
+  expect(await controller.evaluate(() => (window as unknown as { connectClickCancelled: boolean }).connectClickCancelled)).toBe(false);
+  await expect.poll(() => owner.evaluate(() => document.hasFocus())).toBe(true);
+  expect(context.pages()).toHaveLength(2);
+});
+
 test('slow Bluetooth setup activates the controller immediately on success', async ({ page, context }) => {
   await context.addInitScript(() => {
     const choose = navigator.bluetooth.requestDevice.bind(navigator.bluetooth);

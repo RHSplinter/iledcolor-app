@@ -30,6 +30,7 @@ import { shareTextFile } from './shareFile';
 import { initTabs } from './tabs';
 import { setupInstallPrompt } from './install';
 import { initConnectionStatus } from './connectionStatus';
+import { openHatTab, CONNECTION_TAB } from './browserTabs';
 import { GreetingUi } from '../scanner/ui';
 import { SoundUi } from '../sound/ui';
 import { UpdateUi } from '../update/ui';
@@ -92,7 +93,10 @@ function newController() {
 const sharedCap = () => native || useMock;
 const updateConnectionStatus = initConnectionStatus($('#connection-status'), () => {
   if (sharedCap()) disconnectPrimary();
-  else { forgetLastHat(); controller.disconnect(); }
+  else {
+    forgetLastHat(); controller.disconnect();
+    openHatTab(new URL('?hatConnection=1#connect', location.href).href, CONNECTION_TAB);
+  }
 });
 
 // Browser permission and the active GATT link are separate from our saved hat identity.
@@ -239,13 +243,10 @@ function renderCustom() {
     const link = $('#btn-connect') as HTMLAnchorElement;
     if (link.getAttribute('aria-disabled') === 'true') { event.preventDefault(); return; }
     restoreNote = 'Opening LED Hat Connection. Choose Connect LED hat in that tab to pair your hat.';
-    renderStatus();
-    // Explicit focus is needed when the named connection tab is already open.
-    // Keep the normal link navigation as a fallback if scripted opening is blocked.
-    try {
-      const owner = window.open(link.href, link.target);
-      if (owner) { event.preventDefault(); owner.focus(); }
-    } catch { /* Follow the original link. */ }
+    const message = document.getElementById('conn-msg');
+    if (message) message.textContent = restoreNote;
+    // Let Chrome activate the named tab through the user's link click. Scripted
+    // focus can be ignored, and rerendering here can replace the clicked link.
   };
   renderStatus();
 }
@@ -1293,6 +1294,11 @@ async function main() {
   renderDeviceSettings();
   // Navigation must not wait for optional features to restore storage or query native capabilities.
   showTab = initTabs($('#tab-bar'), onTabSelected);
+  $('#tab-custom').addEventListener('click', () => {
+    if (!sharedCap() && !restoringWebConnection && ['Disconnected', 'Error'].includes(controller.state)) {
+      $('#btn-connect')?.click();
+    }
+  });
   void renderPresets();
   void renderBackup();
   applyConnectionGate();

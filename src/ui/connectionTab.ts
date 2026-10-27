@@ -4,6 +4,7 @@ import { setupInstallPrompt } from './install';
 import { forgetWebHat, saveWebHat } from '../transport/webBluetoothMemory';
 import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
 import { hostConnectionTab, ensureConnectionTabKey } from '../transport/connectionTab';
+import { openHatTab, CONTROLLER_TAB } from './browserTabs';
 
 export function startConnectionTab() {
   document.title = 'LED Hat Connection';
@@ -28,6 +29,10 @@ export function startConnectionTab() {
   const controllerUrl = new URL(location.href);
   controllerUrl.search = '?controller=1'; controllerUrl.hash = 'scan';
   back.href = controllerUrl.href;
+  back.onclick = (event) => {
+    const tab = openHatTab(back.href, CONTROLLER_TAB);
+    if (tab?.document.hasFocus()) event.preventDefault();
+  };
   let connected = false;
   setupInstallPrompt();
   const updateButton = document.getElementById('link-update') as HTMLButtonElement;
@@ -45,7 +50,7 @@ export function startConnectionTab() {
   window.addEventListener('pagehide', () => host.close(), { once: true });
   const openController = (selectedTab: Window | null) => {
     controllerUrl.hash = connected ? 'presets' : 'scan'; back.href = controllerUrl.href;
-    const tab = selectedTab && !selectedTab.closed ? selectedTab : window.open(controllerUrl.href, 'iledcolor-led-hat-controller');
+    const tab = selectedTab && !selectedTab.closed ? selectedTab : openHatTab(controllerUrl.href, CONTROLLER_TAB);
     if (tab) { tab.location.href = controllerUrl.href; tab.focus(); }
     else error.textContent = 'Your hat is connected. Use Return to LED Hat Controller to open the controller tab.';
   };
@@ -63,7 +68,7 @@ export function startConnectionTab() {
       // Reserve only after the chooser closes, before GATT setup can consume
       // the remaining popup allowance. Never steal focus from the picker.
       const connection = await connectWebBluetooth(undefined, () => {
-        selectedTab = window.open('', 'iledcolor-led-hat-controller');
+        selectedTab = openHatTab('', CONTROLLER_TAB);
       });
       saveWebHat({ id: connection.deviceId, name: connection.deviceName });
       host.setConnection(connection);

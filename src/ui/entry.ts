@@ -1,4 +1,5 @@
 import { isNativeApp } from '../platform';
+import './browserTabs';
 const query = new URLSearchParams(location.search);
 if (query.has('controller') || isNativeApp() || location.hash.includes('mock')) {
   window.name = 'iledcolor-led-hat-controller';
