@@ -9,7 +9,7 @@ test('web navigation skips native-only Approach and retains content, scan and se
   await connectHat(page);
   await waitForServiceWorker(page);
   await expect(page.getByRole('tab')).toHaveCount(4);
-  await expect(page.getByRole('tab')).toHaveText(['Custom', 'Scan', 'Sound', '']);
+  await expect(page.getByRole('tab')).toHaveText(['Custom', 'Scan', 'Sound', 'Settings']);
   await expect(page.locator('#tab-approach')).toBeHidden();
   await expect(page.locator('#custom-text > summary')).toBeVisible();
   await openCustomSection(page, 'text');
