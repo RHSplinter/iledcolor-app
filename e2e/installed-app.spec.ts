@@ -32,7 +32,7 @@ test('installed web app keeps its connection while opening and refreshing the co
     await app.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
     const controller = await opened;
     await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
-    await expect(controller.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', '', 'Scan']);
+    await expect(controller.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', 'Settings', 'Scan']);
     await controller.reload();
     await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
     await app.getByRole('link', { name: 'Return to LED Hat Controller', exact: true }).click();

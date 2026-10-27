@@ -9,7 +9,7 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await connectHat(page, 'presets');
   await waitForServiceWorker(page);
   await expect(page.getByRole('tab')).toHaveCount(5);
-  await expect(page.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', '', 'Scan']);
+  await expect(page.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', 'Settings', 'Scan']);
   await expect(page.locator('#tab-approach')).toBeHidden();
   await expect(page.locator('#view-presets')).toBeVisible();
   await expect(page.locator('#view-presets')).not.toContainText('Backup');
