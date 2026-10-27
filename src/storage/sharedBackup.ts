@@ -45,6 +45,7 @@ export function exportSelectedJson(presets: Preset[], approach: ApproachSettings
     ...(selection.scan && qrProfiles ? { qrProfiles: validateGreetingProfiles(qrProfiles) } : {}),
     ...(selection.scan && features.qrGreeting ? { qrGreeting: validateGreeting(features.qrGreeting) } : {}),
     ...(selection.scan && features.qrScanLogging !== undefined ? { qrScanLogging: validateLogging(features.qrScanLogging) } : {}),
+    ...(selection.scan && features.qrGithubLookup !== undefined ? { qrGithubLookup: validateGithubLookup(features.qrGithubLookup) } : {}),
     ...(selection.settings && features.settings ? {
       settings: validateSettings({ ...features.settings, textFont: features.settings.textFont ?? DEFAULT_TEXT_FONT }),
     } : {}),
@@ -63,6 +64,11 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 
 function validateLogging(raw: unknown): boolean {
   if (typeof raw !== 'boolean') throw new Error('Invalid scan logging preference.');
+  return raw;
+}
+
+function validateGithubLookup(raw: unknown): boolean {
+  if (typeof raw !== 'boolean') throw new Error('Invalid GitHub email lookup preference.');
   return raw;
 }
 
@@ -108,7 +114,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
   if (raw.version === 1) return { version: 1, ...parseImport(text) };
   if (raw.version !== 2) throw new Error(`Unsupported export version ${String(raw.version)}.`);
   if (!('creations' in raw) && !('approach' in raw) && !('scan' in raw) && !('settings' in raw) && !('sound' in raw)) throw new Error('No shared categories in this file.');
-  if (['qrProfiles', 'qrGreeting', 'qrScanLogging'].some((key) => key in raw) && !('scan' in raw))
+  if (['qrProfiles', 'qrGreeting', 'qrScanLogging', 'qrGithubLookup'].some((key) => key in raw) && !('scan' in raw))
     throw new Error('QR profiles and greeting preferences must be included with scan settings.');
   if ('createContent' in raw && !('creations' in raw)) throw new Error('Custom content must be included with creations.');
   if ('customDrafts' in raw && !('creations' in raw)) throw new Error('Custom editor drafts must be included with creations.');
@@ -137,6 +143,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
     ...('qrProfiles' in raw ? { qrProfiles: validateGreetingProfiles(raw.qrProfiles) } : {}),
     ...('qrGreeting' in raw ? { qrGreeting: validateGreeting(raw.qrGreeting) } : {}),
     ...('qrScanLogging' in raw ? { qrScanLogging: validateLogging(raw.qrScanLogging) } : {}),
+    ...('qrGithubLookup' in raw ? { qrGithubLookup: validateGithubLookup(raw.qrGithubLookup) } : {}),
     ...('createContent' in raw ? { createContent: validateContent(raw.createContent) } : {}),
     ...('customDrafts' in raw ? { customDrafts: validateCustomDrafts(raw.customDrafts) } : {}),
     ...('github' in raw ? { github: validateGitHubSettings(raw.github) } : {}),

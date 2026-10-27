@@ -1,3 +1,5 @@
+import { findGithubHandle, findLinkedinHandle } from './githubLookup';
+
 export interface GreetingSettings {
   pattern: string;
   template: string;
@@ -13,6 +15,8 @@ export interface ExtractedName {
   email?: string;
   phone?: string;
   url?: string;
+  github?: string;
+  linkedin?: string;
   notes?: string;
 }
 
@@ -32,6 +36,7 @@ export interface ScannerBackup {
   qrProfiles?: GreetingProfileState;
   qrGreeting?: GreetingSettings;
   qrScanLogging?: boolean;
+  qrGithubLookup?: boolean;
 }
 
 export const DEFAULT_GREETING: GreetingSettings = {
@@ -201,11 +206,15 @@ function parseFreeText(text: string): Partial<ExtractedName> {
   if (email) fields.email = email;
   if (url) fields.url = url;
   if (phone) fields.phone = phone;
-
+  const github = findGithubHandle(text);
+  const linkedin = findLinkedinHandle(text);
+  if (github) fields.github = github;
+  if (linkedin) fields.linkedin = linkedin;
   const lines = text.split(/\r?\n/).map((line) => line.trim().split(/\s+/)
     .map((token) => token.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '')).filter(Boolean).join(' '))
     .filter((line) => line && line.length <= 40 && line.split(/\s+/).length <= 6 &&
       /\p{L}/u.test(line) && !/\d/.test(line) && !BADGE_NOISE.test(line) &&
+      !/^(?:@|git\s?hub\b|linked\s?in\b)/i.test(line) &&
       ![email, url, phone].some((contact) => contact && line.includes(contact)) &&
       line.replace(/\s/g, '').length > 0);
   const usableLines = lines.filter((line) => {
@@ -273,7 +282,7 @@ export function extractName(raw: string, pattern: string): ExtractedName {
     const match = new RegExp(pattern, 'du').exec(raw);
     if (!match) throw new Error('The name regex did not match the scanned data.');
     const namedRanges = Object.entries(match.indices?.groups ?? {})
-      .filter(([field]) => ['name', 'firstname', 'lastname', 'company', 'title', 'email', 'phone', 'url', 'notes'].includes(field))
+      .filter(([field]) => ['name', 'firstname', 'lastname', 'company', 'title', 'email', 'phone', 'url', 'github', 'linkedin', 'notes'].includes(field))
       .flatMap(([, range]) => range ? [range] : []);
     const isNamedFieldCapture = (index: number) => {
       const range = match.indices?.[index];
@@ -291,6 +300,8 @@ export function extractName(raw: string, pattern: string): ExtractedName {
       ...(match.groups?.email !== undefined ? { email: match.groups.email } : {}),
       ...(match.groups?.phone !== undefined ? { phone: match.groups.phone } : {}),
       ...(match.groups?.url !== undefined ? { url: match.groups.url } : {}),
+      ...(match.groups?.github !== undefined ? { github: match.groups.github } : {}),
+      ...(match.groups?.linkedin !== undefined ? { linkedin: match.groups.linkedin } : {}),
       ...(match.groups?.notes !== undefined ? { notes: match.groups.notes } : {}),
     };
   } else fields = payloadFields(raw.trim());
@@ -302,6 +313,8 @@ export function extractName(raw: string, pattern: string): ExtractedName {
   const email = cleanField(fields.email, 'email');
   const phone = cleanField(fields.phone, 'phone');
   const url = cleanField(fields.url, 'URL');
+  const github = cleanField(fields.github, 'GitHub handle');
+  const linkedin = cleanField(fields.linkedin, 'LinkedIn handle');
   const notes = cleanField(fields.notes, 'notes');
   return {
     name,
@@ -311,13 +324,15 @@ export function extractName(raw: string, pattern: string): ExtractedName {
     ...(email ? { email } : {}),
     ...(phone ? { phone } : {}),
     ...(url ? { url } : {}),
+    ...(github ? { github } : {}),
+    ...(linkedin ? { linkedin } : {}),
     ...(notes ? { notes } : {}),
   };
 }
 
 export function greetingText(template: string, extracted: ExtractedName | string): string {
   const fields: ExtractedName = typeof extracted === 'string' ? { name: extracted } : extracted;
-  const text = template.replace(/\{(name|firstname|lastname|company|title|email|phone|url|notes)\}/g, (_, field: keyof ExtractedName | 'firstname') =>
+  const text = template.replace(/\{(name|firstname|lastname|company|title|email|phone|url|github|linkedin|notes)\}/g, (_, field: keyof ExtractedName | 'firstname') =>
     field === 'firstname' ? fields.name : fields[field] ?? '');
   if (text.length > 300) throw new Error('The completed greeting is too long (maximum 300 characters).');
   return text;

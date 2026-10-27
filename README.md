@@ -59,7 +59,14 @@ Expansion state is not saved: sections always start collapsed.
 
 Phone identity, cap connections/device IDs, permissions, running state, QR payloads,
 and scan-log contents are not exported. The scan-logging preference belongs to
-**Scan settings**; importing it can enable local scan logging.
+**Scan settings**; importing it can enable local scan logging. The opt-in
+GitHub email lookup preference also belongs to **Scan settings**; importing it can
+enable sending OCR-recognized `@handle`s to api.github.com. Looked-up emails are
+never exported in backups. When scan logging is on, each scan is saved to the scan log with its
+extracted name, company, title, email, GitHub and LinkedIn handles, and (if the lookup is enabled) the
+public GitHub email for each handle. If the paper badge and the badge screen show different GitHub
+handles, both are recorded (`githubHandles`). Entries from one scan share a `scanId`. The scan log is
+never part of backups and may contain personal data.
 
 ## More docs
 
