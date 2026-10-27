@@ -7,15 +7,24 @@ import { exportSelectedJson, mergeSharedPresets, parseSharedBackup } from '../sr
 import { listPresets, loadKv, restoreBackup } from '../src/storage/db';
 
 describe('built-in presets', () => {
-  it('provides seven valid, independent presets without changing settings', () => {
+  it('provides eight valid, independent presets without changing settings', () => {
     const presets = builtinPresets();
-    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'Party Popper', '<header>', 'LGTM 👍']);
-    expect(new Set(presets.map((p) => p.id)).size).toBe(7);
+    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', '<header>', 'LGTM 👍']);
+    expect(new Set(presets.map((p) => p.id)).size).toBe(8);
     for (const p of presets) expect(validateContent(p.content)).toEqual(p.content);
     expect(parseImport(exportJson(DEFAULT_SETTINGS, presets)).presets).toEqual(presets);
     const first = presets[0]!;
     first.name = 'Changed';
     expect(builtinPresets()[0]!.name).toBe('Xebia 💜 GitHub');
+  });
+
+  it('bundles the blinking Copilot head as a looping GIF', () => {
+    const preset = builtinPresets().find((p) => p.id === 'builtin-copilot-blinking-head')!;
+    if (preset.content.kind !== 'image') throw new Error('Expected image content');
+    expect(preset.content.dataUrl).toMatch(/^data:image\/gif;base64,/);
+    const gif = Buffer.from(preset.content.dataUrl.split(',')[1]!, 'base64');
+    expect(gif.toString('ascii', 0, 6)).toBe('GIF89a');
+    expect(gif.toString('ascii')).toContain('NETSCAPE2.0');
   });
 
   for (const preset of builtinPresets()) {
