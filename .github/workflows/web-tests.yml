@@ -28,8 +28,13 @@ concurrency:
 jobs:
   local:
     if: github.event_name != 'schedule' && github.event_name != 'workflow_run'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    # Match the locked @playwright/test version. Browsers and OS libraries are
+    # already installed, avoiding apt downloads on every PR.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,10 +42,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+        timeout-minutes: 2
+      - name: Verify browser image matches Playwright
+        run: node -e "if (require('@playwright/test/package.json').version !== '1.63.0') throw new Error('Update the Playwright container image to match the lockfile')"
       - run: npm test
-      - run: npx playwright install --with-deps chromium firefox webkit
+        timeout-minutes: 2
       # Playwright builds and serves production assets, including the service worker.
       - run: npm run e2e
+        timeout-minutes: 5
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -57,8 +66,11 @@ jobs:
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        vars.PAGES_ENABLED == 'true')
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    timeout-minutes: 10
     env:
       PLAYWRIGHT_BASE_URL: ${{ inputs.base_url || 'https://harrybin.de/iledcolor-app-native-added/' }}
     steps:
@@ -68,8 +80,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium firefox webkit
+        timeout-minutes: 2
+      - name: Verify browser image matches Playwright
+        run: node -e "if (require('@playwright/test/package.json').version !== '1.63.0') throw new Error('Update the Playwright container image to match the lockfile')"
       - run: npm run e2e:smoke
+        timeout-minutes: 5
       - uses: actions/upload-artifact@v4
         if: always()
         with:
