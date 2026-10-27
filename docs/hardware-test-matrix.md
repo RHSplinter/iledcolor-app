@@ -20,15 +20,26 @@ Automated coverage (`npm test`, `npm run e2e`) uses a mocked transport and canno
 The original direct-reconnect approach could not restore the physical hat in the user's Edge configuration: the saved name/ID survived, but the saved-device browser API was unavailable. The current browser flow instead holds the Bluetooth link in a separate LED Hat Connection tab; no experimental flag is required.
 
 1. Open the site. Verify the actions are Connect LED hat, Go to LED Hat Controller, Install app.
-2. Choose Go without pairing. Verify Scan is selected and works without a hat; Only Connect hat and Scan are visible.
-3. Select Custom, then Connect hat. Verify the existing connection tab receives focus.
+2. Choose Go without pairing. Verify Scan is selected and works without a hat; only Connect hat and Scan are visible.
+3. Select the Connect hat tab, then its Connect hat action. Verify the existing connection tab receives focus.
 4. Select Connect LED hat and pair the physical device. Verify the controller receives focus with Presets selected, retaining any scan data.
 5. Refresh the controller three times without reopening the picker. Verify the same hat is Ready and receives a command after each refresh.
 6. Return to the connection tab and use Return. Verify it focuses the same controller without reloading. Close the controller and use Return again; verify a replacement attaches to the held link.
 7. Disconnect in the controller. Verify Connect hat is selected and the owner reports disconnected. Go must select Scan even if the disconnected controller was left on Custom.
-8. Close the connection tab. Verify Custom offers Connect hat; use it, pair again, and verify the existing controller is reused.
+8. Close the connection tab. Verify the controller offers Connect hat; use it, pair again, and verify the existing controller is reused.
 9. Install and launch the web app on desktop and mobile. Repeat pairing, controller refresh, and both tab directions. If automatic opening is blocked, Return must open the controller without another pairing.
 
 Physical Windows Edge feedback on 2026-10-26: the user reported successful pairing and F5 recovery with the held connection tab. They then reported action ordering, disconnected navigation, and tab-return failures. Those navigation fixes require another physical review; physical BLE commands and mobile installation are not yet verified.
 
 Automated validation uses a simulated hat for GATT and commands. It covers three controller refreshes with one picker/connection, tab reuse without document replacement, disabled Sound and local scanning without a hat, stale saved identity, and a blocked scripted opening followed by the normal Return link. The real Chromium/Edge chooser is separately exercised through a genuine click with test adapter emulation. Disposable installed-app tests exercise actual installation and standalone launch; they do not establish physical radio compatibility.
+
+## Physical Android Chrome validation — 2026-10-27
+
+Tested this branch locally on a Samsung SM-F976U using USB port forwarding to `http://localhost:4175/`; no app deployment or publication was required. Chrome reported a secure context and native Web Bluetooth support.
+
+- The connection tab held the physical hat `iledcolor-231B`, and the controller reported Ready with that same name.
+- Three consecutive controller reloads each returned to Ready with the same hat while the original connection tab remained connected. No picker interaction was performed during these reloads.
+- Android blocked automatic controller opening after pairing. Return to LED Hat Controller provided the fallback, with the controller attached to the held connection.
+- After using the local phone build, the user reported: "this works great."
+
+This establishes physical Android connection and controller-refresh recovery. Individual preset output, camera badge recognition, mobile installation/offline launch, backgrounding, and power-cycle recovery were not separately verified in this session.
