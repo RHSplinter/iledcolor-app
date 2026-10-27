@@ -158,11 +158,25 @@ it.each(['camera', 'manual'] as const)('vibrates once when a recognized %s scan 
   expect(vibrateFeedback).toHaveBeenCalledOnce();
 });
 
+it.each(['camera', 'ocr', 'manual'] as const)('plays a %s scan greeting without prior content and reports the blank fallback', async (source) => {
+  Object.assign(target, { canRestoreContent: false });
+  const ui = new GreetingUi(context);
+  await ui.init();
+  for (const id of ['qr-start', 'qr-text-start', 'qr-submit']) {
+    expect((document.getElementById(id) as HTMLButtonElement).disabled).toBe(false);
+  }
+  await ui['greet']('Rob', target, source);
+  expect(playback).toHaveBeenCalledOnce();
+  expect(vibrateFeedback).toHaveBeenCalledOnce();
+  expect(document.getElementById('qr-status')!.textContent).toBe('Greeting finished. Blank background displayed.');
+  ui.stopCamera();
+  expect(vibrateFeedback).toHaveBeenCalledOnce();
+});
+
 it.each([
   ['upload starts', { state: 'Uploading' }],
   ['cap disconnects', { state: 'Disconnected' }],
   ['temporary playback starts', { temporaryActive: true }],
-  ['restorable content disappears', { canRestoreContent: false }],
 ])('does not vibrate for a scan greeting when %s before playback or on camera stop', async (_reason, change) => {
   const ui = new GreetingUi(context);
   await ui.init();

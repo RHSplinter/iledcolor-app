@@ -7,7 +7,29 @@ const require = createRequire(import.meta.url);
 const { default: QRCodeWriter }: typeof import('@zxing/library/cjs/core/qrcode/QRCodeWriter.js') = require('@zxing/library/cjs/core/qrcode/QRCodeWriter.js');
 const { default: BarcodeFormat }: typeof import('@zxing/library/cjs/core/BarcodeFormat.js') = require('@zxing/library/cjs/core/BarcodeFormat.js');
 
-test('camera decodes a QR code offline and greets the primary cap before restoring', async ({ page, context }) => {
+test('manual greeting works immediately after connection and uses blank on cancellation', async ({ page }) => {
+  await page.goto('/#mock');
+  for (const id of ['qr-start', 'qr-text-start', 'qr-submit']) {
+    await expect(page.locator(`#${id}`)).toBeDisabled();
+  }
+  await connectHat(page);
+  await page.click('nav [data-tab=scan]');
+  await expect(page.locator('#qr-ready')).toContainText('No previous content is known');
+  await page.locator('#view-scan summary').click();
+  await page.fill('#qr-raw', 'Rob');
+  await page.click('#qr-submit');
+  await expect(page.locator('#qr-status')).toContainText('Playing "Hi Rob!"');
+  await expect(page.locator('#qr-status')).toContainText('then showing a blank background');
+  await page.click('#qr-cancel');
+  await expect(page.locator('#qr-status')).toHaveText('Greeting ended early. Blank background displayed.');
+  await expect(page.locator('#qr-error')).toBeEmpty();
+  await expect(page.locator('#qr-raw')).toHaveValue('');
+  for (const id of ['qr-start', 'qr-text-start', 'qr-submit']) {
+    await expect(page.locator(`#${id}`)).toBeEnabled();
+  }
+});
+
+test('camera decodes a QR code offline without an initial send and falls back to blank', async ({ page, context }) => {
   const qr = new QRCodeWriter().encode('Rob', BarcodeFormat.QR_CODE, 256, 256, new Map());
   const pixels: number[] = [];
   for (let y = 0; y < qr.getHeight(); y++)
@@ -41,11 +63,11 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   await context.setOffline(true);
   await page.reload();
   await connectHat(page);
-  await page.click('nav [data-tab=custom]');
-  await openCustomSection(page, 'solid');
-  await page.click('#btn-send-solid');
-  await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
   await page.click('nav [data-tab=scan]');
+  await expect(page.locator('#qr-ready')).toContainText('No previous content is known');
+  await expect(page.locator('#qr-start')).toBeEnabled();
+  await expect(page.locator('#qr-text-start')).toBeEnabled();
+  await expect(page.locator('#qr-submit')).toBeEnabled();
   await expect(page.locator('#qr-repetitions')).toHaveValue('3');
   await page.check('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toHaveText('Scan logging enabled.');
@@ -54,7 +76,7 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   await expect(page.locator('#qr-status')).toContainText('Hi Rob!', { timeout: 15000 });
   await expect(page.locator('#qr-video')).toBeHidden();
   expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
-  await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 25000 });
+  await expect(page.locator('#qr-status')).toContainText('Blank background displayed.', { timeout: 25000 });
   expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
   await expect(page.locator('#qr-error')).toBeEmpty();
   await expect(page.locator('#qr-start')).toBeEnabled();

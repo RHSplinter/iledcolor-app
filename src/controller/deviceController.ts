@@ -217,7 +217,6 @@ export class DeviceController {
   async playTemporary(gif: Uint8Array, still: RgbImage, durationMs: number): Promise<'completed' | 'cancelled'> {
     if (this.temporary) throw new DeviceError('A greeting is already playing', 'busy');
     if (this.state !== 'Ready') throw new DeviceError('Connect the primary cap first', 'disconnected');
-    if (!this.displayed && !this.keepBlack) throw new DeviceError('Send content to the cap first so it can be restored after the greeting', 'invalid');
     if (!Number.isFinite(durationMs) || durationMs <= 0) throw new DeviceError('Invalid greeting duration', 'invalid');
     const greeting = { gif: gif.slice(), width: still.width, height: still.height, still: structuredClone(still) };
     // Validate before taking the queue or changing the display.
@@ -228,10 +227,9 @@ export class DeviceController {
     try {
       return await this.exclusive(async () => {
         if (epoch !== this.epoch) throw new DeviceError('Connection changed before greeting', 'disconnected');
-        const previous: DisplayContent | undefined = this.keepBlack
+        const previous: DisplayContent = this.keepBlack || !this.displayed
           ? { image: solid(still.width, still.height, [0, 0, 0]) }
           : this.displayed;
-        if (!previous) throw new DeviceError('Previous content is no longer available', 'disconnected');
         const restored = 'gif' in previous ? { ...previous, gif: renewGif(previous.gif), still: previous.still ?? greeting.still } : previous;
         if ('gif' in restored) buildGifStream(restored.gif, restored.width, restored.height, this.profile.maxStreamBytes);
         const wasOff = this.keepBlack || this.displayEnabled === false;
