@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { openBackup, openCustomSection, connectHat, installFakeHat, waitForServiceWorker } from './hat';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 test('built-ins send directly, stay separate from backups and remain available offline', async ({ page, context }) => {
   const external: string[] = [];
@@ -29,7 +30,7 @@ test('built-ins send directly, stay separate from backups and remain available o
   // Direct sends leave the editor intact. Create a separate personal copy for backup.
   await page.click('nav [data-tab=custom]');
   await openCustomSection(page, 'image');
-  await page.setInputFiles('#c-file', 'src\\assets\\presets\\party-popper.gif');
+  await page.setInputFiles('#c-file', join('src', 'assets', 'presets', 'party-popper.gif'));
   await expect(page.locator('#btn-send-image')).toBeEnabled();
   // The preview magnifies each LED tenfold; party-popper pixels must animate.
   const pixels = () => page.locator('#preview').evaluate((canvas: HTMLCanvasElement) => {

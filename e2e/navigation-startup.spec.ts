@@ -30,7 +30,8 @@ for (const feature of ['scan', 'sound']) {
     await expect(settings).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('tabpanel', { name: 'Settings', exact: true })).toBeVisible();
     await page.getByRole('tab', { name: 'Presets', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Presets', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Built-in presets', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Personal presets', exact: true })).toBeVisible();
     await page.getByRole('tab', { name: feature === 'scan' ? 'Sound' : 'Scan', exact: true }).click();
     await expect(page.locator(feature === 'scan' ? '#sound-language' : '#qr-template'))
       .toHaveValue(feature === 'scan' ? 'en-US' : 'Hi {name}!');

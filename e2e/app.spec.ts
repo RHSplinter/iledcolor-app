@@ -22,7 +22,7 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
   await page.fill('#c-name', 'Greeting');
   await page.locator('#c-save-form').getByRole('button', { name: 'Save preset' }).click();
   await page.click('nav [data-tab=presets]');
-  await expect(page.locator('ul.list li').first()).toContainText('Greeting');
+  await expect(page.locator('.preset-list:not(#builtin-presets) li')).toContainText('Greeting');
 
   // Offline relaunch: cached shell loads and presets are still editable.
   await context.setOffline(true);
@@ -30,7 +30,7 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
   await connectHat(page);
   await expect(page.locator('#status')).toBeVisible();
   await page.click('nav [data-tab=presets]');
-  await expect(page.locator('ul.list li').first()).toContainText('Greeting');
+  await expect(page.locator('.preset-list:not(#builtin-presets) li')).toContainText('Greeting');
   await page.click('nav [data-tab=custom]');
 
   expect(external).toEqual([]); // privacy: no off-origin requests
