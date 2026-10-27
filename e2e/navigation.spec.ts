@@ -51,8 +51,9 @@ test('six icon tabs keep presets first and device controls on Settings', async (
   await page.fill('#s-delay', '25');
   await page.locator('#s-delay').dispatchEvent('change');
   await page.getByRole('tab', { name: 'Presets' }).click();
-  await page.locator('.preset-list li', { hasText: 'My saved greeting' }).locator('[data-act=load]').click();
-  await expect(page.getByRole('tab', { name: 'Custom' })).toHaveAttribute('aria-selected', 'true');
+  await page.locator('.preset-list li', { hasText: 'My saved greeting' }).locator('[data-act=send]').click();
+  await expect(page.locator('#presets-msg')).toContainText('Upload confirmed.');
+  await expect(page.getByRole('tab', { name: 'Presets' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#c-str')).toHaveValue('Hi');
   await page.reload();
   await connectHat(page);

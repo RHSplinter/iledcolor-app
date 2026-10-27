@@ -12,6 +12,7 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await expect(page.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Scan', 'Sound', '']);
   await expect(page.locator('#tab-approach')).toBeHidden();
   await expect(page.locator('#view-presets')).toBeVisible();
+  await expect(page.locator('#view-presets')).not.toContainText('Backup');
   await page.getByRole('tab', { name: 'Custom' }).click();
   await expect(page.locator('#custom-text > summary')).toBeVisible();
   await openCustomSection(page, 'text');
@@ -30,10 +31,14 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
   await expect(page.locator('#brightness')).toBeVisible();
+  await expect(page.locator('#view-settings')).toContainText('require the Android or iOS app');
+  await expect(page.locator('#view-settings')).toContainText('Backup');
   await page.getByRole('tab', { name: 'Presets' }).click();
   await expect(page.locator('#presets-content')).toContainText('Browser creation');
-  await expect(page.locator('#presets-content')).toContainText('require the Android or iOS app');
-  await page.locator('li', { hasText: 'Browser creation' }).getByRole('button', { name: 'Load', exact: true }).click();
+  await expect(page.locator('#presets-content')).not.toContainText('require the Android or iOS app');
+  await page.getByRole('button', { name: 'Send Browser creation to cap', exact: true }).click();
+  await expect(page.locator('#presets-msg')).toContainText('upload confirmed.');
+  await expect(page.locator('#view-presets')).toBeVisible();
   await expect(page.locator('#c-str')).toHaveValue('Web greeting');
   await context.setOffline(true);
   await page.reload();
@@ -57,8 +62,9 @@ test('web preserves native group presets for backup without opening unsupported 
   await page.getByRole('tab', { name: 'Settings' }).click();
   await page.getByRole('tab', { name: 'Presets' }).click();
   const preset = page.locator('.preset-list li', { hasText: 'Native group' });
-  await expect(preset.getByRole('button', { name: 'Load', exact: true })).toBeDisabled();
+  await expect(preset.getByRole('button', { name: 'Apply Native group', exact: true })).toBeDisabled();
   await expect(preset).toContainText('kept for backup');
+  await page.getByRole('tab', { name: 'Settings' }).click();
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const json = JSON.parse(await (await import('node:fs/promises')).readFile((await download.path())!, 'utf8'));
   expect(json.approach.presets.some((p: { name: string }) => p.name === 'Native group')).toBe(true);

@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openCustomSection, connectHat } from './hat';
+import { openBackup, openCustomSection, connectHat } from './hat';
 import { readFile } from 'node:fs/promises';
 
 async function shareBackup(page: Page) {
+  await openBackup(page);
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const path = await download.path();
   if (!path) throw new Error('Missing backup download.');
@@ -10,6 +11,7 @@ async function shareBackup(page: Page) {
 }
 
 async function importBackup(page: Page, data: unknown) {
+  await openBackup(page);
   await page.setInputFiles('#p-import', {
     name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(data)),
   });
@@ -151,7 +153,7 @@ test('display-only backup ignores invalid excluded scanner inputs and preserves 
   await page.locator('#qr-repetitions').dispatchEvent('change');
   await page.click('nav [data-tab=sound]');
   await page.uncheck('#sound-noises');
-  await page.click('nav [data-tab=presets]');
+  await openBackup(page);
   for (const key of ['creations', 'approach', 'scan', 'sound']) await page.uncheck(`#p-include-${key}`);
   const backup = await shareBackup(page);
   expect(Object.keys(backup).sort()).toEqual(['app', 'settings', 'version']);
@@ -169,10 +171,9 @@ test('display-only backup ignores invalid excluded scanner inputs and preserves 
   await expect(page.locator('#c-str')).toHaveValue('Keep this draft');
 
   // Unchecking Display & transport settings excludes settings; legacy v1/v2 imports without keepBlack preserve local keepBlack.
-  await page.click('nav [data-tab=presets]');
   await page.click('nav [data-tab=settings]');
   await page.check('#s-keep-black');
-  await page.click('nav [data-tab=presets]');
+  await openBackup(page);
   await page.uncheck('#p-include-settings');
   await page.check('#p-include-creations');
   const creationsOnly = await shareBackup(page);

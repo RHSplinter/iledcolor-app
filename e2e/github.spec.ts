@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openCustomSection, connectHat } from './hat';
+import { openBackup, openCustomSection, connectHat } from './hat';
 import { readFile } from 'node:fs/promises';
 
 async function expectCaptionPixels(page: Page) {
@@ -36,7 +36,7 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
   await expect(page.locator('#c-str')).toHaveValue('HI');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
-  await page.click('nav [data-tab=presets]');
+  await openBackup(page);
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const path = await download.path();
   if (!path) throw new Error('Missing backup download');
@@ -56,7 +56,7 @@ test('GitHub graph previews, uploads, persists and round-trips through Creations
   await expect(page.locator('#github-handle')).toHaveValue('FokkoVeegens');
   expect(requests).toBe(1);
 
-  await page.click('nav [data-tab=presets]');
+  await openBackup(page);
   await page.setInputFiles('#p-import', { name: 'older.json', mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({ app: 'iledcolor-app', version: 2, creations: [] })) });
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
@@ -109,7 +109,7 @@ test('invalid handles and failed requests cannot send a stale graph; excluded ca
   await expect(page.locator('#github-status')).toContainText('not found');
   await expect(page.locator('#github-send')).toBeDisabled();
   await expect(page.locator('#github-preview')).toBeHidden();
-  await page.click('nav [data-tab=presets]');
+  await openBackup(page);
   await page.uncheck('#p-include-creations');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const path = await download.path();
@@ -167,7 +167,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await expect.poll(previewPixels).not.toBe(defaultFontPixels);
   expect(requests).toBe(1);
 
-  await page.click('nav [data-tab=presets]');
+  await openBackup(page);
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const path = await download.path();
   if (!path) throw new Error('Missing backup download');
@@ -193,7 +193,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');
   await expect(page.locator('#github-font')).toHaveValue('tiny5');
 
-  await page.click('nav [data-tab=presets]');
+  await openBackup(page);
   await page.setInputFiles('#p-import', { name: 'older.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
     app: 'iledcolor-app', version: 2, creations: [], github: { handle: 'new-user' },
   })) });
@@ -206,7 +206,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');
   await expect(page.locator('#github-font')).toHaveValue('tiny5');
 
-  await page.click('nav [data-tab=presets]');
+  await openBackup(page);
   await page.setInputFiles('#p-import', { name: 'partial.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
     app: 'iledcolor-app', version: 2, creations: [], github: { handle: 'new-user', prefix: '' },
   })) });
@@ -217,7 +217,7 @@ test('editable captions refresh without fetching, persist, and preserve fields a
   await expect(page.locator('#github-prefix')).toHaveValue('');
   await expect(page.locator('#github-postfix')).toHaveValue(' Bye {handle} \u{1f389}');
 
-  await page.click('nav [data-tab=presets]');
+  await openBackup(page);
   backup.github = { handle: 'bad-change', prefix: 'Not applied', postfix: null };
   await page.setInputFiles('#p-import', { name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
   await expect(page.locator('#p-msg')).toContainText('Import failed: GitHub postfix');

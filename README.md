@@ -36,7 +36,13 @@ PNG, JPG and animated GIF, with contain, cover and stretch fitting.
 The existing **Sequence** editor is available in its own collapsed section.
 
 Each section has **Send to cap** and **Save as preset** controls. To save, enter a name
-and select the adjacent check button. Load saved or built-in presets from the **Presets** tab. GitHub presets
+and select the adjacent check button. In **Presets**, each saved or built-in preset is a
+full-width button with a type icon before its name. Tap it to send immediately to the
+connected cap without leaving Presets or changing Custom editor drafts. Send progress
+and errors appear on Presets; sending is disabled while the cap is unavailable or busy.
+Share and Delete remain separate actions. Group presets apply Approach content without
+leaving Presets and update caps when Approach is running (native app or mock mode only).
+GitHub presets
 store the handle, captions, caption font and their own scroll speed. When the graph was loaded before
 saving, the preset also keeps that graph and its date, so it can be shown, used in
 sequences and shared without internet; load the graph again to refresh it. Presets

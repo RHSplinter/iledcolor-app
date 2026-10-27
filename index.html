@@ -24,7 +24,7 @@
     <div id="status-approach" class="pill muted" role="status" aria-live="polite">Approach: off</div>
     <div id="status-listening" class="pill muted" role="status" aria-live="polite">Listening: off</div>
   </header>
-  <div id="banner" hidden></div>
+  <div id="banner" role="status" aria-live="polite" hidden></div>
   <div id="share-prompt" role="region" aria-label="Incoming preset transfer" aria-live="polite" hidden></div>
   <main>
     <section id="view-presets" class="view" role="tabpanel" aria-labelledby="tab-presets">
@@ -37,6 +37,7 @@
     <section id="view-settings" class="view" role="tabpanel" aria-labelledby="tab-settings" hidden>
       <h1>Settings</h1>
       <div id="settings-device"></div>
+      <div id="settings-backup"></div>
       <div id="settings-update"></div>
     </section>
   </main>

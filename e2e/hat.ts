@@ -105,6 +105,11 @@ export async function installFakeHat(page: Page) {
   });
 }
 
+export async function openBackup(page: Page) {
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  await expect(page.locator('#btn-export')).toBeVisible();
+}
+
 /** Connects through the Custom tab and waits until the hat is ready. */
 export async function connectHat(page: Page, selectedTab: 'custom' | 'presets' = 'custom') {
   await page.click('#btn-connect');
