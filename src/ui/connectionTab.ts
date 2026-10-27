@@ -13,7 +13,7 @@ export function startConnectionTab() {
     <p><strong>Keep this tab open.</strong> It holds your LED hat's Bluetooth connection so you can refresh the controller without pairing again. Closing or refreshing this tab ends the Bluetooth connection.</p>
     <p id="link-status" role="status">Choose your LED hat to open the controller.</p>
     <button id="link-connect" class="primary">Connect LED hat</button>
-    <button id="link-disconnect" hidden>Disconnect LED hat</button>
+    <button id="link-disconnect" class="danger" hidden>Disconnect LED hat</button>
     <a id="link-return" class="action-link" target="iledcolor-led-hat-controller" rel="opener">Go to LED Hat Controller</a>
     <button id="btn-install">Install app</button>
     <p id="install-help" hidden>This installs a browser-based app on desktop or mobile. If no install prompt opens, use your browser menu to choose Install app. On a phone, this may be called Add to Home Screen.</p>
