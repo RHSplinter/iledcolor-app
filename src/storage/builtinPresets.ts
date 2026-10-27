@@ -3,6 +3,7 @@ import copilotLogo from '../assets/presets/github-copilot-logo.png?inline';
 import copilotHead from '../assets/presets/copilot-head.png?inline';
 import copilotBlinkingHead from '../assets/presets/copilot-head-blinking.gif?inline';
 import partyPopper from '../assets/presets/party-popper.gif?inline';
+import octocatAnimation from '../assets/presets/octocat-ani.gif?inline';
 import copilotHeadAnimation from '../assets/presets/copilot-head-animation.gif?inline';
 import type { ContentPreset } from './presets';
 
@@ -32,6 +33,10 @@ export function builtinPresets(): ContentPreset[] {
     {
       id: 'builtin-party-popper', name: 'Party Popper', updatedAt: 0,
       content: { kind: 'image', dataUrl: partyPopper, fit: 'contain', bg: '#000000' },
+    },
+    {
+      id: 'builtin-octocat-animation', name: 'Octocat animation', updatedAt: 0,
+      content: { kind: 'image', dataUrl: octocatAnimation, fit: 'contain', bg: '#000000' },
     },
     {
       id: 'builtin-copilot-head-animation', name: 'GitHub Copilot head (animated)', updatedAt: 0,
