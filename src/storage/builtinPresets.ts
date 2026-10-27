@@ -6,6 +6,7 @@ import partyPopper from '../assets/presets/party-popper.gif?inline';
 import rainbow from '../assets/presets/rainbow.gif?inline';
 import nijanCat from '../assets/presets/nijan-cat.gif?inline';
 import star from '../assets/presets/star.gif?inline';
+import octocatAnimation from '../assets/presets/octocat-ani.gif?inline';
 import type { ContentPreset } from './presets';
 
 /** Bundled separately from personal presets so imports never remove the defaults. */
@@ -46,6 +47,10 @@ export function builtinPresets(): ContentPreset[] {
     {
       id: 'builtin-star', name: 'Star', updatedAt: 0,
       content: { kind: 'image', dataUrl: star, fit: 'contain', bg: '#000000' },
+    },
+    {
+      id: 'builtin-octocat-animation', name: 'Octocat animation', updatedAt: 0,
+      content: { kind: 'image', dataUrl: octocatAnimation, fit: 'contain', bg: '#000000' },
     },
     {
       id: 'builtin-header', name: '<header>', updatedAt: 0,
