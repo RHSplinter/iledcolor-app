@@ -94,11 +94,15 @@ describe('JS GIF decoder', () => {
     expect(new Set(frames.map((f) => f.join())).size).toBeGreaterThan(1);
   });
 
-  it('decodes the 32×16 rainbow cat and star animation with distinct timed frames', () => {
-    const { frames, delays, size } = decode(new Uint8Array(readFileSync(join('src', 'assets', 'presets', 'rainbow-cat-star.gif'))));
-    expect(size).toEqual([32, 16]);
-    expect(frames).toHaveLength(12);
-    expect(delays).toEqual(Array(12).fill(100));
+  it.each([
+    ['rainbow.gif', [32, 18], 15],
+    ['nijan-cat.gif', [32, 19], 12],
+    ['star.gif', [32, 32], 60],
+  ] as const)('decodes the original %s animation', (name, dimensions, frameCount) => {
+    const { frames, delays, size } = decode(new Uint8Array(readFileSync(join('src', 'assets', 'presets', name))));
+    expect(size).toEqual(dimensions);
+    expect(frames).toHaveLength(frameCount);
+    expect(delays.every((delay) => delay >= 20)).toBe(true);
     expect(new Set(frames.map((f) => f.join())).size).toBeGreaterThan(1);
   });
 

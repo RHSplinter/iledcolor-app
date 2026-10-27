@@ -3,7 +3,9 @@ import copilotLogo from '../assets/presets/github-copilot-logo.png?inline';
 import copilotHead from '../assets/presets/copilot-head.png?inline';
 import copilotBlinkingHead from '../assets/presets/copilot-head-blinking.gif?inline';
 import partyPopper from '../assets/presets/party-popper.gif?inline';
-import rainbowCatStar from '../assets/presets/rainbow-cat-star.gif?inline';
+import rainbow from '../assets/presets/rainbow.gif?inline';
+import nijanCat from '../assets/presets/nijan-cat.gif?inline';
+import star from '../assets/presets/star.gif?inline';
 import type { ContentPreset } from './presets';
 
 /** Bundled separately from personal presets so imports never remove the defaults. */
@@ -34,8 +36,16 @@ export function builtinPresets(): ContentPreset[] {
       content: { kind: 'image', dataUrl: partyPopper, fit: 'contain', bg: '#000000' },
     },
     {
-      id: 'builtin-rainbow-cat-star', name: 'Rainbow Cat ⭐', updatedAt: 0,
-      content: { kind: 'image', dataUrl: rainbowCatStar, fit: 'contain', bg: '#000000' },
+      id: 'builtin-rainbow', name: 'Rainbow', updatedAt: 0,
+      content: { kind: 'image', dataUrl: rainbow, fit: 'contain', bg: '#000000' },
+    },
+    {
+      id: 'builtin-nijan-cat', name: 'Nijan cat', updatedAt: 0,
+      content: { kind: 'image', dataUrl: nijanCat, fit: 'contain', bg: '#000000' },
+    },
+    {
+      id: 'builtin-star', name: 'Star', updatedAt: 0,
+      content: { kind: 'image', dataUrl: star, fit: 'contain', bg: '#000000' },
     },
     {
       id: 'builtin-header', name: '<header>', updatedAt: 0,
