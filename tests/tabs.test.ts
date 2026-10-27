@@ -36,6 +36,10 @@ describe('tab navigation using the actual app shell', () => {
     expect(selected).not.toHaveBeenCalled();
   });
 
+  it('shows a visible label on the Settings tab', () => {
+    expect(button('settings').querySelector('span')?.textContent).toBe('Settings');
+  });
+
   it.each(['custom', 'scan', 'sound', 'settings'])('clicking %s selects only its associated panel', (name) => {
     button(name).querySelector('svg')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expectSelection(name);
