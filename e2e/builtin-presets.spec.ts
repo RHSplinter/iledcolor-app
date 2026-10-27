@@ -86,6 +86,28 @@ test('built-ins send directly, stay separate from backups and remain available o
   expect(external).toEqual([]);
 });
 
+test('animated GIF presets send without WebCodecs ImageDecoder (iOS WebKit)', async ({ page }) => {
+  await page.addInitScript(() => { delete (window as { ImageDecoder?: unknown }).ImageDecoder; });
+  await page.goto('/#mock');
+  await connectHat(page);
+  expect(await page.evaluate(() => typeof (window as { ImageDecoder?: unknown }).ImageDecoder)).toBe('undefined');
+
+  for (const id of ['party-popper', 'copilot-blinking-head']) {
+    await page.click('nav [data-tab=presets]');
+    await page.locator(`#builtin-presets [data-id=builtin-${id}] [data-act=send]`).click();
+    await expect(page.locator('#presets-msg')).toContainText('Animation upload confirmed.', { timeout: 15_000 });
+  }
+
+  await page.click('nav [data-tab=custom]');
+  await openCustomSection(page, 'image');
+  await page.setInputFiles('#c-file', join('src', 'assets', 'presets', 'party-popper.gif'));
+  await expect(page.locator('#btn-send-image')).toBeEnabled();
+  const pixels = () => page.locator('#preview').evaluate((canvas: HTMLCanvasElement) =>
+    Array.from(canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data).join(','));
+  const firstFrame = await pixels();
+  await expect.poll(pixels).not.toBe(firstFrame);
+});
+
 test('built-ins survive replacement imports on web and cannot shadow personal preset IDs', async ({ page }) => {
   await installFakeHat(page);
   await page.goto('/');
