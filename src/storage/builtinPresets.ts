@@ -11,7 +11,7 @@ export function builtinPresets(): ContentPreset[] {
   return [
     {
       id: 'builtin-xebia-github', name: 'Xebia \u{1f49c} GitHub', updatedAt: 0,
-      content: { kind: 'text', text: 'Xebia \u{1f49c} GitHub', fg: '#ffffff', bg: '#000000', speed: 5 },
+      content: { kind: 'text', text: 'Xebia \u{1f49c} GitHub', fg: '#ffffff', bg: '#000000', speed: 3 },
     },
     {
       id: 'builtin-xebia-logo', name: 'Xebia logo', updatedAt: 0,
@@ -39,11 +39,11 @@ export function builtinPresets(): ContentPreset[] {
     },
     {
       id: 'builtin-header', name: '<header>', updatedAt: 0,
-      content: { kind: 'text', text: '<header>', fg: '#ffffff', bg: '#000000', speed: 5 },
+      content: { kind: 'text', text: '<header>', fg: '#ffffff', bg: '#000000', speed: 3 },
     },
     {
       id: 'builtin-lgtm', name: 'LGTM \u{1f44d}', updatedAt: 0,
-      content: { kind: 'text', text: 'LGTM \u{1f44d}', fg: '#ffffff', bg: '#000000', speed: 5 },
+      content: { kind: 'text', text: 'LGTM \u{1f44d}', fg: '#ffffff', bg: '#000000', speed: 3 },
     },
   ];
 }
