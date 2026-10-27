@@ -7,6 +7,8 @@ header { display:flex; gap:8px; padding:calc(8px + env(safe-area-inset-top)) 12p
 #status { padding:0; }
 #status-toggle { display:inline-flex; align-items:center; gap:6px; min-height:0; padding:4px 10px; max-width:100%; border-radius:99px; background:none; font:inherit; }
 #status-toggle:disabled { opacity:1; }
+#status.err #status-toggle { background:var(--bad); color:var(--bg); }
+#status.err .connection-icon.disconnected { color:inherit; }
 #connection-actions { position:absolute; top:calc(100% + 6px); left:0; z-index:1; padding:8px; border:1px solid var(--border); border-radius:12px; background:var(--card); box-shadow:0 4px 16px #0008; }
 .connection-icon { width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .connection-icon.connected { color:var(--ok); }

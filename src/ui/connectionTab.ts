@@ -2,7 +2,7 @@ import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import { setupInstallPrompt } from './install';
 import { forgetWebHat, saveWebHat } from '../transport/webBluetoothMemory';
-import { connectWebBluetooth } from '../transport/webBluetooth';
+import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
 import { hostConnectionTab, ensureConnectionTabKey } from '../transport/connectionTab';
 
 export function startConnectionTab() {
@@ -43,21 +43,34 @@ export function startConnectionTab() {
     choose.hidden = !!name; drop.hidden = !name; back.textContent = name ? 'Return to LED Hat Controller' : 'Go to LED Hat Controller';
   });
   window.addEventListener('pagehide', () => host.close(), { once: true });
-  const openController = () => {
+  const openController = (reservedTab: Window | null) => {
     controllerUrl.hash = connected ? 'presets' : 'scan'; back.href = controllerUrl.href;
-    const tab = window.open(controllerUrl.href, 'iledcolor-led-hat-controller');
+    const tab = reservedTab && !reservedTab.closed ? reservedTab : window.open(controllerUrl.href, 'iledcolor-led-hat-controller');
+    if (tab) tab.location.href = controllerUrl.href;
     if (tab) tab.focus();
     else error.textContent = 'Your hat is connected. Use Return to LED Hat Controller to open the controller tab.';
   };
   choose.onclick = async () => {
+    const support = bluetoothSupport();
+    if (!support.ok) {
+      status.textContent = 'No hat connected. You can still open the controller to scan badges.';
+      error.textContent = support.reason;
+      return;
+    }
     choose.disabled = true; error.textContent = '';
     status.textContent = 'Searching for your LED hat... Select your hat in the browser picker and choose Pair.';
+    let controllerTab: Window | null = null;
     try {
-      const connection = await connectWebBluetooth();
+      // Start the picker first, then reserve the named tab while this click still
+      // has user activation. Pairing can outlast the browser's popup allowance.
+      const pairing = connectWebBluetooth();
+      controllerTab = window.open('', 'iledcolor-led-hat-controller');
+      const connection = await pairing;
       saveWebHat({ id: connection.deviceId, name: connection.deviceName });
       host.setConnection(connection);
-      openController();
+      openController(controllerTab);
     } catch (e) {
+      if (controllerTab && !controllerTab.closed && controllerTab.location.href === 'about:blank') controllerTab.close();
       status.textContent = 'No hat connected. Choose Connect LED hat to search again.';
       error.textContent = e instanceof Error ? e.message : String(e);
     } finally { choose.disabled = false; }

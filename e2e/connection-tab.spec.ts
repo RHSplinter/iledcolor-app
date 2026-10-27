@@ -13,7 +13,7 @@ async function connectThroughTab(owner: import('@playwright/test').Page) {
   const controllerReady = owner.waitForEvent('popup');
   await owner.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
   const controller = await controllerReady;
-  await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
+  await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE', { timeout: 15_000 });
   await expect.poll(() => controller.evaluate(() => document.hasFocus())).toBe(true);
   return { owner, controller };
 }
@@ -46,6 +46,19 @@ test('connection tab holds the same Bluetooth link across three main-page refres
   }
   expect(await controller.evaluate(() => localStorage.getItem('test-picker-count'))).toBe('1');
   expect(await controller.evaluate(() => localStorage.getItem('test-gatt-count'))).toBe('1');
+});
+
+test('pairing after user activation expires still activates the controller tab', async ({ page, context }) => {
+  await context.addInitScript(() => {
+    const choose = navigator.bluetooth.requestDevice.bind(navigator.bluetooth);
+    navigator.bluetooth.requestDevice = async (options) => {
+      const device = await choose(options);
+      await new Promise((resolve) => setTimeout(resolve, 6000));
+      return device;
+    };
+  });
+  const { controller } = await connectThroughTab(page);
+  await expect(controller.getByRole('tab', { name: 'Presets', exact: true })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('main-app Disconnect closes the held link and forgets the hat', async ({ page }) => {
