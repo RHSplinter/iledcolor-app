@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { openCustomSection, connectHat, waitForServiceWorker } from './hat';
+import { openBackup, openCustomSection, connectHat, waitForServiceWorker } from './hat';
 import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 
@@ -205,7 +205,7 @@ test('saves three QR profiles with notes, restores them on reload, and supports 
   await expect(page.locator('#qr-error')).toContainText('All three profile slots are in use');
 
   await page.selectOption('#qr-profile', '3');
-  await page.click('nav [data-tab=settings]');
+  await openBackup(page);
   const downloadPromise = page.waitForEvent('download');
   await page.click('#btn-export');
   const download = await downloadPromise;
@@ -221,7 +221,7 @@ test('saves three QR profiles with notes, restores them on reload, and supports 
   await expect(page.locator('#qr-profile option')).toHaveCount(3);
   await expect(page.locator('#qr-profile')).toHaveValue('');
 
-  await page.click('nav [data-tab=settings]');
+  await openBackup(page);
   await page.locator('#p-import').setInputFiles(backupPath);
   await expect(page.locator('#p-msg')).toContainText('3 QR profiles');
   await page.click('nav [data-tab=scan]');

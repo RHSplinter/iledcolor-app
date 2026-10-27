@@ -1,18 +1,21 @@
 import { expect, test } from '@playwright/test';
 import { openCustomSection, connectHat, waitForServiceWorker } from './hat';
 
-test('five icon tabs keep content on Connect and device controls on Settings', async ({ page }) => {
+test('six icon tabs keep presets first and device controls on Settings', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/#mock');
-  await connectHat(page);
+  await connectHat(page, 'presets');
   await waitForServiceWorker(page);
   const tabs = page.getByRole('tab');
-  await expect(tabs).toHaveCount(5);
+  await expect(tabs).toHaveCount(6);
   expect(await tabs.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-tab'))))
-    .toEqual(['custom', 'approach', 'scan', 'sound', 'settings']);
+    .toEqual(['presets', 'custom', 'approach', 'scan', 'sound', 'settings']);
   for (const tab of await tabs.all()) await expect(tab.locator('svg')).toHaveCount(1);
-  await expect(page.locator('#view-create, #view-presets')).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Presets' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#view-presets')).toBeVisible();
+  await expect(page.locator('#view-create')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Custom' }).click();
   await expect(page.locator('#custom-text > summary')).toBeVisible();
   await expect(page.locator('#brightness')).toBeHidden();
   await openCustomSection(page, 'text');
@@ -47,8 +50,10 @@ test('five icon tabs keep content on Connect and device controls on Settings', a
   await page.locator('#s-chunk').dispatchEvent('change');
   await page.fill('#s-delay', '25');
   await page.locator('#s-delay').dispatchEvent('change');
-  await page.locator('.preset-list li', { hasText: 'My saved greeting' }).locator('[data-act=load]').click();
-  await expect(page.getByRole('tab', { name: 'Custom' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: 'Presets' }).click();
+  await page.locator('.preset-list li', { hasText: 'My saved greeting' }).locator('[data-act=send]').click();
+  await expect(page.locator('#presets-msg')).toContainText('Upload confirmed.');
+  await expect(page.getByRole('tab', { name: 'Presets' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#c-str')).toHaveValue('Hi');
   await page.reload();
   await connectHat(page);
@@ -88,7 +93,7 @@ test('keyboard tabs, scan-first ordering and every marquee choice are accessible
   await page.keyboard.press('End');
   await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
   await page.keyboard.press('Home');
-  await expect(connect).toBeFocused();
+  await expect(page.getByRole('tab', { name: 'Presets' })).toBeFocused();
 });
 
 test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async ({ page }) => {
@@ -102,7 +107,7 @@ test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async 
   for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 },
     { width: 844, height: 390 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
-    for (const name of ['Custom', 'Approach', 'Scan', 'Sound', 'Settings']) {
+    for (const name of ['Presets', 'Custom', 'Approach', 'Scan', 'Sound', 'Settings']) {
       await page.getByRole('tab', { name, exact: true }).click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const tab = await page.getByRole('tab', { name, exact: true }).boundingBox();
@@ -116,7 +121,7 @@ test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async 
   }
   await page.setViewportSize({ width: 360, height: 800 });
   await page.addStyleTag({ content: 'body { font-size:32px; }' });
-  for (const name of ['Custom', 'Approach', 'Scan', 'Sound', 'Settings']) {
+  for (const name of ['Presets', 'Custom', 'Approach', 'Scan', 'Sound', 'Settings']) {
     await page.getByRole('tab', { name, exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
