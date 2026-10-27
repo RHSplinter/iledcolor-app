@@ -32,7 +32,7 @@ test('installed web app keeps its connection while opening and refreshing the co
     await app.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
     const controller = await opened;
     await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
-    await expect(controller.getByRole('tab')).toHaveText(['Hat', 'Sound', 'Scan', '']);
+    await expect(controller.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', 'Scan', '']);
     await controller.reload();
     await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
     await app.getByRole('link', { name: 'Return to LED Hat Controller', exact: true }).click();
@@ -41,13 +41,13 @@ test('installed web app keeps its connection while opening and refreshing the co
     await controller.locator('#btn-status-disconnect').click();
     await expect(controller.getByRole('tab', { name: 'Scan', exact: true })).toHaveAttribute('aria-selected', 'true');
     const pageCount = appContext.pages().length;
-    await controller.getByRole('tab', { name: 'Hat', exact: true }).click();
+    await controller.getByRole('tab', { name: 'Custom', exact: true }).click();
     await controller.locator('#btn-connect').click();
     await expect.poll(() => app.evaluate(() => document.hasFocus())).toBe(true);
     expect(appContext.pages()).toHaveLength(pageCount);
     await app.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
     await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
-    await expect(controller.getByRole('tab', { name: 'Hat', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(controller.getByRole('tab', { name: 'Presets', exact: true })).toHaveAttribute('aria-selected', 'true');
   } finally {
     await cdp.send('PWA.uninstall', { manifestId }).catch(() => undefined);
     await appContext.close();

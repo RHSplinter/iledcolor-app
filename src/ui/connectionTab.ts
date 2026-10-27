@@ -39,12 +39,12 @@ export function startConnectionTab() {
   const host = hostConnectionTab(key, (name) => {
     connected = !!name; updateButton.disabled = connected;
     status.textContent = name ? `Connected to LED hat ${name}. Use the controller tab; leave this connection tab open.` : 'LED hat disconnected. Connect here to reopen the controller.';
-    controllerUrl.hash = name ? 'hat' : 'scan'; back.href = controllerUrl.href;
+    controllerUrl.hash = name ? 'presets' : 'scan'; back.href = controllerUrl.href;
     choose.hidden = !!name; drop.hidden = !name; back.textContent = name ? 'Return to LED Hat Controller' : 'Go to LED Hat Controller';
   });
   window.addEventListener('pagehide', () => host.close(), { once: true });
   const openController = () => {
-    controllerUrl.hash = connected ? 'hat' : 'scan'; back.href = controllerUrl.href;
+    controllerUrl.hash = connected ? 'presets' : 'scan'; back.href = controllerUrl.href;
     const tab = window.open(controllerUrl.href, 'iledcolor-led-hat-controller');
     if (tab) tab.focus();
     else error.textContent = 'Your hat is connected. Use Return to LED Hat Controller to open the controller tab.';

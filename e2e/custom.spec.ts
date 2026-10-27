@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { connectHat, openCustomSection } from './hat';
+import { connectHat, openBackup, openCustomSection } from './hat';
 
 async function save(page: Page, section: string, name: string) {
   const root = page.locator(`#custom-${section}`);
@@ -13,13 +13,13 @@ async function save(page: Page, section: string, name: string) {
 }
 
 async function backup(page: Page) {
-  await page.getByRole('tab', { name: 'Settings' }).click();
+  await openBackup(page);
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   return JSON.parse(await readFile((await download.path())!, 'utf8'));
 }
 
 async function restore(page: Page, data: unknown) {
-  await page.getByRole('tab', { name: 'Settings' }).click();
+  await openBackup(page);
   await page.setInputFiles('#p-import', { name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(data)) });
 }
 
@@ -29,7 +29,7 @@ test('Custom sections start collapsed and send/save their own content with keybo
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/#mock');
   await connectHat(page);
-  await expect(page.getByRole('tab', { name: 'Hat', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Custom', exact: true })).toHaveAttribute('aria-selected', 'true');
   const sections = page.locator('#view-custom .custom-section');
   await expect(sections.locator(':scope > summary')).toHaveText(['Text', 'Solid color', 'Image', 'GitHub Contributions', 'Sequence']);
   await expect(page.locator('#view-custom details[open]')).toHaveCount(0);
@@ -88,11 +88,14 @@ test('Custom sections start collapsed and send/save their own content with keybo
   });
   expect(data.creations.find((p: { name: string }) => p.name === 'My color').content).toEqual({ kind: 'solid', color: '#00ff00' });
   expect(data.creations.find((p: { name: string }) => p.name === 'My image').content).toMatchObject({ kind: 'image', fit: 'stretch' });
-  await page.locator('.preset-list li', { hasText: 'My text' }).getByRole('button', { name: 'Load', exact: true }).click();
+  await page.getByRole('tab', { name: 'Presets' }).click();
+  await page.getByRole('button', { name: 'Send My text to cap', exact: true }).click();
+  await expect(page.locator('#presets-msg')).toContainText('Upload confirmed.');
+  await expect(page.locator('#view-presets')).toBeVisible();
   await expect(page.locator('#c-font')).toHaveValue('tiny5');
   await page.getByRole('tab', { name: 'Settings' }).click();
   await page.selectOption('#s-font', 'monaspace');
-  await page.getByRole('tab', { name: 'Hat' }).click();
+  await page.getByRole('tab', { name: 'Custom' }).click();
   await expect(page.locator('#c-font')).toHaveValue('tiny5');
   await page.reload();
   await connectHat(page);
@@ -103,7 +106,7 @@ test('Custom sections start collapsed and send/save their own content with keybo
   expect(errors).toEqual([]);
 });
 
-test('GitHub presets save settings, load fresh graphs, and use their own scroll speed', async ({ page }) => {
+test('GitHub presets send fresh graphs without changing editor settings', async ({ page }) => {
   let requests = 0;
   await page.route('https://github-contributions-api.jogruber.de/**', (route) => {
     requests++;
@@ -126,20 +129,22 @@ test('GitHub presets save settings, load fresh graphs, and use their own scroll 
   const data = await backup(page);
   expect(data.github.speed).toBe(9);
   expect(data.creations[0].content).toEqual({ kind: 'github', handle: 'octocat', prefix: 'Hi ', postfix: '', speed: 9, font: null });
-  await page.getByRole('tab', { name: 'Hat' }).click();
+  await page.getByRole('tab', { name: 'Custom' }).click();
   await page.fill('#github-handle', 'different');
   await page.locator('#github-speed').fill('1');
   for (let i = 0; i < 2; i++) {
-    await page.getByRole('tab', { name: 'Settings' }).click();
-    await page.locator('.preset-list li', { hasText: 'My graph' }).getByRole('button', { name: 'Load', exact: true }).click();
-    await expect(page.locator('#github-status')).toContainText('Graph ready for octocat');
-    await expect(page.locator('#github-speed')).toHaveValue('9');
+    await page.getByRole('tab', { name: 'Presets' }).click();
+    await page.getByRole('button', { name: 'Send My graph to cap', exact: true }).click();
+    await expect(page.locator('#presets-msg')).toContainText('Animation upload confirmed.');
+    await expect(page.locator('#view-presets')).toBeVisible();
+    await expect(page.locator('#github-handle')).toHaveValue('different');
+    await expect(page.locator('#github-speed')).toHaveValue('1');
     expect(requests).toBe(i + 2);
   }
   await expect(page.locator('#c-speed')).toHaveValue('3');
   await page.reload();
   await connectHat(page);
-  await expect(page.locator('#github-speed')).toHaveValue('9');
+  await expect(page.locator('#github-speed')).toHaveValue('1');
   expect(requests).toBe(3);
 });
 
@@ -163,16 +168,15 @@ test('GitHub presets saved after loading keep the graph and replay it offline', 
 
   await page.unroute('https://github-contributions-api.jogruber.de/**');
   await page.route('https://github-contributions-api.jogruber.de/**', (route) => { requests++; return route.abort(); });
-  await page.getByRole('tab', { name: 'Hat' }).click();
+  await page.getByRole('tab', { name: 'Custom' }).click();
   await page.fill('#github-handle', 'someone-else');
-  await page.getByRole('tab', { name: 'Settings' }).click();
-  await page.locator('.preset-list li', { hasText: 'Offline graph' }).getByRole('button', { name: 'Load', exact: true }).click();
-  await expect(page.locator('#github-status')).toContainText(`Saved graph for octocat from ${today}`);
-  await expect(page.locator('#github-handle')).toHaveValue('octocat');
-  await expect(page.locator('#github-preview')).toBeVisible();
-  await page.click('#github-send');
-  await expect(page.locator('#github-status')).toContainText('is scrolling on the hat');
+  await page.getByRole('tab', { name: 'Presets' }).click();
+  await page.getByRole('button', { name: 'Send Offline graph to cap', exact: true }).click();
+  await expect(page.locator('#presets-msg')).toContainText('Animation upload confirmed.');
+  await expect(page.locator('#view-presets')).toBeVisible();
+  await expect(page.locator('#github-handle')).toHaveValue('someone-else');
 
+  await page.getByRole('tab', { name: 'Custom' }).click();
   await openCustomSection(page, 'sequence');
   await page.selectOption('#c-seq-preset', { label: 'Offline graph' });
   await page.click('#btn-seq-add-preset');
@@ -199,14 +203,14 @@ test('all drafts restore atomically, preserve excluded and older fields, and sur
   const data = await backup(page);
   expect(data.customDrafts.text.font).toBe('bitcount');
   expect(data.customDrafts.image).toEqual({ kind: 'image', dataUrl: '', fit: 'cover', bg: '#abcdef' });
-  await page.getByRole('tab', { name: 'Hat' }).click();
+  await page.getByRole('tab', { name: 'Custom' }).click();
   await page.fill('#c-str', 'Changed');
   await page.selectOption('#c-font', 'tiny5');
   await page.locator('#c-solid').fill('#ffffff');
   await page.selectOption('#c-fit', 'stretch');
   await restore(page, data);
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
-  await page.getByRole('tab', { name: 'Hat' }).click();
+  await page.getByRole('tab', { name: 'Custom' }).click();
   await expect(page.locator('#c-str')).toHaveValue('Draft text');
   await expect(page.locator('#c-font')).toHaveValue('bitcount');
   await expect(page.locator('#c-solid')).toHaveValue('#123456');

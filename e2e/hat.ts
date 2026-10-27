@@ -106,21 +106,30 @@ export async function installFakeHat(page: Page | BrowserContext) {
   });
 }
 
+export async function openBackup(page: Page) {
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  await expect(page.locator('#btn-export')).toBeVisible();
+}
+
 /** Connects through the Custom tab and waits until the hat is ready. */
-export async function connectHat(page: Page) {
+export async function connectHat(page: Page, selectedTab: 'custom' | 'presets' = 'custom') {
   const native = await page.evaluate(() => location.hash === '#mock' || Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.()));
-  if (await page.locator('#status').textContent().then((text) => text?.includes('Ready'))) return;
+  if (await page.locator('#status').textContent().then((text) => text?.includes('Ready'))) {
+    await page.getByRole('tab', { name: selectedTab === 'custom' ? 'Custom' : 'Presets', exact: true }).click();
+    return;
+  }
   if (native) {
-    await page.getByRole('tab', { name: 'Hat', exact: true }).click();
+    await page.getByRole('tab', { name: 'Custom', exact: true }).click();
     await page.click('#btn-connect');
   } else {
-    await page.getByRole('tab', { name: 'Hat', exact: true }).click();
+    await page.getByRole('tab', { name: 'Custom', exact: true }).click();
     const ownerReady = page.waitForEvent('popup');
     await page.click('#btn-connect');
     const owner = await ownerReady;
     await owner.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
   }
   await expect(page.locator('#status')).toContainText('Ready', { timeout: 15000 });
+  await page.getByRole('tab', { name: selectedTab === 'custom' ? 'Custom' : 'Presets', exact: true }).click();
 }
 
 

@@ -104,7 +104,9 @@ ul.list { list-style:none; padding:0; margin:0; }
 ul.list li { display:flex; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid #2a2a2a; }
 ul.list li span { flex:1; overflow:hidden; text-overflow:ellipsis; }
 .preset-list li { flex-wrap:wrap; gap:var(--space-2); padding:var(--space-3) 0; }
-.preset-list li > span { flex:1 1 100%; overflow:visible; overflow-wrap:anywhere; }
+.preset-list .preset-send { display:flex; align-items:center; gap:var(--space-3); flex:1 1 100%; width:100%; min-width:0; text-align:left; }
+.preset-send svg { width:24px; height:24px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.preset-list .preset-send span { overflow:visible; overflow-wrap:anywhere; }
 .preset-list small { display:block; }
 .sequence { border:1px solid var(--border); border-radius:8px; margin:12px 0; padding:8px 12px; }
 .sequence h3 { margin:4px 0; font-size:16px; }

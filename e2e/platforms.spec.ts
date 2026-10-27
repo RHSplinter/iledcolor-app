@@ -1,16 +1,19 @@
 import { expect, test } from '@playwright/test';
 import { openCustomSection, connectHat, installFakeHat, waitForServiceWorker } from './hat';
 
-test('web navigation skips native-only Approach and retains content, scan and settings', async ({ page, context }) => {
+test('web navigation skips native-only Approach and retains presets, content, scan and settings', async ({ page, context }) => {
   await installFakeHat(page);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/?controller=1');
-  await connectHat(page);
+  await connectHat(page, 'presets');
   await waitForServiceWorker(page);
-  await expect(page.getByRole('tab')).toHaveCount(4);
-  await expect(page.getByRole('tab')).toHaveText(['Hat', 'Sound', 'Scan', '']);
+  await expect(page.getByRole('tab')).toHaveCount(5);
+  await expect(page.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', 'Scan', '']);
   await expect(page.locator('#tab-approach')).toBeHidden();
+  await expect(page.locator('#view-presets')).toBeVisible();
+  await expect(page.locator('#view-presets')).not.toContainText('Backup');
+  await page.getByRole('tab', { name: 'Custom' }).click();
   await expect(page.locator('#custom-text > summary')).toBeVisible();
   await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Web greeting');
@@ -19,7 +22,7 @@ test('web navigation skips native-only Approach and retains content, scan and se
   await page.fill('#c-name', 'Browser creation');
   await page.locator('#c-save-form').getByRole('button', { name: 'Save preset' }).click();
   await expect(page.locator('#c-save-note')).toContainText('Saved');
-  await page.getByRole('tab', { name: 'Hat' }).focus();
+  await page.getByRole('tab', { name: 'Custom' }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Sound' })).toBeFocused();
   await page.keyboard.press('ArrowRight');
@@ -28,14 +31,19 @@ test('web navigation skips native-only Approach and retains content, scan and se
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
   await expect(page.locator('#brightness')).toBeVisible();
-  await expect(page.locator('#settings-presets')).toContainText('Browser creation');
-  await expect(page.locator('#settings-presets')).toContainText('require the Android or iOS app');
-  await page.locator('li', { hasText: 'Browser creation' }).getByRole('button', { name: 'Load', exact: true }).click();
+  await expect(page.locator('#view-settings')).toContainText('require the Android or iOS app');
+  await expect(page.locator('#view-settings')).toContainText('Backup');
+  await page.getByRole('tab', { name: 'Presets' }).click();
+  await expect(page.locator('#presets-content')).toContainText('Browser creation');
+  await expect(page.locator('#presets-content')).not.toContainText('require the Android or iOS app');
+  await page.getByRole('button', { name: 'Send Browser creation to cap', exact: true }).click();
+  await expect(page.locator('#presets-msg')).toContainText('upload confirmed.');
+  await expect(page.locator('#view-presets')).toBeVisible();
   await expect(page.locator('#c-str')).toHaveValue('Web greeting');
   await context.setOffline(true);
   await page.reload();
-  await expect(page.locator('#status')).toContainText('Ready: iledcolor-FAKE');
-  await expect(page.getByRole('tab')).toHaveCount(4);
+  await connectHat(page, 'presets');
+  await expect(page.getByRole('tab')).toHaveCount(5);
   await expect(page.locator('#c-str')).toHaveValue('Web greeting');
   expect(errors).toEqual([]);
 });
@@ -52,18 +60,20 @@ test('web preserves native group presets for backup without opening unsupported 
   await connectHat(page);
   await expect(page.locator('#custom-text > summary')).toBeVisible();
   await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Presets' }).click();
   const preset = page.locator('.preset-list li', { hasText: 'Native group' });
-  await expect(preset.getByRole('button', { name: 'Load', exact: true })).toBeDisabled();
+  await expect(preset.getByRole('button', { name: 'Apply Native group', exact: true })).toBeDisabled();
   await expect(preset).toContainText('kept for backup');
+  await page.getByRole('tab', { name: 'Settings' }).click();
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const json = JSON.parse(await (await import('node:fs/promises')).readFile((await download.path())!, 'utf8'));
   expect(json.approach.presets.some((p: { name: string }) => p.name === 'Native group')).toBe(true);
   await expect(page.locator('#view-approach')).toBeHidden();
-  await expect(page.getByRole('tab')).toHaveCount(4);
+  await expect(page.getByRole('tab')).toHaveCount(5);
 });
 
 for (const platform of ['ios', 'android']) {
-  test(`${platform} shell retains the full five-tab layout`, async ({ page }) => {
+  test(`${platform} shell retains the full six-tab layout`, async ({ page }) => {
     await installFakeHat(page);
     await page.route('https://api.github.com/**', (route) => route.fulfill({ json: [] }));
     await page.addInitScript((name) => {
@@ -72,8 +82,9 @@ for (const platform of ['ios', 'android']) {
         : { androidBridge: {} });
     }, platform);
     await page.goto('/?controller=1');
-    await connectHat(page);
-    await expect(page.getByRole('tab')).toHaveCount(5);
+    await connectHat(page, 'presets');
+    await expect(page.getByRole('tab')).toHaveCount(6);
+    await page.getByRole('tab', { name: 'Custom' }).click();
     await expect(page.locator('#custom-text > summary')).toBeVisible();
     await expect(page.locator('#view-custom')).toContainText(platform === 'ios'
       ? 'iOS will ask for Bluetooth permission' : 'Android will ask for Bluetooth permission');
@@ -87,7 +98,7 @@ for (const platform of ['ios', 'android']) {
     expect(action!.y).toBeLessThan(profile!.y);
     await page.getByRole('tab', { name: 'Settings' }).click();
     await expect(page.locator('#brightness')).toBeVisible();
-    await expect(page.locator('#settings-presets')).not.toContainText('require the Android or iOS app');
+    await expect(page.locator('#presets-content')).not.toContainText('require the Android or iOS app');
   });
 }
 

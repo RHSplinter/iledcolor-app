@@ -56,7 +56,7 @@ test('main-app Disconnect closes the held link and forgets the hat', async ({ pa
   expect(await controller.evaluate(() => localStorage.getItem('iledcolor.lastWebBluetoothHat'))).toBeNull();
   await controller.reload();
   await expect(controller.locator('#status')).toContainText('Disconnected');
-  await controller.getByRole('tab', { name: 'Hat', exact: true }).click();
+  await controller.getByRole('tab', { name: 'Custom', exact: true }).click();
   await expect(controller.locator('#btn-connect')).toBeEnabled();
 });
 
@@ -67,7 +67,7 @@ test('closing the connection tab and refreshing leaves Scan usable without pairi
   await expect(controller.locator('#status')).toContainText('Disconnected');
   await expect(controller.getByRole('tab', { name: 'Scan', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(controller.locator('#qr-start')).toBeEnabled();
-  await controller.getByRole('tab', { name: 'Hat', exact: true }).click();
+  await controller.getByRole('tab', { name: 'Custom', exact: true }).click();
   await expect(controller.locator('#btn-connect')).toBeEnabled();
   expect(await controller.evaluate(() => localStorage.getItem('test-picker-count'))).toBe('1');
 });
@@ -78,8 +78,9 @@ test('Go to controller works before connecting and badge scans do not send anyth
   await page.getByRole('link', { name: 'Go to LED Hat Controller', exact: true }).click();
   const controller = await controllerReady;
   await expect(controller.locator('#status')).toContainText('Disconnected');
-  await expect(controller.getByRole('tab')).toHaveText(['Hat', 'Sound', 'Scan', '']);
-  await controller.getByRole('tab', { name: 'Sound', exact: true }).click();
+  await expect(controller.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', 'Scan', '']);
+  for (const name of ['Presets', 'Sound', 'Settings'])
+    await expect(controller.getByRole('tab', { name, exact: true })).toBeDisabled();
   await expect(controller.locator('#sound-start')).toBeDisabled();
   expect(await controller.locator('#view-sound').locator('input,button,select').evaluateAll((nodes) => nodes.every((node) => (node as HTMLInputElement).disabled))).toBe(true);
   await controller.getByRole('tab', { name: 'Scan', exact: true }).click();
@@ -148,7 +149,7 @@ test('Go selects Scan in an already-open disconnected controller without replaci
   const opened = page.waitForEvent('popup');
   await page.getByRole('link', { name: 'Go to LED Hat Controller', exact: true }).click();
   const controller = await opened;
-  await controller.getByRole('tab', { name: 'Hat', exact: true }).click();
+  await controller.getByRole('tab', { name: 'Custom', exact: true }).click();
   await controller.evaluate(() => { (window as unknown as { marker: string }).marker = 'same-document'; });
   await page.getByRole('link', { name: 'Go to LED Hat Controller', exact: true }).click();
   await expect(controller.getByRole('tab', { name: 'Scan', exact: true })).toHaveAttribute('aria-selected', 'true');

@@ -2,11 +2,11 @@
 
 ## App navigation
 
-The web controller has four icon tabs: **Hat**, **Sound**, **Scan**, and **Settings** (the gear icon). Hat keeps the Bluetooth icon. Native apps also retain their existing Approach mode.
+The web controller has five icon tabs: **Presets**, **Custom**, **Sound**, **Scan**, and **Settings** (the gear icon). Custom uses the drawing/pencil icon. Native apps also retain their existing Approach mode.
 
-The website starts on **LED Hat Connection**. Connect there to select and pair the hat; the controller opens with Hat selected. Keep the connection tab open because it owns the Bluetooth link. **Go to LED Hat Controller** also works without a hat and opens Scan without an automatic pairing attempt.
+The website starts on **LED Hat Connection**. Connect there to select and pair the hat; the controller opens with Presets selected. Keep the connection tab open because it owns the Bluetooth link. **Go to LED Hat Controller** also works without a hat and opens Scan without an automatic pairing attempt.
 
-All four controller tabs stay visible without a hat. Scan can recognize badges and show results locally; Sound controls are disabled, and Hat offers **Connect hat** to open or focus the connection screen. On connection success, the controller selects Hat. Refresh reattaches only to an existing live connection tab. If that link fails or is gone, the controller returns to Scan and Hat offers Connect hat again.
+All five controller tabs stay visible without a hat. Scan can recognize badges and show results locally; Presets, Sound, and Settings are disabled, and Custom offers **Connect hat** to open or focus the connection screen. On connection success, the controller selects Presets. Refresh reattaches only to an existing live connection tab. If that link fails or is gone, the controller returns to Scan and Custom offers Connect hat again.
 
 **Install app** uses the existing browser installation flow and is available on the connection screen. The installed app uses the same held-link and controller-window flow.
 

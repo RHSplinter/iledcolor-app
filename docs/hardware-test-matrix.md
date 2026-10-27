@@ -21,12 +21,12 @@ The original direct-reconnect approach could not restore the physical hat in the
 
 1. Open the site. Verify the actions are Connect LED hat, Go to LED Hat Controller, Install app.
 2. Choose Go without pairing. Verify Scan is selected and works without a hat; Sound is visible with its controls disabled.
-3. Select Hat, then Connect hat. Verify the existing connection tab receives focus.
-4. Select Connect LED hat and pair the physical device. Verify the controller receives focus with Hat selected, retaining any scan data.
+3. Select Custom, then Connect hat. Verify the existing connection tab receives focus.
+4. Select Connect LED hat and pair the physical device. Verify the controller receives focus with Presets selected, retaining any scan data.
 5. Refresh the controller three times without reopening the picker. Verify the same hat is Ready and receives a command after each refresh.
 6. Return to the connection tab and use Return. Verify it focuses the same controller without reloading. Close the controller and use Return again; verify a replacement attaches to the held link.
-7. Disconnect in the controller. Verify Scan is selected and the owner reports disconnected. Go must select Scan even if the disconnected controller was left on Hat.
-8. Close the connection tab. Verify Hat offers Connect hat; use it, pair again, and verify the existing controller is reused.
+7. Disconnect in the controller. Verify Scan is selected and the owner reports disconnected. Go must select Scan even if the disconnected controller was left on Custom.
+8. Close the connection tab. Verify Custom offers Connect hat; use it, pair again, and verify the existing controller is reused.
 9. Install and launch the web app on desktop and mobile. Repeat pairing, controller refresh, and both tab directions. If automatic opening is blocked, Return must open the controller without another pairing.
 
 Physical Windows Edge feedback on 2026-10-26: the user reported successful pairing and F5 recovery with the held connection tab. They then reported action ordering, disconnected navigation, and tab-return failures. Those navigation fixes require another physical review; physical BLE commands and mobile installation are not yet verified.
