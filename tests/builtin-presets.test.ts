@@ -7,6 +7,23 @@ import { exportSelectedJson, mergeSharedPresets, parseSharedBackup } from '../sr
 import { listPresets, loadKv, restoreBackup } from '../src/storage/db';
 
 describe('built-in presets', () => {
+  it('uses a two-color indexed PNG for crisp Xebia logo artwork', () => {
+    const dataUrl = builtinPresets()[1]!.content;
+    if (dataUrl.kind !== 'image') throw new Error('Xebia logo must be an image');
+    const match = /^data:image\/png;base64,(.+)$/.exec(dataUrl.dataUrl);
+    expect(match).not.toBeNull();
+    const png = Buffer.from(match![1]!, 'base64');
+    const chunks = new Map<string, Buffer>();
+    for (let offset = 8; offset < png.length;) {
+      const length = png.readUInt32BE(offset);
+      chunks.set(png.toString('ascii', offset + 4, offset + 8), png.subarray(offset + 8, offset + 8 + length));
+      offset += length + 12;
+    }
+    expect(chunks.get('IHDR')?.subarray(8, 10)).toEqual(Buffer.from([1, 3]));
+    expect(chunks.get('PLTE')).toEqual(Buffer.from([0, 0, 0, 106, 32, 95]));
+    expect(chunks.get('tRNS')).toEqual(Buffer.from([0, 255]));
+  });
+
   it('provides seven valid, independent presets without changing settings', () => {
     const presets = builtinPresets();
     expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'Party Popper', '<header>', 'LGTM 👍']);
