@@ -33,11 +33,11 @@ The website opens on **LED Hat Connection**, with **Connect LED hat**, **Go to L
 
 - **Connect LED hat** opens the browser's device picker from that click. After pairing, the controller opens with **Presets** selected and receives focus. The connection tab stays open in the background.
 - **Go to LED Hat Controller** opens **Scan** immediately without attempting to pair or reconnect from an old saved device. Badge scanning works without a hat; results stay in the controller and nothing is sent to a hat.
-- The browser controller has five tabs: **Presets**, **Custom**, **Sound**, **Scan**, **Settings**. Custom uses the drawing/pencil icon. Without a hat, Presets, Sound, and Settings stay visible but disabled. Scan works and Custom provides Connect hat.
+- The browser controller has five tabs: **Presets**, **Custom**, **Sound**, **Settings**, **Scan**. Custom uses the drawing/pencil icon. Without a hat, only **Connect hat** and **Scan** are shown. The connection screen opens by default; Scan remains available without pairing. Presets, Sound, and Settings appear after connection, and Connect hat becomes Custom.
 - On Custom, **Connect hat** opens or focuses the connection tab. The picker runs only there. When the hat connects, the controller automatically selects Presets.
 - **Return to LED Hat Controller** focuses the existing controller without reloading it, or opens a replacement if it was closed.
 - Go/Return and Connect hat use normal named-tab links. If the browser blocks the automatic controller opening after pairing, use Return; the hat remains connected and no second pairing is needed.
-- Refreshing the controller reattaches only to a live connection tab. It does not call the device picker or use experimental saved-device APIs. If the connection is gone or reattachment fails, Scan remains available and Custom shows Connect hat.
+- Refreshing the controller reattaches only to a live connection tab. It does not call the device picker or use experimental saved-device APIs. If the connection is gone or reattachment fails, the controller shows Connect hat and Scan remains available.
 - Disconnect releases the held link and forgets the saved hat. Closing or refreshing the connection tab also ends the Bluetooth link.
 
 No experimental browser flags are needed. Install app is the third action and supports desktop and mobile browsers that offer installation. If the browser has not supplied an install prompt, the button explains the browser menu option. The connection page remains open while the controller runs in another tab or window. Native Android/iOS builds continue to use their native Bluetooth connection and retain Approach mode.

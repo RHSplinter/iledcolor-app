@@ -119,10 +119,10 @@ export async function connectHat(page: Page, selectedTab: 'custom' | 'presets' =
     return;
   }
   if (native) {
-    await page.getByRole('tab', { name: 'Custom', exact: true }).click();
+    await page.locator('#tab-custom').click();
     await page.click('#btn-connect');
   } else {
-    await page.getByRole('tab', { name: 'Custom', exact: true }).click();
+    await page.locator('#tab-custom').click();
     const ownerReady = page.waitForEvent('popup');
     await page.click('#btn-connect');
     const owner = await ownerReady;

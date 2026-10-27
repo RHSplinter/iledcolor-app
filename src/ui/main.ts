@@ -189,15 +189,22 @@ function applyConnectionGate() {
   for (const id of ['tab-presets', 'tab-sound', 'tab-settings']) {
     const tab = document.getElementById(id) as HTMLButtonElement | null;
     if (tab) {
+      tab.hidden = !connected;
       tab.disabled = !connected;
-      tab.title = connected ? '' : 'Connect a hat on Custom to use this tab';
     }
+  }
+  const customTab = document.getElementById('tab-custom');
+  if (customTab) {
+    customTab.querySelector('span')!.textContent = connected ? 'Custom' : 'Connect hat';
+    customTab.querySelector('path')!.setAttribute('d', connected
+      ? 'm15 3 6 6-12 12H3v-6L15 3zm-3 3 6 6M3 15l6 6'
+      : 'm7 7 10 10-5 4V3l5 4L7 17');
   }
   const connectionCard = document.getElementById('connection-card');
   if (connectionCard) connectionCard.hidden = connected;
   const approachTab = document.getElementById('tab-approach');
   if (approachTab) approachTab.hidden = !connected || !approachAvailable;
-  if (wasHatConnected && !connected) showTab?.('scan');
+  if (wasHatConnected && !connected) showTab?.('custom');
   wasHatConnected = connected;
   if (justConnected) showTab?.('presets');
 }
@@ -389,7 +396,7 @@ async function restoreWebConnection(selectHat = false) {
   if (controller.state === 'Ready') {
     saveWebHat({ id: live.deviceId, name: live.deviceName });
     if (selectHat) showTab?.('presets');
-  } else showTab?.('scan');
+  } else showTab?.('custom');
   await afterWebConnect();
 }
 
@@ -1278,7 +1285,7 @@ async function main() {
   void renderPresets();
   void renderBackup();
   applyConnectionGate();
-  showTab('scan');
+  showTab(location.hash === '#scan' ? 'scan' : 'custom');
   if (!sharedCap()) {
     window.addEventListener('hashchange', () => {
       const requested = location.hash.slice(1);

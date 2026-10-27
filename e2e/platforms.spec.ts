@@ -9,7 +9,7 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await connectHat(page, 'presets');
   await waitForServiceWorker(page);
   await expect(page.getByRole('tab')).toHaveCount(5);
-  await expect(page.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', 'Scan', '']);
+  await expect(page.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', '', 'Scan']);
   await expect(page.locator('#tab-approach')).toBeHidden();
   await expect(page.locator('#view-presets')).toBeVisible();
   await expect(page.locator('#view-presets')).not.toContainText('Backup');
@@ -26,10 +26,11 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Sound' })).toBeFocused();
   await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Scan' })).toBeFocused();
   await expect(page.locator('#qr-start')).toBeVisible();
-  await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
+  await page.getByRole('tab', { name: 'Settings' }).click();
   await expect(page.locator('#brightness')).toBeVisible();
   await expect(page.locator('#view-settings')).toContainText('require the Android or iOS app');
   await expect(page.locator('#view-settings')).toContainText('Backup');

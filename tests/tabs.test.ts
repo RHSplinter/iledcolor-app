@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { initTabs } from '../src/ui/tabs';
 import shell from '../index.html?raw';
 
-const names = ['presets', 'custom', 'approach', 'sound', 'scan', 'settings'];
+const names = ['presets', 'custom', 'approach', 'sound', 'settings', 'scan'];
 const button = (name: string) => document.getElementById(`tab-${name}`) as HTMLButtonElement;
 const panel = (name: string) => document.getElementById(`view-${name}`)!;
 const selected = vi.fn();
@@ -67,8 +67,8 @@ describe('tab navigation using the actual app shell', () => {
   it('wraps arrows, skips hidden tabs, and moves focus with selection', () => {
     button('custom').focus();
     for (const [key, name] of [
-      ['ArrowRight', 'sound'], ['ArrowRight', 'scan'], ['ArrowRight', 'settings'],
-      ['ArrowRight', 'presets'], ['ArrowLeft', 'settings'], ['ArrowLeft', 'scan'],
+      ['ArrowRight', 'sound'], ['ArrowRight', 'settings'], ['ArrowRight', 'scan'],
+      ['ArrowRight', 'presets'], ['ArrowLeft', 'scan'], ['ArrowLeft', 'settings'],
     ] as const) {
       expect(press(key).defaultPrevented).toBe(true);
       expect(document.activeElement).toBe(button(name));

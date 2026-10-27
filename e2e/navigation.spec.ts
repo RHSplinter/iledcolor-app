@@ -10,7 +10,7 @@ test('six icon tabs keep presets first and device controls on Settings', async (
   const tabs = page.getByRole('tab');
   await expect(tabs).toHaveCount(6);
   expect(await tabs.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-tab'))))
-    .toEqual(['presets', 'custom', 'approach', 'sound', 'scan', 'settings']);
+    .toEqual(['presets', 'custom', 'approach', 'sound', 'settings', 'scan']);
   for (const tab of await tabs.all()) await expect(tab.locator('svg')).toHaveCount(1);
   await expect(page.getByRole('tab', { name: 'Presets' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#view-presets')).toBeVisible();
@@ -66,7 +66,7 @@ test('six icon tabs keep presets first and device controls on Settings', async (
   expect(errors).toEqual([]);
 });
 
-test('keyboard tabs, scan-first ordering and every marquee choice are accessible', async ({ page }) => {
+test('keyboard tabs, Scan-last ordering and every marquee choice are accessible', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
   await waitForServiceWorker(page);
@@ -85,13 +85,15 @@ test('keyboard tabs, scan-first ordering and every marquee choice are accessible
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Sound' })).toBeFocused();
   await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Scan' })).toBeFocused();
   const start = await page.locator('#qr-start').boundingBox();
   const profile = await page.locator('#qr-profile').boundingBox();
   expect(start!.y).toBeLessThan(profile!.y);
   await expect(page.locator('#qr-ready')).toContainText('Ready to scan');
   await page.keyboard.press('End');
-  await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
+  await expect(page.getByRole('tab', { name: 'Scan' })).toBeFocused();
   await page.keyboard.press('Home');
   await expect(page.getByRole('tab', { name: 'Presets' })).toBeFocused();
 });
@@ -107,7 +109,7 @@ test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async 
   for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 },
     { width: 844, height: 390 }, { width: 1280, height: 900 }]) {
     await page.setViewportSize(viewport);
-    for (const name of ['Presets', 'Custom', 'Approach', 'Sound', 'Scan', 'Settings']) {
+    for (const name of ['Presets', 'Custom', 'Approach', 'Sound', 'Settings', 'Scan']) {
       await page.getByRole('tab', { name, exact: true }).click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const tab = await page.getByRole('tab', { name, exact: true }).boundingBox();
@@ -121,7 +123,7 @@ test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async 
   }
   await page.setViewportSize({ width: 360, height: 800 });
   await page.addStyleTag({ content: 'body { font-size:32px; }' });
-  for (const name of ['Presets', 'Custom', 'Approach', 'Sound', 'Scan', 'Settings']) {
+  for (const name of ['Presets', 'Custom', 'Approach', 'Sound', 'Settings', 'Scan']) {
     await page.getByRole('tab', { name, exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }

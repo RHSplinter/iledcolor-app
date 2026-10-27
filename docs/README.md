@@ -2,11 +2,11 @@
 
 ## App navigation
 
-The web controller has five icon tabs: **Presets**, **Custom**, **Sound**, **Scan**, and **Settings** (the gear icon). Custom uses the drawing/pencil icon. Native apps also retain their existing Approach mode.
+The web controller has five icon tabs: **Presets**, **Custom**, **Sound**, **Settings**, and **Scan** (the gear icon). Custom uses the drawing/pencil icon. Native apps also retain their existing Approach mode.
 
 The website starts on **LED Hat Connection**. Connect there to select and pair the hat; the controller opens with Presets selected. Keep the connection tab open because it owns the Bluetooth link. **Go to LED Hat Controller** also works without a hat and opens Scan without an automatic pairing attempt.
 
-All five controller tabs stay visible without a hat. Scan can recognize badges and show results locally; Presets, Sound, and Settings are disabled, and Custom offers **Connect hat** to open or focus the connection screen. On connection success, the controller selects Presets. Refresh reattaches only to an existing live connection tab. If that link fails or is gone, the controller returns to Scan and Custom offers Connect hat again.
+Without a hat, only **Connect hat** and **Scan** remain visible. The connection screen opens by default; Scan can recognize badges and show results locally. Connect hat opens or focuses the Bluetooth connection tab. After connecting, the full tab bar appears, Custom uses the pencil icon, and Scan is last. On connection success, the controller selects Presets. Refresh reattaches only to an existing live connection tab. If that link fails or is gone, the controller returns to Connect hat, with Scan still available.
 
 **Install app** uses the existing browser installation flow and is available on the connection screen. The installed app uses the same held-link and controller-window flow.
 
