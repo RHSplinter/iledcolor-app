@@ -830,7 +830,7 @@ async function renderPresets() {
       <h2>Built-in presets</h2>
       <p class="small">Available to everyone, including offline. Tap a preset to send it immediately to your connected cap.</p>
       <ul class="list preset-list" id="builtin-presets">${builtinPresets().map((p) => `<li data-id="${esc(p.id)}" data-builtin="true">${presetButton(p)}${native && !useMock ? '<button data-act="share">Share</button>' : ''}</li>`).join('')}</ul>
-      <p class="small">Built-in logos use artwork supplied for this app. Party Popper and Octocat use bundled animated GIFs.</p>
+      <p class="small">Built-in logos use artwork supplied for this app. Party Popper and animated GitHub Copilot heads use bundled GIFs.</p>
     </div>
     <div class="card">
       <h2>Personal presets</h2>
