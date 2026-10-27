@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { openCustomSection, connectHat, waitForServiceWorker } from './hat';
+import { openBackup, openCustomSection, connectHat, waitForServiceWorker } from './hat';
 
 test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page, context }) => {
   const external: string[] = [];
@@ -21,16 +21,16 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
   await page.click('#c-save-start');
   await page.fill('#c-name', 'Greeting');
   await page.locator('#c-save-form').getByRole('button', { name: 'Save preset' }).click();
-  await page.click('nav [data-tab=settings]');
-  await expect(page.locator('ul.list li').first()).toContainText('Greeting');
+  await page.click('nav [data-tab=presets]');
+  await expect(page.locator('.preset-list:not(#builtin-presets) li')).toContainText('Greeting');
 
   // Offline relaunch: cached shell loads and presets are still editable.
   await context.setOffline(true);
   await page.reload();
   await connectHat(page);
   await expect(page.locator('#status')).toBeVisible();
-  await page.click('nav [data-tab=settings]');
-  await expect(page.locator('ul.list li').first()).toContainText('Greeting');
+  await page.click('nav [data-tab=presets]');
+  await expect(page.locator('.preset-list:not(#builtin-presets) li')).toContainText('Greeting');
   await page.click('nav [data-tab=custom]');
 
   expect(external).toEqual([]); // privacy: no off-origin requests
@@ -39,7 +39,7 @@ test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page
 test('rejects a corrupt preset import visibly', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
-  await page.click('nav [data-tab=settings]');
+  await openBackup(page);
   await page.setInputFiles('#p-import', { name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{nope') });
   await expect(page.locator('#p-msg')).toContainText('Import failed');
 });
@@ -57,25 +57,30 @@ test('group content presets: save, export, load', async ({ page }) => {
   await pairText.fill('Something else');
   await pairText.dispatchEvent('change');
 
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   const item = page.locator('ul.list li', { hasText: 'Bavarian' });
-  await expect(item).toContainText('group content');
+  await expect(item.getByRole('img', { name: 'Group content' })).toBeVisible();
+  await openBackup(page);
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const json = JSON.parse(await (await import('node:fs/promises')).readFile((await download.path())!, 'utf-8'));
   expect(json.approach.presets.find((p: { name: string }) => p.name === 'Bavarian').groups.pair.text).toBe('Servus {other}!');
   expect(json.approach.groups.pair.text).toBe('Something else');
 
-  await item.locator('[data-act=load]').click();
-  await expect(page.locator('#view-approach')).toBeVisible();
+  await page.click('nav [data-tab=presets]');
+  await item.locator('[data-act=apply]').click();
+  await expect(page.locator('#view-presets')).toBeVisible();
+  await expect(page.locator('#presets-msg')).toContainText('Applied "Bavarian".');
   await expect(pairText).toHaveValue('Servus {other}!');
 
   // Import restores group presets too.
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   await item.locator('[data-act=del]').click();
   await expect(page.locator('ul.list li', { hasText: 'Bavarian' })).toHaveCount(0);
+  await openBackup(page);
   await page.setInputFiles('#p-import', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
   await expect(page.locator('#p-msg')).toContainText('Imported');
-  await expect(page.locator('ul.list li', { hasText: 'Bavarian' })).toContainText('group content');
+  await page.click('nav [data-tab=presets]');
+  await expect(page.locator('ul.list li', { hasText: 'Bavarian' }).getByRole('img', { name: 'Group content' })).toHaveCount(1);
 });
 
 test('share categories: scan-only file excludes creations and approach content, import preserves them', async ({ page }) => {
@@ -94,7 +99,7 @@ test('share categories: scan-only file excludes creations and approach content, 
   await page.locator('#ap-enter').dispatchEvent('change');
   await page.fill('#ap-preset-name', 'Keep this group');
   await page.click('#ap-preset-save');
-  await page.click('nav [data-tab=settings]');
+  await openBackup(page);
   await page.getByLabel('Creations', { exact: false }).uncheck();
   await page.getByLabel('Approach settings', { exact: false }).uncheck();
   await page.getByLabel('Scan settings', { exact: false }).uncheck();
@@ -109,6 +114,7 @@ test('share categories: scan-only file excludes creations and approach content, 
   json.scan.enterDbm = -60;
   await page.setInputFiles('#p-import', { name: 'scan.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories');
+  await page.click('nav [data-tab=presets]');
   await expect(page.locator('ul.list li', { hasText: 'Keep this creation' })).toHaveCount(1);
   await expect(page.locator('ul.list li', { hasText: 'Keep this group' })).toHaveCount(1);
   await page.click('nav [data-tab=approach]');
@@ -428,10 +434,11 @@ test('sequence: compose, send, save, reload, add preset and back up', async ({ p
   await page.getByLabel('Remove step 3').click();
   await expect(steps).toHaveCount(2);
 
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   const item = page.locator('ul.list li', { hasText: 'Show' });
-  await expect(item).toContainText('sequence (2 steps)');
+  await expect(item.locator('[data-act=send]')).toHaveAttribute('title', 'Sequence (2 steps)');
   const fs = await import('node:fs/promises');
+  await openBackup(page);
   const [playing] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const json = JSON.parse(await fs.readFile((await playing.path())!, 'utf-8'));
   expect(json.createContent.kind).toBe('sequence');
@@ -443,7 +450,7 @@ test('sequence: compose, send, save, reload, add preset and back up', async ({ p
   await page.click('nav [data-tab=custom]');
   await page.uncheck('#c-seq-on');
   await expect(page.locator('#c-seq-help')).toContainText('paused');
-  await page.click('nav [data-tab=settings]');
+  await openBackup(page);
   const [paused] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const pausedJson = JSON.parse(await fs.readFile((await paused.path())!, 'utf-8'));
   expect(pausedJson.createContent.kind).not.toBe('sequence');
@@ -456,9 +463,11 @@ test('sequence: compose, send, save, reload, add preset and back up', async ({ p
   await expect(page.locator('#c-seq-on')).toBeChecked();
   await expect(steps).toHaveCount(2);
 
-  // Loading the sequence preset plays it again after pausing.
+  // Sending a sequence preset does not alter the paused editor draft.
   await page.uncheck('#c-seq-on');
-  await page.click('nav [data-tab=settings]');
-  await page.locator('ul.list li', { hasText: 'Show' }).locator('[data-act=load]').click();
-  await expect(page.locator('#c-seq-on')).toBeChecked();
+  await page.click('nav [data-tab=presets]');
+  await page.locator('ul.list li', { hasText: 'Show' }).locator('[data-act=send]').click();
+  await expect(page.locator('#presets-msg')).toContainText('Animation upload confirmed.');
+  await expect(page.locator('#view-presets')).toBeVisible();
+  await expect(page.locator('#c-seq-on')).not.toBeChecked();
 });
