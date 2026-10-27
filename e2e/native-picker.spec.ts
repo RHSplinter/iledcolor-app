@@ -1,10 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { installFakeHat } from './hat';
 
-test.use({ channel: process.env.LED_HAT_CHOOSER_CHANNEL });
+test.use({
+  channel: process.env.LED_HAT_CHOOSER_CHANNEL,
+  // Linux Chromium gates Web Bluetooth. Enable only this API in this test's
+  // disposable browser; Windows/Edge still exercises its unmodified defaults.
+  launchOptions: { args: process.platform === 'linux' ? ['--enable-features=WebBluetooth', '--enable-blink-features=WebBluetooth'] : [] },
+});
 
 test('Connect LED hat opens the real browser chooser before any tab switch', async ({ page, context }) => {
-  await installFakeHat(context, true);
   const cdp = await context.newCDPSession(page);
   const emulator = await context.browser()!.newBrowserCDPSession();
   await emulator.send('BluetoothEmulation.enable', { state: 'powered-on', leSupported: true });
@@ -16,6 +19,8 @@ test('Connect LED hat opens the real browser chooser before any tab switch', asy
   let prompt: { id: string; devices: Array<{ id: string; name: string }> } | undefined;
   cdp.on('DeviceAccess.deviceRequestPrompted', (event) => { prompt = event; });
   await page.goto('./');
+  expect(await page.evaluate(() => typeof navigator.bluetooth?.requestDevice),
+    'The real chooser test requires native Web Bluetooth in its browser').toBe('function');
   await page.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
   await expect.poll(() => Boolean(prompt?.id)).toBe(true);
   await expect(page.locator('#link-error')).toHaveText('');

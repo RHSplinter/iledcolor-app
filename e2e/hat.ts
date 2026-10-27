@@ -5,10 +5,9 @@ import { expect, test, type Page, type BrowserContext } from '@playwright/test';
  * plain web and app-shell pages can connect without hardware. It acks every write like the
  * in-app mock hat (`#mock`). Call it before `page.goto`.
  */
-export async function installFakeHat(page: Page | BrowserContext, nativePicker = false) {
+export async function installFakeHat(page: Page | BrowserContext) {
   const target = 'context' in page ? page.context() : page;
-  await target.addInitScript(({ nativePicker }) => {
-    const nativeRequest = navigator.bluetooth?.requestDevice.bind(navigator.bluetooth);
+  await target.addInitScript(() => {
     const SERVICE = '0000a950-0000-1000-8000-00805f9b34fb';
     const CMD = '0000a951-0000-1000-8000-00805f9b34fb';
     const DATA = '0000a952-0000-1000-8000-00805f9b34fb';
@@ -57,10 +56,7 @@ export async function installFakeHat(page: Page | BrowserContext, nativePicker =
     Object.assign(device, { id: 'fake-hat', name: NAME, gatt });
     const bluetooth = Object.assign(new EventTarget(), {
       getAvailability: async () => true,
-      requestDevice: async (options: RequestDeviceOptions) => {
-        if (nativePicker) await nativeRequest!(options);
-        return device;
-      },
+      requestDevice: async () => device,
       getDevices: async () => [device],
     });
     Object.defineProperty(Navigator.prototype, 'bluetooth', { configurable: true, get: () => bluetooth });
@@ -107,7 +103,7 @@ export async function installFakeHat(page: Page | BrowserContext, nativePicker =
         return id;
       },
     });
-  }, { nativePicker });
+  });
 }
 
 /** Connects through the Custom tab and waits until the hat is ready. */
