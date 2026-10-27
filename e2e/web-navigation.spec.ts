@@ -22,7 +22,7 @@ test.describe('web tab navigation @smoke', () => {
     await expect(page.locator('#status-linked')).toBeVisible();
     await expect(page.locator('#status-unlinked')).toBeHidden();
     await expect(page.locator('#status-linked')).toHaveCSS('color', 'rgb(76, 217, 100)');
-    await expect(page.getByRole('tab')).toHaveCount(4);
+    await expect(page.getByRole('tab')).toHaveCount(5);
     await expect(page.locator('#custom-text > summary')).toBeVisible();
     await expect(page.locator('#connection-card')).toBeHidden();
     await expect(page.getByRole('heading', { name: 'Hat connection', exact: true })).toBeHidden();
@@ -72,7 +72,7 @@ test.describe('web tab navigation @smoke', () => {
       await page.goto('./');
       await connectHat(page);
       await expect(page.locator('#custom-text > summary')).toBeVisible();
-      await expect(page.getByRole('tab')).toHaveCount(4);
+      await expect(page.getByRole('tab')).toHaveCount(5);
       await expect(page.locator('#tab-approach')).toBeHidden();
       await openCustomSection(page, 'text');
       await page.getByLabel('Text', { exact: true }).fill('Navigation regression');
@@ -109,7 +109,7 @@ test.describe('web tab navigation @smoke', () => {
       await page.getByRole('tab', { name: 'Custom', exact: true }).focus();
       for (const [key, name] of [
         ['ArrowRight', 'Scan'], ['ArrowRight', 'Sound'], ['ArrowRight', 'Settings'],
-        ['ArrowRight', 'Custom'], ['ArrowLeft', 'Settings'], ['Home', 'Custom'],
+        ['ArrowRight', 'Presets'], ['ArrowLeft', 'Settings'], ['Home', 'Presets'],
         ['End', 'Settings'], ['ArrowLeft', 'Sound'], ['ArrowLeft', 'Scan'],
       ] as const) {
         await page.keyboard.press(key);

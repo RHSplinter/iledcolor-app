@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto';
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { builtinPresets } from '../src/storage/builtinPresets';
 import { DEFAULT_APPROACH } from '../src/approach/tiers';
@@ -7,15 +8,35 @@ import { exportSelectedJson, mergeSharedPresets, parseSharedBackup } from '../sr
 import { listPresets, loadKv, restoreBackup } from '../src/storage/db';
 
 describe('built-in presets', () => {
-  it('provides seven valid, independent presets without changing settings', () => {
+  it('uses the exact 32×16 Xebia logo supplied with the issue', () => {
+    const dataUrl = builtinPresets()[1]!.content;
+    if (dataUrl.kind !== 'image') throw new Error('Xebia logo must be an image');
+    const match = /^data:image\/png;base64,(.+)$/.exec(dataUrl.dataUrl);
+    expect(match).not.toBeNull();
+    const png = Buffer.from(match![1]!, 'base64');
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([32, 16]);
+    expect(createHash('sha256').update(png).digest('hex'))
+      .toBe('72c7443855bd7fafabf7b386094c08fb3fafceaf4fe82d3f3360cc2edf0aad36');
+  });
+
+  it('provides eight valid, independent presets without changing settings', () => {
     const presets = builtinPresets();
-    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'Party Popper', '<header>', 'LGTM 👍']);
-    expect(new Set(presets.map((p) => p.id)).size).toBe(7);
+    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', '<header>', 'LGTM 👍']);
+    expect(new Set(presets.map((p) => p.id)).size).toBe(8);
     for (const p of presets) expect(validateContent(p.content)).toEqual(p.content);
     expect(parseImport(exportJson(DEFAULT_SETTINGS, presets)).presets).toEqual(presets);
     const first = presets[0]!;
     first.name = 'Changed';
     expect(builtinPresets()[0]!.name).toBe('Xebia 💜 GitHub');
+  });
+
+  it('bundles the blinking Copilot head as a looping GIF', () => {
+    const preset = builtinPresets().find((p) => p.id === 'builtin-copilot-blinking-head')!;
+    if (preset.content.kind !== 'image') throw new Error('Expected image content');
+    expect(preset.content.dataUrl).toMatch(/^data:image\/gif;base64,/);
+    const gif = Buffer.from(preset.content.dataUrl.split(',')[1]!, 'base64');
+    expect(gif.toString('ascii', 0, 6)).toBe('GIF89a');
+    expect(gif.toString('ascii')).toContain('NETSCAPE2.0');
   });
 
   for (const preset of builtinPresets()) {

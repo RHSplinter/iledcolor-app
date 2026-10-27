@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openCustomSection, connectHat } from './hat';
+import { openBackup, openCustomSection, connectHat } from './hat';
 import { readFile } from 'node:fs/promises';
 
 async function shareBackup(page: Page) {
+  await openBackup(page);
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const path = await download.path();
   if (!path) throw new Error('Missing backup download.');
@@ -10,6 +11,7 @@ async function shareBackup(page: Page) {
 }
 
 async function importBackup(page: Page, data: unknown) {
+  await openBackup(page);
   await page.setInputFiles('#p-import', {
     name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(data)),
   });
@@ -60,6 +62,7 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.locator('#s-delay').dispatchEvent('change');
   await page.locator('#brightness').fill('2');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.click('nav [data-tab=presets]');
   const backup = await shareBackup(page);
   expect(backup.createContent).toMatchObject({ kind: 'text', text: 'Connect draft', speed: 7 });
   expect(backup.approach).toMatchObject({ mode: 'hub', beacon: false, countNearbyCaps: false });
@@ -71,6 +74,7 @@ test('all categories restore settings from every tab immediately and after reloa
   expect(backup.sound).toMatchObject({ language: 'de-DE', sounds: false, allowBrowserSpeech: false, reactions: { greeting: { text: 'SERVUS 👋' } } });
   for (const key of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'soundVoice']) expect(backup).not.toHaveProperty(key);
 
+  await page.click('nav [data-tab=settings]');
   await page.selectOption('#s-rot', '0');
   await page.selectOption('#s-font', 'dotgothic');
   await page.uncheck('#s-mh');
@@ -96,7 +100,7 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.check('#sound-noises');
   await page.fill('#sound-text-greeting', 'CHANGED');
   await page.locator('#sound-text-greeting').dispatchEvent('change');
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   await importBackup(page, backup);
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories.');
 
@@ -126,6 +130,7 @@ test('all categories restore settings from every tab immediately and after reloa
     await expect(page.locator('#sound-language')).toHaveValue('de-DE');
     await expect(page.locator('#sound-noises')).not.toBeChecked();
     await expect(page.locator('#sound-text-greeting')).toHaveValue('SERVUS 👋');
+    await page.click('nav [data-tab=presets]');
     await page.click('nav [data-tab=settings]');
     await expect(page.locator('#s-font')).toHaveValue('tiny5');
     await expect(page.locator('#s-rot')).toHaveValue('90');
@@ -148,13 +153,14 @@ test('display-only backup ignores invalid excluded scanner inputs and preserves 
   await page.locator('#qr-repetitions').dispatchEvent('change');
   await page.click('nav [data-tab=sound]');
   await page.uncheck('#sound-noises');
-  await page.click('nav [data-tab=settings]');
+  await openBackup(page);
   for (const key of ['creations', 'approach', 'scan', 'sound']) await page.uncheck(`#p-include-${key}`);
   const backup = await shareBackup(page);
   expect(Object.keys(backup).sort()).toEqual(['app', 'settings', 'version']);
   backup.settings.transform.rotation = 180;
   await importBackup(page, backup);
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories.');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-rot')).toHaveValue('180');
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-template')).toHaveValue('Keep {name}!');
@@ -167,22 +173,26 @@ test('display-only backup ignores invalid excluded scanner inputs and preserves 
   // Unchecking Display & transport settings excludes settings; legacy v1/v2 imports without keepBlack preserve local keepBlack.
   await page.click('nav [data-tab=settings]');
   await page.check('#s-keep-black');
+  await openBackup(page);
   await page.uncheck('#p-include-settings');
   await page.check('#p-include-creations');
   const creationsOnly = await shareBackup(page);
   expect(creationsOnly).not.toHaveProperty('settings');
   await importBackup(page, creationsOnly);
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-keep-black')).toBeChecked();
 
   const legacyV2 = structuredClone(backup);
   delete legacyV2.settings.keepBlack;
+  await page.click('nav [data-tab=presets]');
   await importBackup(page, legacyV2);
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-keep-black')).toBeChecked();
 
   await page.click('nav [data-tab=scan]');
   await page.fill('#qr-repetitions', '3');
   await page.locator('#qr-repetitions').dispatchEvent('change');
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   const legacyV1 = {
     version: 1,
     app: backup.app,
@@ -192,6 +202,7 @@ test('display-only backup ignores invalid excluded scanner inputs and preserves 
   };
   await importBackup(page, legacyV1);
   await expect(page.locator('#p-msg')).toContainText('Imported 0 presets');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-keep-black')).toBeChecked();
   await page.click('nav [data-tab=custom]');
   await expect(page.locator('#c-keep-black')).toHaveCount(0);
@@ -202,23 +213,25 @@ test('malformed scanner settings reject the entire backup without changing other
   await connectHat(page);
   await openCustomSection(page, 'text');
   await page.fill('#c-str', 'Keep original');
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   const backup = await shareBackup(page);
   backup.createContent.text = 'Must not apply';
   backup.settings.transform.rotation = 180;
   backup.qrGreeting.repetitions = 0;
   await importBackup(page, backup);
   await expect(page.locator('#p-msg')).toContainText('Import failed: Repetitions');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-rot')).toHaveValue('0');
   await page.click('nav [data-tab=custom]');
   await expect(page.locator('#c-str')).toHaveValue('Keep original');
 
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   const badKeepBlack = structuredClone(backup);
   badKeepBlack.qrGreeting.repetitions = 3;
   badKeepBlack.settings.keepBlack = 'yes';
   await importBackup(page, badKeepBlack);
   await expect(page.locator('#p-msg')).toContainText('Import failed: invalid keepBlack');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#s-rot')).toHaveValue('0');
   await expect(page.locator('#s-keep-black')).not.toBeChecked();
   await page.click('nav [data-tab=custom]');
@@ -227,6 +240,6 @@ test('malformed scanner settings reject the entire backup without changing other
   await page.reload();
   await connectHat(page);
   await expect(page.locator('#c-str')).toHaveValue('Keep original');
-  await page.click('nav [data-tab=settings]');
+  await page.click('nav [data-tab=presets]');
   await expect(page.locator('#s-keep-black')).not.toBeChecked();
 });

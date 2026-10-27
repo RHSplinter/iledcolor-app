@@ -50,6 +50,7 @@ const marqueeDelay = (speed: number) => Math.round(220 / speed);
 let sendNote = '';
 let brightnessNote = '';
 let brightnessTimer: ReturnType<typeof setTimeout> | undefined;
+let presetSendingBanner = false;
 let displayNote = '';
 let imageDataUrl = '';
 let renderSeq = 0;
@@ -140,6 +141,9 @@ function updateButtons() {
     set(kind === 'text' ? 'btn-send' : `btn-send-${kind}`,
       !ready || sendingContent || (kind === 'image' && !imageDataUrl) || (kind === 'sequence' && !sequence.length));
   }
+  document.querySelectorAll<HTMLButtonElement>('.preset-list [data-act=send]').forEach((b) => {
+    b.disabled = !ready || sendingContent;
+  });
   const help = document.getElementById('send-help');
   if (help) help.textContent = controller.temporaryActive ? 'Wait for the current cap reaction to finish before sending.'
     : !ready ? 'Wait for the hat to be ready before sending.'
@@ -156,9 +160,12 @@ function updateButtons() {
 }
 
 /** Until a hat is connected only the connection controls are shown; everything else needs a hat. */
+let wasConnected = false;
 function applyConnectionGate() {
   const s = controller.state;
   const connected = s === 'Ready' || s === 'Uploading';
+  const justConnected = connected && !wasConnected;
+  wasConnected = connected;
   document.body.classList.toggle('disconnected', !connected);
   for (const id of ['content-editor', 'github-section', 'tab-bar', 'tab-scan', 'tab-sound', 'tab-settings']) {
     const el = document.getElementById(id);
@@ -169,6 +176,7 @@ function applyConnectionGate() {
   const approachTab = document.getElementById('tab-approach');
   if (approachTab) approachTab.hidden = !connected || !approachAvailable;
   if (!connected && showTab && $('#view-custom').hidden) showTab('custom');
+  if (justConnected && showTab) showTab('presets');
 }
 
 function banner(html: string | null) {
@@ -204,6 +212,7 @@ function renderDeviceSettings() {
   clearTimeout(brightnessTimer);
   const root = $('#settings-device');
   root.innerHTML = `
+    ${approachAvailable ? '' : '<p class="small">Nearby Approach detection and phone-to-phone BLE sharing require the Android or iOS app. Imported group presets remain available for backup and export.</p>'}
     <div class="card">
       <h2>Display</h2>
       <label for="s-font">LED text font</label>
@@ -789,27 +798,88 @@ async function sendSection(kind: keyof CustomDrafts | 'sequence', content: () =>
 
 const backupSelection: ShareSelection = { creations: true, approach: true, scan: true, settings: true, sound: true };
 
-async function renderPresets(message = '') {
-  const root = $('#settings-presets');
+function presetButton(p: Preset): string {
+  const group = isGroupPreset(p);
+  const kind = group ? 'group' : p.content.kind === 'image' && p.content.dataUrl.startsWith('data:image/gif;') ? 'gif' : p.content.kind;
+  const icons = {
+    text: ['Text', 'M4 5h16M12 5v14M8 19h8'],
+    solid: ['Solid color', 'm12 3 9 9-9 9-9-9Z'],
+    image: ['Image', 'M3 3h18v18H3zM3 17l6-6 4 4 3-3 5 5M8 7h1'],
+    gif: ['Animated GIF', 'M3 3h18v18H3zM10 8l6 4-6 4Z'],
+    sequence: ['Sequence', 'M8 5h13M8 12h13M8 19h13M3 5h1M3 12h1M3 19h1'],
+    github: ['GitHub contributions', 'M3 3h18v18H3zM8 3v18M15 3v18M3 9h18M3 15h18'],
+    group: ['Group content', 'M9 8a3 3 0 1 0-6 0 3 3 0 0 0 6 0M21 8a3 3 0 1 0-6 0 3 3 0 0 0 6 0M1 21v-3a5 5 0 0 1 10 0v3M13 21v-3a5 5 0 0 1 10 0v3'],
+  } satisfies Record<string, [string, string]>;
+  const [label, path] = icons[kind];
+  const unavailable = group && !approachAvailable;
+  const description = unavailable ? `${label} - requires the native app; kept for backup`
+    : !group && p.content.kind === 'sequence' ? `${label} (${p.content.steps.length} steps)` : label;
+  return `<button class="preset-send" data-act="${group ? 'apply' : 'send'}" aria-label="${esc(`${group ? 'Apply' : 'Send'} ${p.name}${group ? '' : ' to cap'}`)}" title="${esc(description)}" ${unavailable ? 'disabled' : ''}>
+    <svg viewBox="0 0 24 24" role="img" aria-label="Preset type: ${esc(label)}"><path d="${path}"/></svg><span>${esc(p.name)}</span>
+  </button>${unavailable ? '<small class="muted">Requires the native app; kept for backup</small>' : ''}`;
+}
+
+async function renderPresets() {
+  const root = $('#presets-content');
   let presets: Preset[] = [];
   let err = '';
   try { presets = await listPresets(); } catch (e) { err = (e as Error).message; }
   root.innerHTML = `
     <div id="p-share" class="card" hidden></div>
     <div class="card">
-      <h2>Presets</h2>
-      ${err ? `<p class="bad">${esc(err)}</p>` : ''}
-      <ul class="list preset-list">${presets.map((p) => `<li data-id="${esc(p.id)}"><span>${esc(p.name)} <small class="muted">${isGroupPreset(p) ? `group content${approachAvailable ? '' : ' - requires the native app; kept for backup'}` : p.content.kind === 'sequence' ? `sequence (${p.content.steps.length} step${p.content.steps.length === 1 ? '' : 's'})` : p.content.kind}</small></span><button data-act="load" ${isGroupPreset(p) && !approachAvailable ? 'disabled' : ''}>Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || `<li class="muted">No presets yet. Save content on Custom${approachAvailable ? ' or a group preset on Approach' : ''} to find it here.</li>`}</ul>
-      ${approachAvailable ? '' : '<p class="small">Nearby Approach detection and phone-to-phone BLE sharing require the Android or iOS app. Imported group presets remain available for backup and export.</p>'}
-    </div>
-    <div class="card">
       <h2>Built-in presets</h2>
-      <p class="small">Available to everyone, including offline. Load one to edit or send it, then save your own copy.</p>
-      <ul class="list preset-list" id="builtin-presets">${builtinPresets().map((p) => `<li data-id="${esc(p.id)}" data-builtin="true"><span>${esc(p.name)} <small class="muted">${p.id === 'builtin-party-popper' ? 'animated GIF' : p.content.kind}</small></span><button data-act="load">Load</button>${native && !useMock ? '<button data-act="share">Share</button>' : ''}</li>`).join('')}</ul>
+      <p class="small">Available to everyone, including offline. Tap a preset to send it immediately to your connected cap.</p>
+      <ul class="list preset-list" id="builtin-presets">${builtinPresets().map((p) => `<li data-id="${esc(p.id)}" data-builtin="true">${presetButton(p)}${native && !useMock ? '<button data-act="share">Share</button>' : ''}</li>`).join('')}</ul>
       <p class="small">Built-in logos use artwork supplied for this app. Party Popper uses the supplied 32×16 animated GIF.</p>
     </div>
     <div class="card">
+      <h2>Personal presets</h2>
+      ${err ? `<p class="bad">${esc(err)}</p>` : ''}
+      <ul class="list preset-list">${presets.map((p) => `<li data-id="${esc(p.id)}">${presetButton(p)}${native && !useMock ? '<button data-act="share">Share</button>' : ''}<button data-act="del" class="danger">Delete</button></li>`).join('') || `<li class="muted">No presets yet. Save content on Custom${approachAvailable ? ' or a group preset on Approach' : ''} to find it here.</li>`}</ul>
+      <p id="presets-msg" class="small" role="status"></p>
+    </div>
+    `;
+  renderShare();
+  updateButtons();
+  root.querySelectorAll<HTMLButtonElement>('li button').forEach((b) => b.onclick = async () => {
+    const item = b.closest('li')!;
+    const id = item.dataset.id!;
+    const p = (item.dataset.builtin ? builtinPresets() : presets).find((x) => x.id === id)!;
+    if (b.dataset.act === 'share') { openShare(p); return; }
+    if (b.dataset.act === 'del') { await deletePreset(id).catch((e) => ($('#presets-msg').textContent = e.message)); void renderPresets(); return; }
+    if (isGroupPreset(p)) {
+      applyGroupContent(p.groups);
+      $('#presets-msg').textContent = `Applied "${p.name}".${approachRunning() ? ' Updating caps.' : ' Start Approach to send group content.'}`;
+      return;
+    }
+    if (sendingContent) return;
+    sendingContent = true;
+    updateButtons();
+    presetSendingBanner = true;
+    banner(`Sending "${esc(p.name)}"…`);
+    try {
+      const rendered = await renderContent(p.content);
+      if (rendered.frames) await sendMarquee(rendered.frames, rendered.delays ?? []);
+      else await sendImage(rendered.image);
+      $('#presets-msg').textContent = `"${p.name}": ${sendNote}${rendered.warnings.length ? ` ${rendered.warnings.join(' ')}` : ''}`;
+    } catch (e) { $('#presets-msg').textContent = (e as Error).message; }
+    finally {
+      if (presetSendingBanner) { presetSendingBanner = false; banner(null); }
+      sendingContent = false;
+      updateButtons();
+    }
+  });
+}
+
+async function renderBackup(message = '') {
+  const root = $('#settings-backup');
+  let presets: Preset[] = [];
+  let presetError = '';
+  try { presets = await listPresets(); } catch (e) { presetError = (e as Error).message; }
+  root.innerHTML = `
+    <div class="card">
       <h2>Backup</h2>
+      ${presetError ? `<p class="bad">${esc(presetError)}</p>` : ''}
       <fieldset class="share-options">
         <legend>Include in shared file</legend>
         <label><input type="checkbox" id="p-include-creations" ${backupSelection.creations ? 'checked' : ''} /> <span>Creations <small>Saved text, colors, images, GIFs, GitHub presets and sequences (${presets.filter((p) => !isGroupPreset(p)).length}), all Custom editor drafts and text fonts, current content and sequence, and GitHub handle, captions, font and scroll speed</small></span></label>
@@ -824,40 +894,17 @@ async function renderPresets(message = '') {
       <p id="p-msg" class="small" role="status">${esc(message)}</p>
       <p id="p-persist" class="small"></p>
     </div>`;
-  renderShare();
-  root.querySelectorAll<HTMLButtonElement>('li button').forEach((b) => b.onclick = async () => {
-    const item = b.closest('li')!;
-    const id = item.dataset.id!;
-    const p = (item.dataset.builtin ? builtinPresets() : presets).find((x) => x.id === id)!;
-    if (b.dataset.act === 'share') { openShare(p); return; }
-    if (b.dataset.act === 'del') { await deletePreset(id).catch((e) => ($('#p-msg').textContent = e.message)); void renderPresets(); return; }
-    if (isGroupPreset(p)) { applyGroupContent(p.groups); showTab?.('approach'); return; }
-    if (p.content.kind === 'github') {
-      showTab?.('custom');
-      await github?.loadPreset(p.content);
-      return;
-    }
-    if (p.content.kind === 'image') imageDataUrl = p.content.dataUrl;
-    try {
-      const { image } = await renderContent(p.content);
-      lastImage = image;
-      showTab?.('custom');
-      setCreateFrom(p.content);
-      persistCustomDrafts();
-      await refreshPreview(p.content);
-    } catch (e) { $('#p-msg').textContent = (e as Error).message; }
-  });
-  const exportButton = $<HTMLButtonElement>('#btn-export');
+  const exportButton = $<HTMLButtonElement>('#btn-export', root);
   const shareOptions = $<HTMLFieldSetElement>('.share-options', root);
   let sharingBackup = false;
   const updateSelection = () => {
     for (const key of ['creations', 'approach', 'scan', 'settings', 'sound'] as const) {
-      backupSelection[key] = $<HTMLInputElement>(`#p-include-${key}`).checked;
+      backupSelection[key] = $<HTMLInputElement>(`#p-include-${key}`, root).checked;
     }
     exportButton.disabled = sharingBackup || !Object.values(backupSelection).some(Boolean);
   };
   for (const key of ['creations', 'approach', 'scan', 'settings', 'sound'] as const) {
-    $<HTMLInputElement>(`#p-include-${key}`).onchange = updateSelection;
+    $<HTMLInputElement>(`#p-include-${key}`, root).onchange = updateSelection;
   }
   updateSelection();
   exportButton.onclick = async () => {
@@ -875,11 +922,11 @@ async function renderPresets(message = '') {
           ...(backupSelection.sound && sound ? { sound: sound.exportPreferences() } : {}),
         });
       const shared = await shareTextFile('led-hat-presets.json', json, 'application/json', 'LED hat presets');
-      $('#p-msg').textContent = shared ? 'Selected categories shared.' : '';
-    } catch (e) { $('#p-msg').textContent = `Share failed: ${(e as Error).message}`; }
+      $('#p-msg', root).textContent = shared ? 'Selected categories shared.' : '';
+    } catch (e) { $('#p-msg', root).textContent = `Share failed: ${(e as Error).message}`; }
     finally { sharingBackup = false; shareOptions.disabled = false; updateSelection(); }
   };
-  $<HTMLInputElement>('#p-import').onchange = async (ev) => {
+  $<HTMLInputElement>('#p-import', root).onchange = async (ev) => {
     const f = (ev.target as HTMLInputElement).files?.[0];
     if (!f) return;
     try {
@@ -932,13 +979,14 @@ async function renderPresets(message = '') {
       renderDeviceSettings();
       github?.refreshPreview();
       await refreshPreview();
-      await renderPresets(data.version === 1
+      await renderPresets();
+      await renderBackup(data.version === 1
         ? `Imported ${data.presets.length} presets and ${data.qrProfiles.profiles.length} QR profiles. Restart the connection to apply transport settings.`
         : `Imported shared categories.${data.qrProfiles ? ` Imported ${data.qrProfiles.profiles.length} QR profiles.` : ''} Excluded presets and settings were kept.${data.settings ? ' Restart the connection to apply transport settings.' : ''}`);
-    } catch (e) { $('#p-msg').textContent = `Import failed: ${(e as Error).message}`; }
+    } catch (e) { $('#p-msg', root).textContent = `Import failed: ${(e as Error).message}`; }
   };
   const persisted = await navigator.storage?.persisted?.().catch(() => false);
-  $('#p-persist').textContent = persisted ? 'Storage is marked persistent.' : 'Storage may be cleared by the browser. Share a backup regularly.';
+  $('#p-persist', root).textContent = persisted ? 'Storage is marked persistent.' : 'Storage may be cleared by the browser. Share a backup regularly.';
 }
 
 // ---------- preset sharing with nearby phones ---------------------------------------
@@ -1067,7 +1115,7 @@ function initShareReceiver() {
       incomingNote = `Saved preset "${p.name}"${o.fromName ? ` from ${o.fromName}` : ''}.`;
       setTimeout(() => {
         renderSharePrompt();
-        if (!$('#view-settings').hidden) void renderPresets();
+        if (!$('#view-presets').hidden) void renderPresets();
       }, 0);
     },
     onClosed: (o, _state, message) => { incomingNote = `Preset "${o.name}" not received: ${message}`; renderSharePrompt(); },
@@ -1103,7 +1151,7 @@ let showTab: ((name: string) => boolean) | undefined;
 function onTabSelected(name: string) {
   if (name !== 'scan') scanner?.stopCamera();
   if (name !== 'sound') void sound?.stop();
-  if (name === 'settings') void renderPresets();
+  if (name === 'presets') void renderPresets();
   if (name === 'custom') void refreshSequencePresets();
   if (name === 'approach') renderApproach();
   window.scrollTo(0, 0);
@@ -1188,6 +1236,8 @@ async function main() {
   renderDeviceSettings();
   // Navigation must not wait for optional features to restore storage or query native capabilities.
   showTab = initTabs($('#tab-bar'), onTabSelected);
+  void renderPresets();
+  void renderBackup();
   applyConnectionGate();
   renderCreate();
   setupPwa();
