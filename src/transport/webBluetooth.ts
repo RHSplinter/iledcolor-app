@@ -17,6 +17,7 @@ export function bluetoothSupport(): { ok: true } | { ok: false; reason: string }
 /** Must be called from a user gesture (tap). Resolves once A953 notifications are started. */
 export async function connectWebBluetooth(
   namePrefix = NAME_PREFIX,
+  onSelected?: () => void,
 ): Promise<{ transport: Transport; deviceName: string; deviceId: string }> {
   let device: BluetoothDevice;
   try {
@@ -28,6 +29,7 @@ export async function connectWebBluetooth(
     if (e instanceof DOMException && e.name === 'NotFoundError') throw new SelectionCancelledError();
     throw e;
   }
+  onSelected?.();
   return openDevice(device);
 }
 

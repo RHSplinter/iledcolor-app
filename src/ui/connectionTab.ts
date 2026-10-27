@@ -43,11 +43,10 @@ export function startConnectionTab() {
     choose.hidden = !!name; drop.hidden = !name; back.textContent = name ? 'Return to LED Hat Controller' : 'Go to LED Hat Controller';
   });
   window.addEventListener('pagehide', () => host.close(), { once: true });
-  const openController = (reservedTab: Window | null) => {
+  const openController = (selectedTab: Window | null) => {
     controllerUrl.hash = connected ? 'presets' : 'scan'; back.href = controllerUrl.href;
-    const tab = reservedTab && !reservedTab.closed ? reservedTab : window.open(controllerUrl.href, 'iledcolor-led-hat-controller');
-    if (tab) tab.location.href = controllerUrl.href;
-    if (tab) tab.focus();
+    const tab = selectedTab && !selectedTab.closed ? selectedTab : window.open(controllerUrl.href, 'iledcolor-led-hat-controller');
+    if (tab) { tab.location.href = controllerUrl.href; tab.focus(); }
     else error.textContent = 'Your hat is connected. Use Return to LED Hat Controller to open the controller tab.';
   };
   choose.onclick = async () => {
@@ -59,18 +58,19 @@ export function startConnectionTab() {
     }
     choose.disabled = true; error.textContent = '';
     status.textContent = 'Searching for your LED hat... Select your hat in the browser picker and choose Pair.';
-    let controllerTab: Window | null = null;
+    let selectedTab: Window | null = null;
     try {
-      // Start the picker first, then reserve the named tab while this click still
-      // has user activation. Pairing can outlast the browser's popup allowance.
-      const pairing = connectWebBluetooth();
-      controllerTab = window.open('', 'iledcolor-led-hat-controller');
-      const connection = await pairing;
+      // Reserve only after the chooser closes, before GATT setup can consume
+      // the remaining popup allowance. Never steal focus from the picker.
+      const connection = await connectWebBluetooth(undefined, () => {
+        selectedTab = window.open('', 'iledcolor-led-hat-controller');
+      });
       saveWebHat({ id: connection.deviceId, name: connection.deviceName });
       host.setConnection(connection);
-      openController(controllerTab);
+      openController(selectedTab);
     } catch (e) {
-      if (controllerTab && !controllerTab.closed && controllerTab.location.href === 'about:blank') controllerTab.close();
+      const unusedTab = selectedTab as Window | null;
+      if (unusedTab && !unusedTab.closed && unusedTab.location.href === 'about:blank') unusedTab.close();
       status.textContent = 'No hat connected. Choose Connect LED hat to search again.';
       error.textContent = e instanceof Error ? e.message : String(e);
     } finally { choose.disabled = false; }

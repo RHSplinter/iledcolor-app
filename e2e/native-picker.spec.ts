@@ -7,7 +7,7 @@ test.use({
   launchOptions: { args: process.platform === 'linux' ? ['--enable-features=WebBluetooth', '--enable-blink-features=WebBluetooth'] : [] },
 });
 
-test('Connect LED hat opens the real chooser and cleans up its reserved tab on cancellation', async ({ page, context }) => {
+test('Connect LED hat keeps the real chooser on the active connection tab', async ({ page, context }) => {
   const cdp = await context.newCDPSession(page);
   const emulator = await context.browser()!.newBrowserCDPSession();
   await emulator.send('BluetoothEmulation.enable', { state: 'powered-on', leSupported: true });
@@ -24,9 +24,8 @@ test('Connect LED hat opens the real chooser and cleans up its reserved tab on c
   await page.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
   await expect.poll(() => Boolean(prompt?.id)).toBe(true);
   await expect(page.locator('#link-error')).toHaveText('');
-  await expect.poll(() => context.pages().length).toBe(2);
-  const reserved = context.pages().find((candidate) => candidate !== page)!;
-  expect(reserved.url()).toBe('about:blank');
+  expect(context.pages()).toHaveLength(1);
+  await expect.poll(() => page.evaluate(() => document.visibilityState)).toBe('visible');
   await cdp.send('DeviceAccess.cancelPrompt', { id: prompt!.id });
   await expect(page.locator('#link-error')).toContainText('selection cancelled');
   await expect(page.locator('#link-connect')).toBeEnabled();

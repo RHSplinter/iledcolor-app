@@ -48,7 +48,24 @@ test('connection tab holds the same Bluetooth link across three main-page refres
   expect(await controller.evaluate(() => localStorage.getItem('test-gatt-count'))).toBe('1');
 });
 
-test('pairing after user activation expires still activates the controller tab', async ({ page, context }) => {
+test('slow Bluetooth setup activates the controller immediately on success', async ({ page, context }) => {
+  await context.addInitScript(() => {
+    const choose = navigator.bluetooth.requestDevice.bind(navigator.bluetooth);
+    navigator.bluetooth.requestDevice = async (options) => {
+      const device = await choose(options);
+      const connect = device.gatt!.connect.bind(device.gatt);
+      device.gatt!.connect = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+        return connect();
+      };
+      return device;
+    };
+  });
+  const { controller } = await connectThroughTab(page);
+  await expect(controller.getByRole('tab', { name: 'Presets', exact: true })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('slow pairing keeps the hat connected and offers a controller link when popups are blocked', async ({ page, context }) => {
   await context.addInitScript(() => {
     const choose = navigator.bluetooth.requestDevice.bind(navigator.bluetooth);
     navigator.bluetooth.requestDevice = async (options) => {
@@ -57,7 +74,17 @@ test('pairing after user activation expires still activates the controller tab',
       return device;
     };
   });
-  const { controller } = await connectThroughTab(page);
+  await page.goto('./');
+  await page.evaluate(() => { window.open = () => null; });
+  await page.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
+  await expect(page.locator('#link-status')).toContainText('Connected to LED hat', { timeout: 15_000 });
+  await expect(page.locator('#link-error')).toContainText('Use Return');
+  expect(context.pages()).toHaveLength(1);
+  const opened = page.waitForEvent('popup');
+  await page.getByRole('link', { name: 'Return to LED Hat Controller', exact: true }).click();
+  const controller = await opened;
+  await expect(controller.locator('#status')).toContainText('Ready: iledcolor-FAKE');
+  await expect.poll(() => controller.evaluate(() => document.hasFocus())).toBe(true);
   await expect(controller.getByRole('tab', { name: 'Presets', exact: true })).toHaveAttribute('aria-selected', 'true');
 });
 
