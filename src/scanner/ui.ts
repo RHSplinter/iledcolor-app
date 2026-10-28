@@ -9,6 +9,7 @@ import { vibrateFeedback } from '../feedback';
 import { BadgeCamera } from './camera';
 import { appendScanLog, shareScanLog } from './log';
 import { BadgeTextRecognizer } from './ocr';
+import { detectBadgeOrOcr } from './universeBadge';
 import { differingGithubHandles, fetchPublicProfile, findGithubHandle, findGithubHandles } from './githubLookup';
 import {
   DEFAULT_GREETING, extractName, greetingDuration, greetingNameFields, greetingText, isValidEmail, validateGreeting,
@@ -47,6 +48,7 @@ export class GreetingUi {
   private issueAssignee = '';
   private scanFields?: () => IssueField[];
   private scannedAt = new Date();
+  private scannedSource: 'qr' | 'ocr' = 'ocr';
 
   constructor(private ctx: ScannerContext) {}
 
@@ -64,8 +66,8 @@ export class GreetingUi {
           <div id="qr-reticle" hidden aria-hidden="true"></div>
         </div>
         <div id="qr-ocr-controls" hidden>
-          <p class="small">Frame the printed name and company, then capture. Text is recognized on this device.</p>
-          <button id="qr-capture" class="primary">Capture text</button>
+          <p class="small">Frame the badge, then capture. A readable Universe QR code is decoded first; otherwise text is recognized on this device.</p>
+          <button id="qr-capture" class="primary">Capture badge</button>
         </div>
         <p id="qr-status" class="scan-status" role="status" aria-live="polite" aria-atomic="true"></p>
         <p id="qr-github-result" class="scan-status" role="status" aria-live="polite" hidden></p>
@@ -262,7 +264,7 @@ export class GreetingUi {
     const fields = this.scanFields();
     const field = (type: string) => fields.find((f) => f.type === type)?.value ?? '';
     const url = newIssueUrl(this.issueSettings, issueTitle(field('firstname'), field('lastname')),
-      issueBody(fields, this.scannedAt), this.issueAssignee);
+      issueBody(fields, this.scannedAt, this.scannedSource), this.issueAssignee);
     // Not opened with "noopener": that always returns null, hiding a blocked pop-up.
     const tab = window.open(url, '_blank');
     if (!tab) {
@@ -274,7 +276,7 @@ export class GreetingUi {
     this.status('Opened a pre-filled GitHub issue in a new tab. Review it there and choose Create.');
   }
 
-  private showScanData(extracted: ExtractedName, raw: string, scannedAt = new Date()) {
+  private showScanData(extracted: ExtractedName, raw: string, scannedAt = new Date(), source: 'qr' | 'ocr' = 'ocr') {
     const { firstname, lastname } = greetingNameFields(extracted);
     const fields = [
       { type: 'firstname', label: 'First name', value: firstname },
@@ -320,6 +322,8 @@ export class GreetingUi {
       return { row, input };
     };
     const { row: emailRow, input: email } = labelledRow('qr-data-email', 'email', 'Email address');
+    const badgeIdField = extracted.badgeId ? labelledRow('qr-data-badge-id', 'text', 'Badge ID', extracted.badgeId) : undefined;
+    if (badgeIdField) badgeIdField.input.readOnly = true;
     const { row: phoneRow, input: phone } = labelledRow('qr-data-phone', 'tel', 'Phone number', extracted.phone ?? '');
     phone.autocomplete = 'off';
     const { row: linkedinRow, input: linkedin } = labelledRow('qr-data-linkedin', 'text', 'LinkedIn handle', extracted.linkedin ?? '');
@@ -339,16 +343,18 @@ export class GreetingUi {
     email.addEventListener('input', () => { if (email.hasAttribute('aria-invalid')) validateEmail(); });
     save.disabled = false;
     this.scannedAt = scannedAt;
+    this.scannedSource = source;
     this.scanFields = () => [
       ...rows.map((row) => {
         const select = row.querySelector('select')!;
         return { label: select.selectedOptions[0]?.text ?? '', value: row.querySelector('input')!.value, type: select.value };
       }),
+      ...(badgeIdField ? [{ label: 'Badge ID', value: badgeIdField.input.value, type: 'badgeId' }] : []),
       { label: 'Email address', value: email.value },
       { label: 'Phone number', value: phone.value },
       { label: 'LinkedIn', value: linkedin.value, type: 'linkedin' },
     ];
-    $('qr-data-rows').replaceChildren(...rows, emailRow, phoneRow, linkedinRow);
+    $('qr-data-rows').replaceChildren(...rows, ...(badgeIdField ? [badgeIdField.row] : []), emailRow, phoneRow, linkedinRow);
     $('qr-data').hidden = false;
   }
 
@@ -570,11 +576,44 @@ export class GreetingUi {
     this.recognizing = true;
     this.updateStatus();
     this.error('');
-    this.status('Loading the offline text recognizer…');
+    this.status('Checking for a badge QR code…');
     try {
-      const raw = await this.recognizer.recognize(canvas, (status, progress) => {
-        if (attempt === this.scanId) this.status(`${status} (${Math.round(progress * 100)}%)…`);
-      });
+      let frame: HTMLCanvasElement | undefined;
+      try {
+        const qrFrame = document.createElement('canvas');
+        qrFrame.width = video.videoWidth;
+        qrFrame.height = video.videoHeight;
+        const frameContext = qrFrame.getContext('2d');
+        if (frameContext) {
+          frameContext.drawImage(video, 0, 0, qrFrame.width, qrFrame.height);
+          frame = qrFrame;
+        } else console.info('QR frame is unavailable; falling back to OCR.');
+      } catch {
+        console.info('QR detection failed; falling back to OCR.');
+      }
+      if (attempt !== this.scanId) return;
+      const recognize = () => {
+        this.status('Loading the offline text recognizer…');
+        return this.recognizer.recognize(canvas, (status, progress) => {
+          if (attempt === this.scanId) this.status(`${status} (${Math.round(progress * 100)}%)…`);
+        });
+      };
+      const result = frame ? await detectBadgeOrOcr(frame, recognize) : { source: 'ocr' as const, raw: await recognize() };
+      if (result.source === 'qr') {
+        this.stopCamera();
+        const scanId = new Date().toISOString();
+        const { badge } = result;
+        const raw = [badge.firstName, badge.lastName, badge.company].filter(Boolean).join('\n');
+        void this.greet(raw, target, 'qr', scanId, {
+          name: `${badge.firstName} ${badge.lastName}`,
+          lastname: badge.lastName,
+          company: badge.company,
+          badgeId: badge.badgeId,
+          source: 'qr',
+        });
+        return;
+      }
+      const raw = result.raw;
       if (attempt !== this.scanId) return;
       this.stopCamera();
       const scanId = new Date().toISOString();
@@ -590,7 +629,10 @@ export class GreetingUi {
     }
   }
 
-  private async greet(raw: string, target: DeviceController, source: 'ocr' | 'manual', scanId = new Date().toISOString()) {
+  private async greet(
+    raw: string, target: DeviceController, source: 'qr' | 'ocr' | 'manual',
+    scanId = new Date().toISOString(), qrFields?: ExtractedName,
+  ) {
     if (this.processing) return;
     const sendingGreeting = this.sendingGreeting;
     this.processing = true;
@@ -598,9 +640,12 @@ export class GreetingUi {
     this.error('');
     this.status(sendingGreeting ? 'Preparing greeting…' : 'Processing scanned badge…');
     try {
+      let loggedFields: ExtractedName | undefined;
+      try {
+        const fields = qrFields ?? extractName(raw);
+        loggedFields = source === 'manual' ? fields : { ...fields, source };
+      } catch { /* raw text is still logged */ }
       if (this.loggingEnabled) {
-        let loggedFields: ExtractedName | undefined;
-        try { loggedFields = extractName(raw); } catch { /* raw text is still logged */ }
         try {
           await appendScanLog({
             timestamp: scanId, scanId, source, raw,
@@ -611,8 +656,9 @@ export class GreetingUi {
           $('qr-log-status').textContent = 'Scan saved to qr-scan-log.jsonl.';
         } catch (e) { $('qr-log-error').textContent = `Scan was NOT saved: ${this.message(e)}`; }
       }
-      const extracted = extractName(raw);
-      this.showScanData(extracted, raw, new Date(scanId));
+      const fields = qrFields ?? extractName(raw);
+      const extracted = source === 'manual' ? fields : { ...fields, source };
+      this.showScanData(extracted, raw, new Date(scanId), source === 'qr' ? 'qr' : 'ocr');
       if (source === 'ocr') void this.lookupGithub(raw, scanId);
       if (!sendingGreeting) {
         this.status('Badge scanned. Review the visitor data below.');

@@ -9,7 +9,7 @@ export interface ScanLogEntry {
   timestamp: string;
   /** Links the entries (scan and GitHub lookup) written for one scan. */
   scanId?: string;
-  source: 'camera' | 'ocr' | 'manual';
+  source: 'camera' | 'ocr' | 'qr' | 'manual';
   raw: string;
   /** Best-effort structured fields (name, company, title, email, GitHub/LinkedIn handles, ...) for later processing. */
   extracted?: ExtractedName;

@@ -9,6 +9,8 @@ export interface GreetingSettings {
 
 export interface ExtractedName {
   name: string;
+  source?: 'qr' | 'ocr';
+  badgeId?: string;
   lastname?: string;
   company?: string;
   title?: string;
