@@ -156,6 +156,7 @@ export class GreetingUi {
       this.githubLookupEnabled = lookup === true;
     } catch (e) { $('qr-log-error').textContent = `Could not restore GitHub lookup preference: ${this.message(e)}`; }
     $<HTMLInputElement>('qr-github-enabled').checked = this.githubLookupEnabled;
+    this.renderProfiles();
     $<HTMLSelectElement>('qr-profile').value = this.selectedProfileId ?? '';
     const selectedProfile = this.profiles.find((profile) => profile.id === this.selectedProfileId);
     $<HTMLInputElement>('qr-note').value = selectedProfile?.note ?? '';

@@ -166,7 +166,9 @@ test('saves three QR profiles with notes, restores them on reload, and supports 
   await page.reload();
   await connectHat(page);
   await page.click('nav [data-tab=scan]');
+  await expect(page.locator('#qr-profile option')).toHaveText(['None — general scan data', '1. MS AI Tour']);
   await expect(page.locator('#qr-profile')).toHaveValue('1');
+  await expect(page.locator('#qr-profile-delete')).toBeVisible();
   await expect(page.locator('#qr-note')).toHaveValue('MS AI Tour');
   await expect(page.locator('#qr-pattern')).toHaveValue(tourPattern);
   await expect(page.locator('#qr-template')).toHaveValue('Hello {firstname} {lastname} from {company}!');
