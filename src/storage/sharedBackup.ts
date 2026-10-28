@@ -44,7 +44,6 @@ export function exportSelectedJson(presets: Preset[], approach: ApproachSettings
     } } : {}),
     ...(selection.scan && features.qrGreeting ? { qrGreeting: validateGreeting(features.qrGreeting) } : {}),
     ...(selection.scan && features.qrScanLogging !== undefined ? { qrScanLogging: validateLogging(features.qrScanLogging) } : {}),
-    ...(selection.scan && features.qrGithubLookup !== undefined ? { qrGithubLookup: validateGithubLookup(features.qrGithubLookup) } : {}),
     ...(selection.settings && features.settings ? {
       settings: validateSettings({ ...features.settings, textFont: features.settings.textFont ?? DEFAULT_TEXT_FONT }),
     } : {}),

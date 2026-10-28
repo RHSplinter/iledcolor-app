@@ -294,6 +294,15 @@ remain importable with their original full-replacement behavior; obsolete saved 
 profiles and custom name regexes in those files are ignored. Reconnect after importing
 transport settings to apply the new write profile.
 
+**Scan log & privacy** is at the bottom of **Settings**. Logging remains opt-in.
+Recognized GitHub handles are always checked for a public email using the GitHub API;
+the former lookup preference in older backups no longer changes this behavior and
+is omitted from new backups. The scan table includes an editable **Email address**
+with a fixed field type. It stays empty when no public email is available or the
+lookup fails, and late lookup results never overwrite manual edits.
+Lookup messages appear in a status bar; **Clear** removes both the visitor fields
+and the lookup status bar.
+
 ## GitHub contribution graph
 
 Expand **Custom → GitHub Contributions**, enter a public GitHub handle (without `@`), choose

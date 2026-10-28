@@ -83,7 +83,7 @@ describe('selected backup categories', () => {
       expect(data).not.toHaveProperty('qrProfiles');
       expect(data.qrGreeting).toEqual(selection.scan ? features.qrGreeting : undefined);
       expect(data.qrScanLogging).toEqual(selection.scan ? true : undefined);
-      expect(data.qrGithubLookup).toEqual(selection.scan ? true : undefined);
+      expect(data.qrGithubLookup).toBeUndefined();
       for (const excluded of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'qr-scan-log', 'qr-raw']) {
         expect(json).not.toContain(excluded);
       }

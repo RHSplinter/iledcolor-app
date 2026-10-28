@@ -10,8 +10,13 @@ import type { DeviceController } from '../src/controller/deviceController';
 import { solid } from '../src/render/matrix';
 import { ensureFont } from '../src/render/text';
 import { SPIKE_PROFILE } from '../src/transport/types';
-import { saveKv } from '../src/storage/db';
+import { loadKv, saveKv } from '../src/storage/db';
+import { fetchPublicProfile } from '../src/scanner/githubLookup';
 
+vi.mock('../src/scanner/githubLookup', async (original) => ({
+  ...await original<typeof import('../src/scanner/githubLookup')>(),
+  fetchPublicProfile: vi.fn(),
+}));
 vi.mock('../src/feedback', () => ({ vibrateFeedback: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../src/storage/db', () => ({
   loadKv: vi.fn().mockResolvedValue(undefined),
@@ -44,6 +49,7 @@ const context = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(fetchPublicProfile).mockReset().mockResolvedValue(null);
   Object.assign(target, { state: 'Ready', canRestoreContent: true, temporaryActive: false });
   document.body.innerHTML = `
     <header>
@@ -52,7 +58,8 @@ beforeEach(() => {
     </header>
     <section id="view-approach"></section>
     <section id="view-sound"></section>
-    <section id="view-scan"></section>`;
+    <section id="view-scan"></section>
+    <section id="view-settings"><div id="settings-scan"></div></section>`;
   playback.mockResolvedValue('completed');
   vi.mocked(verifyUtterance).mockReturnValue(true);
 });
@@ -156,7 +163,10 @@ it.each(['ocr', 'manual'] as const)('shows editable visitor data for a recognize
   expect(form.hidden).toBe(false);
   const inputs = [...form.querySelectorAll('input')];
   const selects = [...form.querySelectorAll('select')];
-  expect(inputs.map((input) => input.value)).toEqual(['Rob', 'Bos', '@octocat', 'Software Engineer', 'Xebia']);
+  expect(inputs.map((input) => input.value)).toEqual(['Rob', 'Bos', '@octocat', 'Software Engineer', 'Xebia', '']);
+  expect(inputs[5]!.type).toBe('email');
+  expect(inputs[5]!.getAttribute('aria-label')).toBe('Email address');
+  expect(inputs[5]!.closest('tr')!.querySelector('select')).toBeNull();
   expect(selects.map((select) => select.value)).toEqual(['firstname', 'lastname', 'github', 'role', 'company']);
   for (const select of selects) {
     expect([...select.options].map((option) => option.text)).toEqual([
@@ -201,7 +211,7 @@ it.each(['ocr', 'manual'] as const)('preserves multiword first and last names in
   await ui.init();
   await ui['greet']('Anne Marie\nvan der Meer\n@badge-user\nSRE\nACME R&D 24/7', target, source);
   expect([...document.querySelectorAll<HTMLInputElement>('#qr-data input')].map((input) => input.value))
-    .toEqual(['Anne Marie', 'van der Meer', '@badge-user', 'SRE', 'ACME R&D 24/7']);
+    .toEqual(['Anne Marie', 'van der Meer', '@badge-user', 'SRE', 'ACME R&D 24/7', '']);
   expect(playback).toHaveBeenCalledOnce();
 });
 
@@ -214,12 +224,73 @@ it('replaces previous visitor data, leaves optional fields empty and removes sta
   expect(document.querySelector('#qr-data img')).toBeNull();
   await ui['greet']('Ada', target, 'manual');
   expect([...document.querySelectorAll<HTMLInputElement>('#qr-data input')].map((input) => input.value))
-    .toEqual(['Ada', '', '', '', '']);
-  expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(5);
+    .toEqual(['Ada', '', '', '', '', '']);
+  expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(6);
   await ui['greet']('{"email":"private@example.org"}', target, 'manual');
   expect(document.getElementById('qr-data')!.hidden).toBe(true);
   expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(0);
   expect(document.getElementById('qr-status')!.textContent).toContain('No usable name');
+});
+
+it('always looks up public email, ignoring stored and imported legacy opt-outs', async () => {
+  vi.mocked(loadKv).mockImplementation(async (key) => key === 'qrGithubLookup' ? false : undefined);
+  vi.mocked(fetchPublicProfile).mockResolvedValue({ login: 'octocat', email: 'public@example.org' });
+  const ui = new GreetingUi(context);
+  await ui.init();
+  ui.applyImportedSettings({ qrGithubLookup: false });
+  expect(document.getElementById('qr-github-enabled')).toBeNull();
+  expect(ui.exportSettings()).not.toHaveProperty('qrGithubLookup');
+  await ui['greet']('Rob Bos\n@octocat', target, 'ocr');
+  await vi.waitFor(() => expect((document.getElementById('qr-data-email') as HTMLInputElement).value).toBe('public@example.org'));
+  expect(fetchPublicProfile).toHaveBeenCalledWith('octocat', expect.any(AbortSignal));
+  vi.mocked(loadKv).mockResolvedValue(undefined);
+});
+
+it.each([null, { login: 'octocat', email: null }, new Error('Offline')])('keeps email empty and editable when lookup returns %j', async (profile) => {
+  if (profile instanceof Error) vi.mocked(fetchPublicProfile).mockRejectedValue(profile);
+  else vi.mocked(fetchPublicProfile).mockResolvedValue(profile);
+  const ui = new GreetingUi(context);
+  await ui.init();
+  await ui['greet']('Rob Bos\n@octocat', target, 'ocr');
+  await vi.waitFor(() => expect(document.getElementById('qr-github-result')!.textContent).not.toContain('Checking'));
+  const email = document.getElementById('qr-data-email') as HTMLInputElement;
+  expect(email.value).toBe('');
+  expect(email.disabled).toBe(false);
+  email.value = 'manual@example.org';
+  email.dispatchEvent(new Event('input'));
+  expect(email.value).toBe('manual@example.org');
+  const result = document.getElementById('qr-github-result')!;
+  expect(result.hidden).toBe(false);
+  expect(result.classList.contains('scan-status')).toBe(true);
+  if (profile && !(profile instanceof Error)) expect(result.textContent).toBe('@octocat has no public email.');
+  document.getElementById('qr-data-clear')!.click();
+  expect(result.hidden).toBe(true);
+  expect(result.textContent).toBe('');
+});
+
+it.each(['edit', 'clear', 'rescan'] as const)('does not overwrite visitor data after %s while a lookup is pending', async (action) => {
+  let finish!: (value: { login: string; email: string }) => void;
+  vi.mocked(fetchPublicProfile).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const ui = new GreetingUi(context);
+  await ui.init();
+  await ui['greet']('Rob Bos\n@octocat', target, 'ocr');
+  const email = document.getElementById('qr-data-email') as HTMLInputElement;
+  if (action === 'edit') {
+    email.value = 'manual@example.org';
+    email.dispatchEvent(new Event('input'));
+  } else if (action === 'clear') document.getElementById('qr-data-clear')!.click();
+  else await ui['greet']('Ada', target, 'ocr');
+  finish({ login: 'octocat', email: 'public@example.org' });
+  await vi.waitFor(() => {
+    if (action === 'edit') expect(document.getElementById('qr-github-result')!.textContent).toContain('public@example.org');
+    else expect(document.getElementById('qr-github-result')!.textContent).toBe('');
+  });
+  expect(email.value).toBe(action === 'edit' ? 'manual@example.org' : '');
+  if (action === 'rescan') expect((document.getElementById('qr-data-email') as HTMLInputElement).value).toBe('');
+  if (action === 'clear') {
+    expect(document.getElementById('qr-data')!.hidden).toBe(true);
+    expect(document.getElementById('qr-github-result')!.hidden).toBe(true);
+  }
 });
 
 it.each(['ocr', 'manual'] as const)('vibrates once when a recognized %s scan greeting starts playing, before completion', async (source) => {

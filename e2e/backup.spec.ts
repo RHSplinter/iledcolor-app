@@ -37,6 +37,7 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.fill('#qr-template', 'Current {name}!');
   await page.fill('#qr-repetitions', '17');
   await page.locator('#qr-speed').fill('8');
+  await page.click('nav [data-tab=settings]');
   await page.check('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toHaveText('Scan logging enabled.');
   await page.click('nav [data-tab=sound]');
@@ -85,6 +86,7 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.click('nav [data-tab=scan]');
   await page.fill('#qr-repetitions', '3');
   await page.locator('#qr-speed').fill('5');
+  await page.click('nav [data-tab=settings]');
   await page.uncheck('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toContainText('Scan logging disabled.');
   await page.click('nav [data-tab=sound]');
@@ -118,6 +120,7 @@ test('all categories restore settings from every tab immediately and after reloa
     await expect(page.locator('#qr-template')).toHaveValue('Current {name}!');
     await expect(page.locator('#qr-repetitions')).toHaveValue('17');
     await expect(page.locator('#qr-speed')).toHaveValue('8');
+    await page.click('nav [data-tab=settings]');
     await expect(page.locator('#qr-log-enabled')).toBeChecked();
     await page.click('nav [data-tab=sound]');
     await expect(page.locator('#sound-language')).toHaveValue('de-DE');

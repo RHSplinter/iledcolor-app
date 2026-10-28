@@ -43,7 +43,11 @@ test('scanner has no saved badge profile controls', async ({ page }) => {
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-template')).toBeVisible();
   await expect(page.locator('#qr-profile, #qr-note, #qr-profile-save, #qr-profile-delete, #qr-pattern, #qr-pattern-help')).toHaveCount(0);
-  await expect(page.locator('#view-scan > .card')).toHaveCount(3);
+  await expect(page.locator('#view-scan > .card')).toHaveCount(2);
+  await expect(page.locator('#qr-github-enabled')).toHaveCount(0);
+  await page.click('nav [data-tab=settings]');
+  await expect(page.locator('#view-settings > :last-child')).toHaveAttribute('id', 'settings-scan');
+  await expect(page.locator('#settings-scan h2')).toHaveText('Scan log & privacy');
   await expect(page.locator('#view-scan')).not.toContainText('Name regex');
   await expect(page.locator('#view-scan')).not.toContainText('Enter scan data manually');
   await expect(page.locator('#qr-raw, #qr-submit')).toHaveCount(0);
@@ -56,7 +60,7 @@ test('scan logging is opt-in, persists, and can be disabled', async ({ page }) =
   await page.getByText('Test patterns (dim, static)', { exact: true }).click();
   await page.click('#btn-test-color');
   await expect(page.locator('#status')).toContainText('Ready');
-  await page.click('nav [data-tab=scan]');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#qr-log-enabled')).not.toBeChecked();
   await page.click('#qr-log-share');
   await expect(page.locator('#qr-log-error')).toContainText('Could not share scan log');
@@ -64,18 +68,25 @@ test('scan logging is opt-in, persists, and can be disabled', async ({ page }) =
   await expect(page.locator('#qr-log-status')).toHaveText('Scan logging enabled.');
   await page.reload();
   await connectHat(page);
-  await page.click('nav [data-tab=scan]');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#qr-log-enabled')).toBeChecked();
   await page.uncheck('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toContainText('Existing log kept');
 
 });
 
-for (const layout of ['single-line name', 'stacked name with handle', 'tightly stacked name with handle']) {
-test(`Scan is blue and offline OCR greets a newly connected cap (${layout})`, async ({ page, context }) => {
+for (const layout of ['single-line name', 'stacked name with handle', 'tightly stacked name with handle', 'public email', 'no public email']) {
+test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup accompanies OCR' : 'offline OCR greets a newly connected cap'} (${layout})`, async ({ page, context }) => {
   const stacked = layout !== 'single-line name';
   const tight = layout === 'tightly stacked name with handle';
+  const publicEmail = layout === 'public email';
+  const onlineLookup = layout.includes('email');
   test.setTimeout(90000);
+  if (onlineLookup) {
+    await context.route('https://api.github.com/users/*', (route) => route.fulfill({
+      json: { login: 'FokkoVeegens', email: publicEmail ? 'public@example.org' : null },
+    }));
+  }
   await page.addInitScript(({ stacked, tight }) => {
     Object.assign(window, { feedbackVibrations: [] as number[] });
     Object.defineProperty(navigator, 'vibrate', { value: () => true });
@@ -115,7 +126,7 @@ test(`Scan is blue and offline OCR greets a newly connected cap (${layout})`, as
   }, { stacked, tight });
   await page.goto('/#mock');
   await waitForServiceWorker(page);
-  await context.setOffline(true);
+  await context.setOffline(!onlineLookup);
   await page.reload();
   const scan = page.locator('#qr-text-start');
   await expect(scan).toBeDisabled();
@@ -125,6 +136,7 @@ test(`Scan is blue and offline OCR greets a newly connected cap (${layout})`, as
   await page.click('#btn-connect');
   await expect(page.locator('#status')).toContainText('Ready');
   await page.click('nav [data-tab=scan]');
+  await expect(page.locator('#qr-github-result')).toBeHidden();
   await expect(scan).toBeEnabled();
   await scan.click();
   await expect(page.locator('#qr-ocr-controls')).toBeVisible();
@@ -140,8 +152,31 @@ test(`Scan is blue and offline OCR greets a newly connected cap (${layout})`, as
   for (const [index, value] of expected.entries()) {
     await expect(page.getByRole('textbox', { name: `Data item ${index + 1}`, exact: true })).toHaveValue(value);
   }
+  const email = page.getByRole('textbox', { name: 'Email address', exact: true });
+  await expect(email).toHaveValue(publicEmail ? 'public@example.org' : '');
+  await expect(email.locator('..').locator('..').locator('select')).toHaveCount(0);
+  const firstInput = page.getByRole('textbox', { name: 'Data item 1', exact: true });
+  for (const property of ['background-color', 'border-radius', 'border-top-width', 'padding', 'font-size', 'color', 'width', 'height']) {
+    await expect(email).toHaveCSS(property, await firstInput.evaluate((input, key) => getComputedStyle(input).getPropertyValue(key), property));
+  }
+  const emailLabel = page.locator('label[for=qr-data-email]');
+  const typeSelect = page.getByRole('combobox', { name: 'Data item 1 type', exact: true });
+  for (const property of ['font-size', 'color', 'padding-left', 'height']) {
+    await expect(emailLabel).toHaveCSS(property, await typeSelect.evaluate((select, key) => getComputedStyle(select).getPropertyValue(key), property));
+  }
+  expect((await emailLabel.boundingBox())!.x).toBe((await typeSelect.boundingBox())!.x);
+  if (layout === 'no public email') {
+    await expect(page.locator('#qr-github-result')).toHaveText('@FokkoVeegens has no public email.');
+    await expect(page.locator('#qr-github-result')).toHaveCSS('border-left-width', '3px');
+  }
+  await email.fill('manual@example.org');
+  await expect(email).toHaveValue('manual@example.org');
   await expect(page.locator('#qr-status')).toContainText('Display cleared to black.', { timeout: 30000 });
   await expect(page.locator('#qr-status')).toHaveAttribute('role', 'status');
   await expect(scan).toBeEnabled();
+  await page.click('#qr-data-clear');
+  await expect(page.locator('#qr-github-result')).toBeHidden();
+  await expect(page.locator('#qr-github-result')).toBeEmpty();
+  expect(await page.locator('#qr-github-result').boundingBox()).toBeNull();
 });
 }

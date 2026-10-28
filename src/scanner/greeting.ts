@@ -22,6 +22,7 @@ export interface ExtractedName {
 export interface ScannerBackup {
   qrGreeting?: GreetingSettings;
   qrScanLogging?: boolean;
+  /** Legacy backup field; public email lookup is now always enabled. */
   qrGithubLookup?: boolean;
 }
 
