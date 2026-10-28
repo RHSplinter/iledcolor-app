@@ -43,7 +43,7 @@ export class GreetingUi {
   async init() {
     $('view-scan').innerHTML = `
       <div class="card">
-        <h2>Badge greeting</h2>
+        <h2>Visitor scanning</h2>
         <div class="row scan-actions">
           <button id="qr-text-start" class="primary">Scan</button>
           <button id="qr-stop" hidden>Stop camera</button>
@@ -60,8 +60,6 @@ export class GreetingUi {
         <p id="qr-status" role="status" aria-live="polite"></p>
         <p id="qr-error" class="bad" role="alert"></p>
         <p id="qr-ready" class="small" role="status"></p>
-        <p class="small">Capture a badge's printed text to greet its owner on this phone's primary cap. Other caps keep playing.
-        Previously sent content is restored afterwards. If no content has been sent yet, the display is cleared to black.</p>
       </div>
       <div class="card">
         <h2>Greeting settings</h2>
