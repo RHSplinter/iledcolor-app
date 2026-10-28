@@ -4,6 +4,7 @@ import { DEFAULT_APPROACH } from '../src/approach/tiers';
 import { decodeOffer, decodeSharedPreset, encodeOffer, encodeSharedPreset, makeOffer } from '../src/approach/presetShare';
 import { composeSequence, MAX_SEQUENCE_FRAMES } from '../src/render/sequence';
 import { solid } from '../src/render/matrix';
+import { sequenceStepLabel } from '../src/ui/sequenceLabel';
 import {
   MAX_SEQUENCE_STEPS, validateContent, validateSequenceSteps,
   type ContentPreset, type SequenceContent, type SequenceStep,
@@ -39,6 +40,19 @@ describe('sequence validation', () => {
 
   it('allows an empty draft', () => {
     expect(validateSequenceSteps([])).toEqual([]);
+  });
+
+  it('preserves image names in sequence labels and remains compatible with older image content', () => {
+    const image = { kind: 'image', dataUrl: 'data:image/png;base64,AA==', fit: 'contain', bg: '#000000', name: 'my-logo.png' } as const;
+    expect(validateContent(image)).toEqual(image);
+    expect(sequenceStepLabel(image)).toBe('Image "my-logo.png"');
+    expect(sequenceStepLabel({ ...image, name: undefined })).toBe('Image');
+    expect(() => validateContent({ ...image, name: 123 })).toThrow(/image name/);
+    const namedSequence = { kind: 'sequence', steps: [{ content: image, seconds: 3 }] } as const;
+    expect(validateContent(namedSequence)).toEqual(namedSequence);
+    const backup = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, creations, undefined, { createContent: namedSequence }));
+    if (backup.version !== 2) throw new Error('Wrong version');
+    expect(backup.createContent).toEqual(namedSequence);
   });
 });
 
