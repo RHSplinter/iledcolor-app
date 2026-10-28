@@ -4,6 +4,7 @@ import copilotHead from '../assets/presets/copilot-head.png?inline';
 import copilotBlinkingHead from '../assets/presets/copilot-head-blinking.gif?inline';
 import partyPopper from '../assets/presets/party-popper.gif?inline';
 import octocatAnimation from '../assets/presets/octocat-ani.gif?inline';
+import copilotHeadAnimation from '../assets/presets/copilot-head-animation.gif?inline';
 import type { ContentPreset } from './presets';
 
 /** Bundled separately from personal presets so imports never remove the defaults. */
@@ -36,6 +37,10 @@ export function builtinPresets(): ContentPreset[] {
     {
       id: 'builtin-octocat-animation', name: 'Octocat animation', updatedAt: 0,
       content: { kind: 'image', dataUrl: octocatAnimation, fit: 'contain', bg: '#000000' },
+    },
+    {
+      id: 'builtin-copilot-head-animation', name: 'GitHub Copilot head (animated)', updatedAt: 0,
+      content: { kind: 'image', dataUrl: copilotHeadAnimation, fit: 'contain', bg: '#000000' },
     },
     {
       id: 'builtin-header', name: '<header>', updatedAt: 0,
