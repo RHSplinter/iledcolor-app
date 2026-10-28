@@ -94,6 +94,18 @@ describe('JS GIF decoder', () => {
     expect(new Set(frames.map((f) => f.join())).size).toBeGreaterThan(1);
   });
 
+  it.each([
+    ['rainbow.gif', [32, 18], 15],
+    ['nijan-cat.gif', [32, 19], 12],
+    ['star.gif', [32, 32], 60],
+  ] as const)('decodes the original %s animation', (name, dimensions, frameCount) => {
+    const { frames, delays, size } = decode(new Uint8Array(readFileSync(join('src', 'assets', 'presets', name))));
+    expect(size).toEqual(dimensions);
+    expect(frames).toHaveLength(frameCount);
+    expect(delays.every((delay) => delay >= 20)).toBe(true);
+    expect(new Set(frames.map((f) => f.join())).size).toBeGreaterThan(1);
+  });
+
   it('rejects invalid, truncated and oversized GIFs', () => {
     const gif = encodeGif([image(4, 4, () => RED), image(4, 4, () => BLUE)], 100);
     expect(() => decode(new TextEncoder().encode('PNG not a gif'))).toThrow(/header/);
