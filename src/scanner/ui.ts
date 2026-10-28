@@ -9,7 +9,7 @@ import { vibrateFeedback } from '../feedback';
 import { BadgeCamera } from './camera';
 import { appendScanLog, shareScanLog } from './log';
 import { BadgeTextRecognizer } from './ocr';
-import { detectUniverseBadge } from './universeBadge';
+import { detectBadgeOrOcr } from './universeBadge';
 import { differingGithubHandles, fetchPublicProfile, findGithubHandle, findGithubHandles } from './githubLookup';
 import {
   DEFAULT_GREETING, extractName, greetingDuration, greetingNameFields, greetingText, isValidEmail, validateGreeting,
@@ -281,7 +281,6 @@ export class GreetingUi {
     const fields = [
       { type: 'firstname', label: 'First name', value: firstname },
       { type: 'lastname', label: 'Last name', value: lastname },
-      ...(extracted.badgeId ? [{ type: 'badgeId', label: 'Badge ID', value: extracted.badgeId }] : []),
       { type: 'github', label: 'GitHub Handle', value: extracted.github ?? findGithubHandle(raw) ?? '' },
       { type: 'role', label: 'Role', value: extracted.title ?? '' },
       { type: 'company', label: 'Company', value: extracted.company ?? '' },
@@ -323,6 +322,8 @@ export class GreetingUi {
       return { row, input };
     };
     const { row: emailRow, input: email } = labelledRow('qr-data-email', 'email', 'Email address');
+    const badgeIdField = extracted.badgeId ? labelledRow('qr-data-badge-id', 'text', 'Badge ID', extracted.badgeId) : undefined;
+    if (badgeIdField) badgeIdField.input.readOnly = true;
     const { row: phoneRow, input: phone } = labelledRow('qr-data-phone', 'tel', 'Phone number', extracted.phone ?? '');
     phone.autocomplete = 'off';
     const { row: linkedinRow, input: linkedin } = labelledRow('qr-data-linkedin', 'text', 'LinkedIn handle', extracted.linkedin ?? '');
@@ -348,11 +349,12 @@ export class GreetingUi {
         const select = row.querySelector('select')!;
         return { label: select.selectedOptions[0]?.text ?? '', value: row.querySelector('input')!.value, type: select.value };
       }),
+      ...(badgeIdField ? [{ label: 'Badge ID', value: badgeIdField.input.value, type: 'badgeId' }] : []),
       { label: 'Email address', value: email.value },
       { label: 'Phone number', value: phone.value },
       { label: 'LinkedIn', value: linkedin.value, type: 'linkedin' },
     ];
-    $('qr-data-rows').replaceChildren(...rows, emailRow, phoneRow, linkedinRow);
+    $('qr-data-rows').replaceChildren(...rows, ...(badgeIdField ? [badgeIdField.row] : []), emailRow, phoneRow, linkedinRow);
     $('qr-data').hidden = false;
   }
 
@@ -576,25 +578,31 @@ export class GreetingUi {
     this.error('');
     this.status('Checking for a badge QR code…');
     try {
-      let badge: Awaited<ReturnType<typeof detectUniverseBadge>> = undefined;
+      let frame: HTMLCanvasElement | undefined;
       try {
-        const frame = document.createElement('canvas');
-        frame.width = video.videoWidth;
-        frame.height = video.videoHeight;
-        const frameContext = frame.getContext('2d');
+        const qrFrame = document.createElement('canvas');
+        qrFrame.width = video.videoWidth;
+        qrFrame.height = video.videoHeight;
+        const frameContext = qrFrame.getContext('2d');
         if (frameContext) {
-          frameContext.drawImage(video, 0, 0, frame.width, frame.height);
-          badge = await detectUniverseBadge(frame);
-        } else {
-          console.info('QR frame is unavailable; falling back to OCR.');
-        }
+          frameContext.drawImage(video, 0, 0, qrFrame.width, qrFrame.height);
+          frame = qrFrame;
+        } else console.info('QR frame is unavailable; falling back to OCR.');
       } catch {
         console.info('QR detection failed; falling back to OCR.');
       }
       if (attempt !== this.scanId) return;
-      if (badge) {
+      const recognize = () => {
+        this.status('Loading the offline text recognizer…');
+        return this.recognizer.recognize(canvas, (status, progress) => {
+          if (attempt === this.scanId) this.status(`${status} (${Math.round(progress * 100)}%)…`);
+        });
+      };
+      const result = frame ? await detectBadgeOrOcr(frame, recognize) : { source: 'ocr' as const, raw: await recognize() };
+      if (result.source === 'qr') {
         this.stopCamera();
         const scanId = new Date().toISOString();
+        const { badge } = result;
         const raw = [badge.firstName, badge.lastName, badge.company].filter(Boolean).join('\n');
         void this.greet(raw, target, 'qr', scanId, {
           name: `${badge.firstName} ${badge.lastName}`,
@@ -605,10 +613,7 @@ export class GreetingUi {
         });
         return;
       }
-      this.status('Loading the offline text recognizer…');
-      const raw = await this.recognizer.recognize(canvas, (status, progress) => {
-        if (attempt === this.scanId) this.status(`${status} (${Math.round(progress * 100)}%)…`);
-      });
+      const raw = result.raw;
       if (attempt !== this.scanId) return;
       this.stopCamera();
       const scanId = new Date().toISOString();

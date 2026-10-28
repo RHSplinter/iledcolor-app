@@ -46,8 +46,9 @@ export function decodeUniverseBadge(qrText: string): UniverseBadge | undefined {
     }
 
     const parts = plain.split('^');
-    if (parts.length !== 5 || parts[4] !== '' || parts[0] !== badgeIds[0] ||
-        !parts[1] || !parts[2] || /[\u0000-\u001f\u007f]/.test(plain)) return undefined;
+    if (plain.length > 4096 || parts.length !== 5 || parts[4] !== '' || parts[0] !== badgeIds[0] ||
+        !parts[1]?.trim() || !parts[2]?.trim() || parts[1]!.length > 100 || parts[2]!.length > 100 ||
+        parts[3]!.length > 256 || /[\u0000-\u001f\u007f]/.test(plain)) return undefined;
     return {
       source: 'qr',
       badgeId: parts[0]!,
@@ -78,4 +79,12 @@ export async function detectUniverseBadge(image: ImageBitmapSource): Promise<Uni
   }
   console.info('No valid Universe badge QR found; falling back to OCR.');
   return undefined;
+}
+
+export async function detectBadgeOrOcr<T>(
+  image: ImageBitmapSource,
+  recognize: () => Promise<T>,
+): Promise<{ source: 'qr'; badge: UniverseBadge } | { source: 'ocr'; raw: T }> {
+  const badge = await detectUniverseBadge(image);
+  return badge ? { source: 'qr', badge } : { source: 'ocr', raw: await recognize() };
 }
