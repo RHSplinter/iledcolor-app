@@ -18,7 +18,7 @@ and Device settings. Test patterns and Protocol log are expandable native disclo
 their controls and live updates remain mounted. Brightness, display power, transforms,
 chunk size and write delay keep their existing persistence and connection semantics.
 
-Scan starts with scan/stop/end-greeting controls, video and status. All profile, regex,
+Scan starts with scan/stop/end-greeting controls, video and status. All
 greeting, manual-input, logging, sharing, privacy and attribution features remain available.
 Marquee options in all five Approach group sizes, the simulated-peer selector, nearby
 text mode labels and span status are explicitly marked unstable. Selecting a spanning
@@ -34,7 +34,7 @@ in a read-only pass. Its main findings and the implemented changes are:
 | Navigation needs clear location and keyboard support | Four labelled tab panels, roving tab focus, arrows/Home/End, selected background and top marker, visible Settings heading. |
 | Touch controls and muted text lack consistency | At least 44 px fields, sliders and colour inputs; 48 px primary buttons; large checkbox/radio labels; readable muted pills, field borders and placeholders; consistent focus/hover/pressed states. |
 | Narrow forms and long names can overflow | Responsive numeric-field grids, shrinking flex children, full-width mobile preset-save rows, wrapping preset names/status messages, bounded file inputs and transfer notifications. |
-| Scan mixes immediate actions and configuration | Operation first, then separately titled QR profile, greeting, and log/privacy sections; disabled-action prerequisites shown beside the scanner actions. |
+| Scan mixes immediate actions and configuration | Operation first, then separately titled greeting and log/privacy sections; disabled-action prerequisites shown beside the scanner actions. |
 | Connect lacks feedback and clear preset input | Visible preset-name labels, send-prerequisite help, named upload progress and live completion status. |
 | Settings diagnostics dominate ordinary tasks | Presets/backup and Display stay prominent; test patterns/log are expandable without removing any controls. |
 | Renamed tabs leave stale sharing references | Incoming preset receipt refreshes Settings; group help and content references use the actual destination names. |
@@ -43,14 +43,14 @@ in a read-only pass. Its main findings and the implemented changes are:
 The existing dark, blue-accent identity and 560 px content measure are preserved.
 Spacing uses a small shared scale. Switch animation respects reduced-motion preferences.
 Approach detection, calibration and recording remain directly exposed rather than adding
-new disclosure state during live rerenders. No BLE, rendering, scanner, storage or backup
-features were removed. Internal `createContent`/`useCreate` keys are intentionally retained
+new disclosure state during live rerenders. This layout rearrangement did not alter BLE,
+rendering, scanner, storage or backup behavior. Internal `createContent`/`useCreate` keys are intentionally retained
 for compatibility with existing installations and backups.
 
 ## Verification and delivery
 
 Regression coverage includes the existing offline, content, group, sharing-category,
-QR-camera, profile and scan-log scenarios. Additional navigation coverage checks tab order,
+QR-camera and scan-log scenarios. Additional navigation coverage checks tab order,
 icons, content/preset destinations, relocated display/test/log controls, persisted device
 settings, keyboard navigation, all marquee labels/warnings, and scan-first ordering.
 Layout assertions cover 360 px and 390 px portrait, 844 px landscape, 1280 px desktop,
@@ -82,7 +82,7 @@ in both native apps, including every unstable-Marquee warning, and in `#mock` fo
 development. The hidden tab is excluded from keyboard traversal and cannot be opened
 programmatically through the shared navigation helper. Web keeps supported BLE
 control, offline editing, all content types, display settings, diagnostics, QR scanning
-and manual entry, storage, JSON sharing/import and profiles. Browser Bluetooth and
+and manual entry, storage, JSON sharing/import. Browser Bluetooth and
 camera prerequisites still apply.
 
 Imported group presets remain stored and exportable on web; their Load buttons are

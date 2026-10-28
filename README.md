@@ -21,87 +21,9 @@ This is the Xebia Led hat used/introduced at GitHub Universe 2026.
 
 
 4. If you have an Android device, you'll need it to allow bluetooth access in order to pair with the cap.
-5. In the browser (Bluefy browser for iPhone), navigate to https://rhsplinter.github.io/iledcolor-app.
+5. In the browser (Bluefy browser for iPhone), navigate to https://xebia.github.io/github-universe-led-cap.
 6. Press the connect button at the top of the page and connect to the Bluetooth name of the cap you discovered in step 2.
-7. Open **Custom**, expand the content section you want, and use its **Send to cap** button to apply your changes. The **Presets** tab is first and opens by default after connecting.
-8. Familiarize yourself with the controls in the app and ask questions if you don't understand it. We have loaded the app with some presets you can use.
-
-## Custom content and backups
-
-The **Custom** tab replaces Connect. **Text**, **Solid color**, **Image** and
-**GitHub Contributions** each start collapsed; a right-pointing chevron expands a
-section and turns down while it is open. Text scrolls automatically when it is wider than the cap,
-supports emoji, and has its own font choice (or the Settings default). Images support
-PNG, JPG and animated GIF, with contain, cover and stretch fitting.
-The existing **Sequence** editor is available in its own collapsed section.
-
-Each section has **Send to cap** and **Save as preset** controls. To save, enter a name
-and select the adjacent check button. In **Presets**, each saved or built-in preset is a
-full-width button with a type icon before its name. Tap it to send immediately to the
-connected cap without leaving Presets or changing Custom editor drafts. Send progress
-and errors appear on Presets; sending is disabled while the cap is unavailable or busy.
-Share and Delete remain separate actions. Group presets apply Approach content without
-leaving Presets and update caps when Approach is running (native app or mock mode only).
-The built-in **GitHub Copilot head (animated)** is an additional preset; the existing
-**Octocat animation** remains available unchanged. The Copilot GIF crops the empty border and centers
-proportional 19x16 artwork on the 32x16 LED display, with black side margins,
-a dark faceplate, bright cyan eyes,
-and preserved outline and shadow details from the original animation,
-a shared 16-color palette for a retro pixel-art look, and a short back-and-forth turn
-with a reduced turning range, temporally smoothed eye movement, and intermediate
-frames for a slow 10.4-second loop, no middle pause,
-and a continuous transition between loop endpoints.
-GitHub presets
-store the handle, captions, caption font and their own scroll speed. When the graph was loaded before
-saving, the preset also keeps that graph and its date, so it can be shown, used in
-sequences and shared without internet; load the graph again to refresh it. Presets
-saved before loading a graph fetch a fresh graph each time they are shown, which
-requires internet and sends that public handle to the contribution service.
-
-**Presets > Backup > Creations** includes saved presets, all current Custom editor
-drafts (even collapsed sections and image fit/background before choosing a file),
-per-text fonts, sequences, and GitHub handle, captions, caption font and speed. Selecting all
-categories backs up portable configuration across all tabs. Imports are saved
-atomically, refresh the UI immediately, and survive reload. Excluded categories and
-newer preferences absent from version-1 or older version-2 files are preserved.
-Expansion state is not saved: sections always start collapsed.
-
-Phone identity, cap connections/device IDs, permissions, running state, QR payloads,
-and scan-log contents are not exported. The scan-logging preference belongs to
-**Scan settings**; importing it can enable local scan logging. The opt-in
-GitHub email lookup preference also belongs to **Scan settings**; importing it can
-enable sending OCR-recognized `@handle`s to api.github.com. Looked-up emails are
-never exported in backups. When scan logging is on, each scan is saved to the scan log with its
-extracted name, company, title, email, GitHub and LinkedIn handles, and (if the lookup is enabled) the
-public GitHub email for each handle. If the paper badge and the badge screen show different GitHub
-handles, both are recorded (`githubHandles`). Entries from one scan share a `scanId`. The scan log is
-never part of backups and may contain personal data.
-
-## Browser tests
-
-Run `npm run e2e` for the full production-build suite, including offline/service-worker
-checks and Firefox/WebKit navigation smoke tests. Tests run independently, including
-tests in the same file, with four workers locally and two in CI to limit contention.
-Override concurrency with `npm run e2e -- --workers=2` on a busy machine.
-
-For a focused check, pass a spec and optionally a title filter:
-`npm run e2e -- e2e/scanner.spec.ts --grep "saves three QR profiles"`.
-Use `npm run e2e:smoke` for navigation-only checks; it does not replace the full suite.
-Screenshots are saved on failure. Traces are recorded on the first retry (CI retries
-failed tests); for local debugging, use `npm run e2e -- --trace=retain-on-failure`.
-
-## Badge scanning
-
-Connect a cap, open **Scan**, and tap the blue **Scan** button. Frame the printed
-badge text and tap **Capture text** for offline, on-device recognition. QR/barcode
-camera scanning is no longer available; manual scan-data entry and saved badge
-profiles remain supported.
-
-Scanning works immediately after connecting, without sending content first. After
-the greeting (or **End greeting**), the app restores the last content it sent. If no
-content is known for this connection, it clears the display to black instead.
-Content already on the cap cannot be read back. Other caps continue playing.
-Scan preferences remain covered by the **Scan settings** backup category.
+7. Familiarize yourself with the controls in the app and ask questions if you don't understand it. We have loaded the app with some presets you can use.
 
 ## More docs
 

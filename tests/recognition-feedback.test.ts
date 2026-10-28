@@ -21,7 +21,6 @@ vi.mock('../src/sound/capture', () => ({ SoundCapture: class { capabilities = as
 vi.mock('../src/sound/analysis', async (original) => ({
   ...await original<typeof import('../src/sound/analysis')>(), verifyUtterance: vi.fn(),
 }));
-vi.mock('../src/scanner/extract', () => ({ extractNameSafely: vi.fn().mockResolvedValue({ firstname: 'Rob' }) }));
 vi.mock('../src/render/matrix', async (original) => ({
   ...await original<typeof import('../src/render/matrix')>(),
   drawPreview: vi.fn(),

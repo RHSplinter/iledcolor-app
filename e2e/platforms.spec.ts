@@ -94,8 +94,8 @@ for (const platform of ['ios', 'android']) {
       await expect(option).toContainText('unstable');
     await page.getByRole('tab', { name: 'Scan', exact: true }).click();
     const action = await page.locator('#qr-text-start').boundingBox();
-    const profile = await page.locator('#qr-profile').boundingBox();
-    expect(action!.y).toBeLessThan(profile!.y);
+    const greeting = await page.locator('#qr-template').boundingBox();
+    expect(action!.y).toBeLessThan(greeting!.y);
     await page.getByRole('tab', { name: 'Settings' }).click();
     await expect(page.locator('#brightness')).toBeVisible();
     await expect(page.locator('#presets-content')).not.toContainText('require the Android or iOS app');

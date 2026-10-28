@@ -76,20 +76,20 @@ describe('sequence presets', () => {
   });
 
   it('round-trip in backups with the current sequence', () => {
-    const playing = parseSharedBackup(exportSelectedJson([seqPreset], DEFAULT_APPROACH, creations, undefined,
+    const playing = parseSharedBackup(exportSelectedJson([seqPreset], DEFAULT_APPROACH, creations,
       { createContent: seq, createSequence: steps }));
     if (playing.version !== 2) throw new Error('Wrong version');
     expect(playing.creations).toEqual([seqPreset]);
     expect(playing.createContent).toEqual(seq);
     expect(playing.createSequence).toBeUndefined(); // stored once, inside createContent
 
-    const draft = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, creations, undefined,
+    const draft = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, creations,
       { createContent: steps[1]!.content, createSequence: steps }));
     if (draft.version !== 2) throw new Error('Wrong version');
     expect(draft.createContent).toEqual(steps[1]!.content);
     expect(draft.createSequence).toEqual(steps);
 
-    const scanOnly = exportSelectedJson([seqPreset], DEFAULT_APPROACH, { creations: false, approach: false, scan: true }, undefined,
+    const scanOnly = exportSelectedJson([seqPreset], DEFAULT_APPROACH, { creations: false, approach: false, scan: true },
       { createContent: seq, createSequence: steps });
     expect(scanOnly).not.toContain('createSequence');
     expect(scanOnly).not.toContain('HELLO');

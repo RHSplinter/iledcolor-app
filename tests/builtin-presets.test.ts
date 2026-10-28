@@ -57,7 +57,7 @@ describe('built-in presets', () => {
     it(`round-trips a personal copy and current editor content of ${preset.name}`, async () => {
       const copy = { ...preset, id: `copy-${preset.id}`, updatedAt: 1 };
       const data = parseSharedBackup(exportSelectedJson([copy], DEFAULT_APPROACH,
-        { creations: true, approach: false, scan: false }, undefined, { createContent: preset.content }));
+        { creations: true, approach: false, scan: false }, { createContent: preset.content }));
       if (data.version !== 2) throw new Error('Wrong backup version');
       expect(data.creations).toEqual([copy]);
       expect(data.createContent).toEqual(preset.content);
@@ -70,7 +70,7 @@ describe('built-in presets', () => {
   it('keeps built-ins out of exports and preserves personal copies when Creations is excluded', () => {
     const presets = builtinPresets();
     const data = parseSharedBackup(exportSelectedJson(presets, DEFAULT_APPROACH,
-      { creations: false, approach: false, scan: true }, undefined, { createContent: presets[0]!.content }));
+      { creations: false, approach: false, scan: true }, { createContent: presets[0]!.content }));
     expect(data).not.toHaveProperty('creations');
     expect(data).not.toHaveProperty('createContent');
     expect(mergeSharedPresets(presets, data)).toEqual(presets);

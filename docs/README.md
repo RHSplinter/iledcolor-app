@@ -39,7 +39,7 @@ tab navigation and responsive controls on Android, iOS and web.
   Every spanning **Marquee** choice is marked **unstable**:
   physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
 - **Scan:** the scan/stop/end-greeting actions, camera and status come first, followed by
-  the profile selector, badge profile editor, greeting settings, manual entry, and scan-log/privacy controls.
+  greeting settings, manual entry, and scan-log/privacy controls.
   A recognized badge greeting (OCR or manual entry) vibrates once immediately when the greeting
   starts on the primary cap; stopping the camera or a failure does not vibrate.
 - **Sound:** opt-in applause/whistle detection, wearer voice sampling, English/German
@@ -81,7 +81,7 @@ Font copyright and SIL Open Font License notices are bundled in [public/licenses
 The UI retains its dark theme and blue accent, with larger touch targets, visible keyboard
 focus, arrow/Home/End tab navigation, a non-colour selected-tab marker, responsive form
 grids and wrapping long preset names. Diagnostics are expandable, not removed.
-Existing stored content, settings, QR profiles, backup formats and BLE preset sharing are preserved.
+Existing stored content, settings, backup formats and BLE preset sharing are preserved.
 See [the UI change record](docs/ui-improvements.md) for the expert review and implementation details.
 
 ## Native apps and approach mode
@@ -89,7 +89,7 @@ See [the UI change record](docs/ui-improvements.md) for the expert review and im
 Besides the PWA, the project builds **Android** and **iOS** apps (Capacitor, `android/` and `ios/`) with the shared UI plus **Approach mode**: when caps come close, they show greetings for each other or one marquee spanning all caps, configurable for 1, 2, up to 4, up to 8, and more than 8 caps. While approach mode runs, presets can also be shared with a nearby phone; the receiver must accept the preset before it is transferred. See [docs/approaching-mode.md](docs/approaching-mode.md) for the detection design and [docs/INSTALL.md](docs/INSTALL.md) for building the APK.
 
 Web Bluetooth requires a supported browser (for example Chrome on Android or desktop);
-Safari on iOS does not support it. Editing, presets, QR profiles, manual QR entry and
+Safari on iOS does not support it. Editing, presets, manual scan-data entry and
 backup/import work offline but require a connected cap, so they are not available in a
 browser without Bluetooth. Camera scanning requires HTTPS
 and permission. Imported native group presets are retained and can be exported again,
@@ -274,7 +274,7 @@ all current Custom section drafts including text font and image fit/background b
 choosing a file, current content and sequence steps including a paused sequence draft,
 plus the current GitHub handle, prefix/postfix text and independent scroll speed),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
-**Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
+**Scan settings** (proximity thresholds, timing, current greeting,
 repetitions, speed and scan-logging preference), **Display & transport settings**
 (LED text font, keep-cap-black-when-idle preference, dimensions, brightness, rotation,
 mirroring and Bluetooth write settings; older backups without a font or keep-black
@@ -289,7 +289,8 @@ keeping excluded presets and settings unchanged. Importing Scan settings can ena
 local scan logging; log contents and scanned QR payloads are never included. Phone
 identity, cap connections, permissions and live running state are not shared.
 Older version-2 files keep newer settings they do not contain. Older full JSON backups
-remain importable with their original full-replacement behavior. Reconnect after importing
+remain importable with their original full-replacement behavior; obsolete saved badge
+profiles and custom name regexes in those files are ignored. Reconnect after importing
 transport settings to apply the new write profile.
 
 ## GitHub contribution graph
@@ -344,12 +345,10 @@ capture, on Stop, on changing tabs, or when the app is hidden.
 For OCR, center the printed name and company in the preview and tap **Capture text**.
 The parser recognizes plain text, JSON, vCard, MECARD, and multiline badge text,
 including company, job title, email, phone, URL, and notes. Configure a greeting such as
-`Hi {name}!`, its scroll speed, and repetition count (**3 by default**). Save up to
-**three scan profiles** locally, each with a regex, greeting template, and note; **None**
-selects the general parser. Regex named groups can include `name`, `firstname`,
-`lastname`, `company`, `title`, `email`, `phone`, `url`, and `notes`; greeting templates
-can use each of these fields. Manual scan-data entry is available when a camera cannot
-be used. Invalid or unmatched patterns show an error without changing the cap.
+`Hi {name}!`, scroll speed, and repetition count (**3 by default**).
+Names and contact fields are extracted automatically; greeting templates can use the
+captured fields listed below the greeting input. Manual scan-data entry is available
+when a camera cannot be used. Invalid scan data shows an error without changing the cap.
 
 Scanning is available immediately after connecting a cap. If no content has been
 sent during this connection, the display is cleared to black after the greeting:
@@ -367,7 +366,7 @@ Scanner configuration stays in local storage. Scanned data is not persisted unle
 camera scans, OCR captures, and submitted manual entries are logged before extraction,
 including scans whose greeting fails. The local `qr-scan-log.jsonl` file contains one
 JSON object per line with a UTC timestamp, source (`camera`/`ocr`/`manual`), the complete
-unmodified payload, and selected profile ID/note (or `null`). Logs may contain personal
+unmodified payload, and extracted fields when available. Logs may contain personal
 data; obtain appropriate consent and share only with trusted recipients. The app does
 not upload scans; logs are excluded from preset backups. **Share scan log** opens the
 native share sheet or shares/downloads the file in supported browsers.

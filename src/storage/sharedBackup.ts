@@ -2,7 +2,7 @@ import type { ApproachSettings } from '../approach/tiers';
 import { validateGitHubSettings, type GitHubSettings } from '../github/contributions';
 import { DEFAULT_TEXT_FONT } from '../render/fonts';
 import { validatePreferences as validateSoundPreferences, type SoundPreferences } from '../sound/dictionary';
-import { validateGreeting, validateGreetingProfiles, type GreetingProfileState, type ScannerBackup } from '../scanner/greeting';
+import { validateGreeting, type ScannerBackup } from '../scanner/greeting';
 import {
   DEFAULT_SETTINGS, MAX_IMPORT_BYTES, MAX_PRESETS, isGroupPreset, parseImport, validateContent, validateCustomDrafts, validateGroups, validateSequenceSteps, validateSettings,
   type Content, type ContentPreset, type CustomDrafts, type GroupContent, type GroupPreset, type Preset, type SequenceStep, type Settings,
@@ -19,9 +19,9 @@ export interface SharedBackup extends BackupFeatures {
   approach?: { groups: GroupContent; presets: GroupPreset[] } & Partial<ApproachOptions>;
   scan?: ScanSettings;
 }
-export type ImportedBackup = SharedBackup | { version: 1; settings: Settings; presets: Preset[]; qrProfiles: GreetingProfileState };
+export type ImportedBackup = SharedBackup | { version: 1; settings: Settings; presets: Preset[] };
 
-export function exportSelectedJson(presets: Preset[], approach: ApproachSettings, selection: ShareSelection, qrProfiles?: GreetingProfileState, features: BackupFeatures = {}): string {
+export function exportSelectedJson(presets: Preset[], approach: ApproachSettings, selection: ShareSelection, features: BackupFeatures = {}): string {
   if (!selection.creations && !selection.approach && !selection.scan && !selection.settings && !selection.sound) throw new Error('Choose at least one category to share.');
   if (selection.settings && !features.settings) throw new Error('Display and transport settings are unavailable.');
   if (selection.sound && !features.sound) throw new Error('Sound settings are unavailable.');
@@ -42,7 +42,6 @@ export function exportSelectedJson(presets: Preset[], approach: ApproachSettings
       enterDbm: approach.enterDbm, leaveDbm: approach.leaveDbm, settleMs: approach.settleMs,
       confirmMs: approach.confirmMs, staleMs: approach.staleMs,
     } } : {}),
-    ...(selection.scan && qrProfiles ? { qrProfiles: validateGreetingProfiles(qrProfiles) } : {}),
     ...(selection.scan && features.qrGreeting ? { qrGreeting: validateGreeting(features.qrGreeting) } : {}),
     ...(selection.scan && features.qrScanLogging !== undefined ? { qrScanLogging: validateLogging(features.qrScanLogging) } : {}),
     ...(selection.scan && features.qrGithubLookup !== undefined ? { qrGithubLookup: validateGithubLookup(features.qrGithubLookup) } : {}),
@@ -115,7 +114,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
   if (raw.version !== 2) throw new Error(`Unsupported export version ${String(raw.version)}.`);
   if (!('creations' in raw) && !('approach' in raw) && !('scan' in raw) && !('settings' in raw) && !('sound' in raw)) throw new Error('No shared categories in this file.');
   if (['qrProfiles', 'qrGreeting', 'qrScanLogging', 'qrGithubLookup'].some((key) => key in raw) && !('scan' in raw))
-    throw new Error('QR profiles and greeting preferences must be included with scan settings.');
+    throw new Error('Scan preferences must be included with scan settings.');
   if ('createContent' in raw && !('creations' in raw)) throw new Error('Custom content must be included with creations.');
   if ('customDrafts' in raw && !('creations' in raw)) throw new Error('Custom editor drafts must be included with creations.');
   if ('github' in raw && !('creations' in raw)) throw new Error('GitHub settings must be included with creations.');
@@ -140,7 +139,6 @@ export function parseSharedBackup(text: string): ImportedBackup {
     ...('creations' in raw ? { creations: contentPresets.filter((p): p is ContentPreset => !isGroupPreset(p)) } : {}),
     ...(groups && approach ? { approach: { groups, presets: savedGroups.filter(isGroupPreset), ...validateApproachOptions(approach) } } : {}),
     ...('scan' in raw ? { scan: validateScan(raw.scan) } : {}),
-    ...('qrProfiles' in raw ? { qrProfiles: validateGreetingProfiles(raw.qrProfiles) } : {}),
     ...('qrGreeting' in raw ? { qrGreeting: validateGreeting(raw.qrGreeting) } : {}),
     ...('qrScanLogging' in raw ? { qrScanLogging: validateLogging(raw.qrScanLogging) } : {}),
     ...('qrGithubLookup' in raw ? { qrGithubLookup: validateGithubLookup(raw.qrGithubLookup) } : {}),

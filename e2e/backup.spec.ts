@@ -34,13 +34,6 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.locator('[data-tier=pair][data-field=text]').fill('Imported group');
   await page.locator('[data-tier=pair][data-field=text]').dispatchEvent('change');
   await page.click('nav [data-tab=scan]');
-  await page.fill('#qr-note', 'Saved badge');
-  await page.fill('#qr-pattern', '^(.+)$');
-  await page.fill('#qr-template', 'Saved {name}!');
-  await page.click('#qr-profile-save');
-  await expect(page.locator('#qr-profile')).toHaveValue('1');
-  // The active editor may differ from its saved profile and must round-trip exactly.
-  await page.fill('#qr-pattern', 'name=(.+)');
   await page.fill('#qr-template', 'Current {name}!');
   await page.fill('#qr-repetitions', '17');
   await page.locator('#qr-speed').fill('8');
@@ -67,8 +60,8 @@ test('all categories restore settings from every tab immediately and after reloa
   expect(backup.createContent).toMatchObject({ kind: 'text', text: 'Connect draft', speed: 7 });
   expect(backup.approach).toMatchObject({ mode: 'hub', beacon: false, countNearbyCaps: false });
   expect(backup.scan.enterDbm).toBe(-63);
-  expect(backup.qrGreeting).toEqual({ pattern: 'name=(.+)', template: 'Current {name}!', repetitions: 17, speed: 8 });
-  expect(backup.qrProfiles.profiles[0].template).toBe('Saved {name}!');
+  expect(backup.qrGreeting).toEqual({ template: 'Current {name}!', repetitions: 17, speed: 8 });
+  expect(backup).not.toHaveProperty('qrProfiles');
   expect(backup.qrScanLogging).toBe(true);
   expect(backup.settings).toMatchObject({ textFont: 'tiny5', keepBlack: true, brightness: 2, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90, mirrorH: true } });
   expect(backup.sound).toMatchObject({ language: 'de-DE', sounds: false, allowBrowserSpeech: false, reactions: { greeting: { text: 'SERVUS 👋' } } });
@@ -90,7 +83,6 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.fill('#ap-enter', '-70');
   await page.locator('#ap-enter').dispatchEvent('change');
   await page.click('nav [data-tab=scan]');
-  await page.selectOption('#qr-profile', '');
   await page.fill('#qr-repetitions', '3');
   await page.locator('#qr-speed').fill('5');
   await page.uncheck('#qr-log-enabled');
@@ -101,6 +93,8 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.fill('#sound-text-greeting', 'CHANGED');
   await page.locator('#sound-text-greeting').dispatchEvent('change');
   await page.click('nav [data-tab=presets]');
+  // Old backups may contain an obsolete regex, which must not affect automatic extraction.
+  backup.qrGreeting.pattern = '[';
   await importBackup(page, backup);
   await expect(page.locator('#p-msg')).toContainText('Imported shared categories.');
 
@@ -120,8 +114,7 @@ test('all categories restore settings from every tab immediately and after reloa
     await expect(page.locator('[data-tier=pair][data-field=text]')).toHaveValue('Imported group');
     await expect(page.locator('#ap-start')).not.toBeChecked();
     await page.click('nav [data-tab=scan]');
-    await expect(page.locator('#qr-profile')).toHaveValue('1');
-    await expect(page.locator('#qr-pattern')).toHaveValue('name=(.+)');
+    await expect(page.locator('#qr-pattern')).toHaveCount(0);
     await expect(page.locator('#qr-template')).toHaveValue('Current {name}!');
     await expect(page.locator('#qr-repetitions')).toHaveValue('17');
     await expect(page.locator('#qr-speed')).toHaveValue('8');

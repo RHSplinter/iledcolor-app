@@ -16,7 +16,6 @@ vi.mock('@capacitor/share', () => ({ Share: { share: vi.fn() } }));
 const entry: ScanLogEntry = {
   timestamp: '2026-10-17T00:00:00.000Z', source: 'camera',
   raw: 'badge^Rob^Bos^Xebia^\n"email": privé@example.org',
-  profile: { id: '1', note: 'MS AI Tour' },
 };
 
 beforeEach(() => {
@@ -26,7 +25,7 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('local scan log', () => {
-  it('appends one JSON line with the entire original payload, timestamp, source and profile', async () => {
+  it('appends one JSON line with the entire original payload, timestamp and source', async () => {
     await appendScanLog(entry);
     const options = vi.mocked(Filesystem.appendFile).mock.calls[0]![0];
     expect(options).toEqual({

@@ -7,13 +7,12 @@ import { gifDelayMs } from '../render/span';
 import { loadKv, saveKv } from '../storage/db';
 import { vibrateFeedback } from '../feedback';
 import { BadgeCamera } from './camera';
-import { extractNameSafely } from './extract';
 import { appendScanLog, shareScanLog } from './log';
 import { BadgeTextRecognizer } from './ocr';
 import { differingGithubHandles, fetchPublicProfile, findGithubHandles } from './githubLookup';
 import {
-  DEFAULT_GREETING, greetingDuration, greetingText, validateGreeting, validateGreetingProfiles,
-  type ExtractedName, type GreetingProfile, type GreetingProfileState, type GreetingSettings, type ScannerBackup,
+  DEFAULT_GREETING, extractName, greetingDuration, greetingText, validateGreeting,
+  type ExtractedName, type GreetingSettings, type ScannerBackup,
 } from './greeting';
 
 interface ScannerContext {
@@ -33,8 +32,6 @@ export class GreetingUi {
   private processing = false;
   private playing?: DeviceController;
   private scanId = 0;
-  private profiles: GreetingProfile[] = [];
-  private selectedProfileId: string | null = null;
   private loggingEnabled = false;
   private githubLookupEnabled = false;
   private lookupId = 0;
@@ -65,24 +62,6 @@ export class GreetingUi {
         <p id="qr-ready" class="small" role="status"></p>
         <p class="small">Capture a badge's printed text to greet its owner on this phone's primary cap. Other caps keep playing.
         Previously sent content is restored afterwards. If no content has been sent yet, the display is cleared to black.</p>
-        <label for="qr-profile">Saved badge profile</label>
-        <select id="qr-profile"><option value="">None — general scan data</option></select>
-      </div>
-      <div class="card">
-        <h2>Badge profile</h2>
-        <label for="qr-note">Profile note</label>
-        <input id="qr-note" type="text" maxlength="60" placeholder="e.g. MS AI Tour" />
-        <div class="row">
-          <button id="qr-profile-save">Save profile</button>
-          <button id="qr-profile-delete" hidden>Delete profile</button>
-        </div>
-        <p class="small">Save up to three profiles. Select None for automatic badge-text, plain-text, JSON, vCard or MECARD extraction.</p>
-        <label for="qr-pattern">Name regex (optional)</label>
-        <input id="qr-pattern" type="text" maxlength="300" spellcheck="false" aria-describedby="qr-pattern-help" />
-        <p id="qr-pattern-help" class="small">Without a regex: printed badge text, plain names, JSON, vCards and MECARD.
-        Regex capture groups 1–3 map to firstname, lastname and company. Named groups may use firstname or name,
-        lastname, company, title, email, phone, url and notes. Example for MS AI Tour badges: ^[^^]*\\^(?&lt;firstname&gt;[^^]+)\\^(?&lt;lastname&gt;[^^]+)\\^(?&lt;company&gt;[^^]+)\\^.
-        Enter the pattern without / delimiters.</p>
       </div>
       <div class="card">
         <h2>Greeting settings</h2>
@@ -104,7 +83,7 @@ export class GreetingUi {
         <h2>Scan log &amp; privacy</h2>
         <label><input id="qr-log-enabled" type="checkbox" /> Save all scanned data to a local file</label>
         <p class="small">Off by default. When enabled, logs complete camera, OCR and manual scan data (including failed greetings),
-        timestamps and profile notes in qr-scan-log.jsonl. This may include personal data.
+        timestamps and extracted fields in qr-scan-log.jsonl. This may include personal data.
         Turning logging off keeps the existing file. Logs are separate from preset backups.
         Share only with trusted recipients.</p>
         <button id="qr-log-share">Share scan log</button>
@@ -125,21 +104,10 @@ export class GreetingUi {
         <a href="${import.meta.env.BASE_URL}licenses/scanner-credits.txt">Credits and licenses</a>.</p>
       </div>`;
     let settings: GreetingSettings = DEFAULT_GREETING;
-    let restoredSettings = false;
     try {
       const saved = await loadKv('qrGreeting');
-      if (saved !== undefined) { settings = validateGreeting(saved); restoredSettings = true; }
+      if (saved !== undefined) settings = validateGreeting(saved);
     } catch (e) { this.error(`Could not restore scanner settings: ${this.message(e)}`); }
-    try {
-      const savedProfiles = await loadKv('qrGreetingProfiles');
-      if (savedProfiles !== undefined) {
-        const state = validateGreetingProfiles(savedProfiles);
-        this.profiles = state.profiles;
-        this.selectedProfileId = state.selectedId;
-        const selected = this.profiles.find((profile) => profile.id === this.selectedProfileId);
-        if (selected && !restoredSettings) settings = { ...settings, pattern: selected.pattern, template: selected.template };
-      }
-    } catch (e) { this.error(`Could not restore saved badge profiles: ${this.message(e)}`); }
     try {
       const enabled = await loadKv('qrScanLogging');
       if (enabled !== undefined && typeof enabled !== 'boolean') throw new Error('Invalid logging preference.');
@@ -152,20 +120,12 @@ export class GreetingUi {
       this.githubLookupEnabled = lookup === true;
     } catch (e) { $('qr-log-error').textContent = `Could not restore GitHub lookup preference: ${this.message(e)}`; }
     $<HTMLInputElement>('qr-github-enabled').checked = this.githubLookupEnabled;
-    this.renderProfiles();
-    $<HTMLSelectElement>('qr-profile').value = this.selectedProfileId ?? '';
-    const selectedProfile = this.profiles.find((profile) => profile.id === this.selectedProfileId);
-    $<HTMLInputElement>('qr-note').value = selectedProfile?.note ?? '';
-    $<HTMLInputElement>('qr-pattern').value = settings.pattern;
     $<HTMLInputElement>('qr-template').value = settings.template;
     $<HTMLInputElement>('qr-repetitions').value = String(settings.repetitions);
     $<HTMLInputElement>('qr-speed').value = String(settings.speed);
-    for (const id of ['qr-pattern', 'qr-template', 'qr-repetitions', 'qr-speed']) {
+    for (const id of ['qr-template', 'qr-repetitions', 'qr-speed']) {
       $(id).onchange = () => { void this.persist(); };
     }
-    $('qr-profile').onchange = () => { void this.selectProfile($<HTMLSelectElement>('qr-profile').value || null); };
-    $('qr-profile-save').onclick = () => { void this.saveProfile(); };
-    $('qr-profile-delete').onclick = () => { void this.deleteProfile(); };
     $('qr-text-start').onclick = () => { void this.scanText(); };
     $('qr-capture').onclick = () => { void this.captureText(); };
     $('qr-stop').onclick = () => this.stopCamera();
@@ -232,11 +192,9 @@ export class GreetingUi {
           : `${label}@${profile.login} has no public email.`;
       }).join(' ');
       if (this.loggingEnabled) {
-        const selected = this.profiles.find((item) => item.id === this.selectedProfileId);
         try {
           await appendScanLog({
             timestamp: new Date().toISOString(), scanId, source: 'ocr', raw,
-            profile: selected ? { id: selected.id, note: selected.note } : null,
             githubLookup: results.map(({ handle, origin, profile }) => ({
               handle, origin, found: !!profile, ...(profile ? { login: profile.login, email: profile.email } : {}),
             })),
@@ -263,7 +221,6 @@ export class GreetingUi {
   private status(message: string) { $('qr-status').textContent = message; }
   private readSettings() {
     return validateGreeting({
-      pattern: $<HTMLInputElement>('qr-pattern').value,
       template: $<HTMLInputElement>('qr-template').value,
       repetitions: Number($<HTMLInputElement>('qr-repetitions').value),
       speed: Number($<HTMLInputElement>('qr-speed').value),
@@ -275,51 +232,21 @@ export class GreetingUi {
     catch (e) { this.error(`Could not save scanner settings: ${this.message(e)}`); }
   }
 
-  private renderProfiles() {
-    const select = $<HTMLSelectElement>('qr-profile');
-    select.replaceChildren(new Option('None — general scan data', ''));
-    for (const profile of this.profiles) select.add(new Option(`${profile.id}. ${profile.note}`, profile.id));
-    $<HTMLButtonElement>('qr-profile-delete').hidden = !this.selectedProfileId;
-  }
-
-  exportProfiles(): GreetingProfileState {
-    return validateGreetingProfiles({ profiles: this.profiles, selectedId: this.selectedProfileId });
-  }
-
   exportSettings(): ScannerBackup {
     return { qrGreeting: this.readSettings(), qrScanLogging: this.loggingEnabled, qrGithubLookup: this.githubLookupEnabled };
   }
 
-  /** Prepare legacy profile-only imports before committing any backup data. */
   prepareImport(value: ScannerBackup): ScannerBackup {
-    const state = value.qrProfiles === undefined ? undefined : validateGreetingProfiles(value.qrProfiles);
-    const active = state?.profiles.find((profile) => profile.id === state.selectedId);
-    const settings = value.qrGreeting !== undefined ? validateGreeting(value.qrGreeting)
-      : state ? validateGreeting({
-        ...this.readSettings(),
-        pattern: active?.pattern ?? DEFAULT_GREETING.pattern,
-        template: active?.template ?? DEFAULT_GREETING.template,
-      }) : undefined;
     return {
-      ...(state ? { qrProfiles: state } : {}),
-      ...(settings ? { qrGreeting: settings } : {}),
+      ...(value.qrGreeting !== undefined ? { qrGreeting: validateGreeting(value.qrGreeting) } : {}),
       ...(value.qrScanLogging !== undefined ? { qrScanLogging: value.qrScanLogging } : {}),
       ...(value.qrGithubLookup !== undefined ? { qrGithubLookup: value.qrGithubLookup } : {}),
     };
   }
 
   applyImportedSettings(value: ScannerBackup) {
-    if (value.qrProfiles) {
-      this.profiles = value.qrProfiles.profiles;
-      this.selectedProfileId = value.qrProfiles.selectedId;
-      this.renderProfiles();
-      $<HTMLSelectElement>('qr-profile').value = this.selectedProfileId ?? '';
-      const active = this.profiles.find((profile) => profile.id === this.selectedProfileId);
-      $<HTMLInputElement>('qr-note').value = active?.note ?? '';
-    }
     if (value.qrGreeting) {
       const settings = value.qrGreeting;
-      $<HTMLInputElement>('qr-pattern').value = settings.pattern;
       $<HTMLInputElement>('qr-template').value = settings.template;
       $<HTMLInputElement>('qr-repetitions').value = String(settings.repetitions);
       $<HTMLInputElement>('qr-speed').value = String(settings.speed);
@@ -334,63 +261,6 @@ export class GreetingUi {
       $<HTMLInputElement>('qr-github-enabled').checked = this.githubLookupEnabled;
       if (!this.githubLookupEnabled) { this.lookupId++; $('qr-github-result').textContent = ''; }
     }
-  }
-
-  private async persistProfiles(profiles = this.profiles, selectedId = this.selectedProfileId) {
-    await saveKv('qrGreetingProfiles', validateGreetingProfiles({ profiles, selectedId }));
-  }
-
-  private async selectProfile(id: string | null) {
-    const profile = this.profiles.find((item) => item.id === id);
-    if (id && !profile) {
-      this.error('That badge profile is no longer saved.');
-      return;
-    }
-    this.selectedProfileId = id;
-    $<HTMLSelectElement>('qr-profile').value = id ?? '';
-    $<HTMLInputElement>('qr-note').value = profile?.note ?? '';
-    $<HTMLInputElement>('qr-pattern').value = profile?.pattern ?? DEFAULT_GREETING.pattern;
-    $<HTMLInputElement>('qr-template').value = profile?.template ?? DEFAULT_GREETING.template;
-    try {
-      await Promise.all([saveKv('qrGreeting', this.readSettings()), this.persistProfiles()]);
-      this.error('');
-    } catch (e) { this.error(`Could not select badge profile: ${this.message(e)}`); }
-  }
-
-  private async saveProfile() {
-    try {
-      const settings = this.readSettings();
-      const note = $<HTMLInputElement>('qr-note').value.trim();
-      if (!note || note.length > 60) throw new Error('Add a profile note of at most 60 characters.');
-      const id = this.selectedProfileId ?? ['1', '2', '3'].find((slot) => !this.profiles.some((profile) => profile.id === slot));
-      if (!id) throw new Error('All three profile slots are in use. Select one to replace it.');
-      const profile = { id, note, pattern: settings.pattern, template: settings.template };
-      const profiles = [...this.profiles.filter((item) => item.id !== id), profile].sort((a, b) => a.id.localeCompare(b.id));
-      await this.persistProfiles(profiles, id);
-      this.profiles = profiles;
-      this.selectedProfileId = id;
-      this.renderProfiles();
-      $<HTMLSelectElement>('qr-profile').value = id;
-      this.error('');
-      this.status(`Saved badge profile "${note}".`);
-    } catch (e) { this.error(`Could not save badge profile: ${this.message(e)}`); }
-  }
-
-  private async deleteProfile() {
-    if (!this.selectedProfileId) return;
-    const profiles = this.profiles.filter((profile) => profile.id !== this.selectedProfileId);
-    try {
-      await this.persistProfiles(profiles, null);
-      this.profiles = profiles;
-      this.selectedProfileId = null;
-      this.renderProfiles();
-      $<HTMLInputElement>('qr-note').value = '';
-      $<HTMLInputElement>('qr-pattern').value = DEFAULT_GREETING.pattern;
-      $<HTMLInputElement>('qr-template').value = DEFAULT_GREETING.template;
-      await saveKv('qrGreeting', this.readSettings());
-      this.error('');
-      this.status('Deleted badge profile.');
-    } catch (e) { this.error(`Could not delete badge profile: ${this.message(e)}`); }
   }
 
   updateStatus() {
@@ -412,7 +282,7 @@ export class GreetingUi {
     $('qr-cancel').hidden = !this.playing;
     $<HTMLInputElement>('qr-log-enabled').disabled = this.processing || this.scanning || this.savingLogging || this.sharingLog;
     $<HTMLButtonElement>('qr-log-share').disabled = this.processing || this.scanning || this.sharingLog;
-    for (const id of ['qr-profile', 'qr-note', 'qr-pattern', 'qr-template', 'qr-repetitions', 'qr-speed', 'qr-raw', 'qr-profile-save', 'qr-profile-delete']) {
+    for (const id of ['qr-template', 'qr-repetitions', 'qr-speed', 'qr-raw']) {
       $<HTMLInputElement>(id).disabled = this.processing || this.scanning;
     }
   }
@@ -506,15 +376,13 @@ export class GreetingUi {
     this.updateStatus();
     try {
       if (this.loggingEnabled) {
-        const profile = this.profiles.find((item) => item.id === this.selectedProfileId);
         let loggedFields: ExtractedName | undefined;
-        try { loggedFields = await extractNameSafely(raw, this.readSettings().pattern); } catch { /* raw text is still logged */ }
+        try { loggedFields = extractName(raw); } catch { /* raw text is still logged */ }
         try {
           await appendScanLog({
             timestamp: scanId, scanId, source, raw,
             ...(loggedFields ? { extracted: loggedFields } : {}),
             ...(source === 'ocr' ? (() => { const githubHandles = differingGithubHandles(raw); return githubHandles ? { githubHandles } : {}; })() : {}),
-            profile: profile ? { id: profile.id, note: profile.note } : null,
           });
           $('qr-log-error').textContent = '';
           $('qr-log-status').textContent = 'Scan saved to qr-scan-log.jsonl.';
@@ -522,12 +390,12 @@ export class GreetingUi {
       }
       const settings = this.readSettings();
       await saveKv('qrGreeting', settings);
-      const extracted: ExtractedName = await extractNameSafely(raw, settings.pattern);
+      const extracted = extractName(raw);
       const text = greetingText(settings.template, extracted);
       await ensureFont();
       const [width, height] = this.ctx.logicalDims();
       const marquee = renderSpanMarquee(text, width, height, 1, 0, parseHexColor('#ffffff'), parseHexColor('#000000'));
-      if (marquee.unsupported.length) throw new Error(`Unsupported characters: ${marquee.unsupported.join(' ')}. Adjust the regex or greeting.`);
+      if (marquee.unsupported.length) throw new Error(`Unsupported characters: ${marquee.unsupported.join(' ')}. Adjust the scan data or greeting.`);
       const frames = marquee.frames.map((frame) => this.ctx.physical(frame));
       frames.push(this.ctx.physical(solid(width, height, [0, 0, 0])));
       const delay = gifDelayMs(this.ctx.marqueeDelay(settings.speed) * marquee.step / 2);

@@ -19,7 +19,7 @@ const selection = { creations: true, approach: false, scan: false };
 
 describe('Custom configuration', () => {
   it('round-trips all drafts, text font and GitHub presets without fetched data', () => {
-    const data = parseSharedBackup(exportSelectedJson([preset], DEFAULT_APPROACH, selection, undefined, { customDrafts: drafts, github }));
+    const data = parseSharedBackup(exportSelectedJson([preset], DEFAULT_APPROACH, selection, { customDrafts: drafts, github }));
     expect(data).toMatchObject({ customDrafts: drafts, github, creations: [preset] });
     expect(decodeSharedPreset(encodeSharedPreset(preset))).toEqual({ name: preset.name, content: preset.content });
     expect(validateContent({ kind: 'sequence', steps: [{ content: preset.content, seconds: 2 }] })).toMatchObject({ steps: [{ content: preset.content }] });
@@ -28,7 +28,7 @@ describe('Custom configuration', () => {
   it('round-trips GitHub presets with a stored graph for offline replay', () => {
     const graph = { asOf: '2026-10-20', days: [{ date: '2026-10-20', count: 2, level: 1 }] };
     const stored = { ...preset, id: 'github-graph', content: { ...preset.content, ...graph } };
-    const data = parseSharedBackup(exportSelectedJson([stored], DEFAULT_APPROACH, selection, undefined, {}));
+    const data = parseSharedBackup(exportSelectedJson([stored], DEFAULT_APPROACH, selection, {}));
     expect(data).toMatchObject({ creations: [stored] });
     expect(decodeSharedPreset(encodeSharedPreset(stored))).toEqual({ name: stored.name, content: stored.content });
     expect(validateContent({ kind: 'sequence', steps: [{ content: stored.content, seconds: 2 }] })).toMatchObject({ steps: [{ content: stored.content }] });
@@ -41,7 +41,7 @@ describe('Custom configuration', () => {
   it('validates, round-trips and preserves the GitHub caption font', () => {
     for (const font of ['tiny5', null] as const) {
       const settings = { ...github, font };
-      const data = parseSharedBackup(exportSelectedJson([{ ...preset, content: { ...preset.content, font } }], DEFAULT_APPROACH, selection, undefined, { github: settings }));
+      const data = parseSharedBackup(exportSelectedJson([{ ...preset, content: { ...preset.content, font } }], DEFAULT_APPROACH, selection, { github: settings }));
       expect(data).toMatchObject({ github: settings, creations: [{ content: { font } }] });
     }
     for (const font of ['Arial', 3, '']) {
@@ -53,7 +53,7 @@ describe('Custom configuration', () => {
 
   it('excludes all Custom configuration when Creations is unselected', () => {
     const data = JSON.parse(exportSelectedJson([preset], DEFAULT_APPROACH, { ...selection, creations: false, settings: true },
-      undefined, { customDrafts: drafts, github, settings: DEFAULT_SETTINGS }));
+      { customDrafts: drafts, github, settings: DEFAULT_SETTINGS }));
     for (const key of ['customDrafts', 'github', 'creations']) expect(data).not.toHaveProperty(key);
   });
 

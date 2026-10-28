@@ -1,7 +1,6 @@
 import { findGithubHandle, findLinkedinHandle } from './githubLookup';
 
 export interface GreetingSettings {
-  pattern: string;
   template: string;
   repetitions: number;
   speed: number;
@@ -20,81 +19,38 @@ export interface ExtractedName {
   notes?: string;
 }
 
-export interface GreetingProfile {
-  id: string;
-  note: string;
-  pattern: string;
-  template: string;
-}
-
-export interface GreetingProfileState {
-  selectedId: string | null;
-  profiles: GreetingProfile[];
-}
-
 export interface ScannerBackup {
-  qrProfiles?: GreetingProfileState;
   qrGreeting?: GreetingSettings;
   qrScanLogging?: boolean;
   qrGithubLookup?: boolean;
 }
 
 export const DEFAULT_GREETING: GreetingSettings = {
-  pattern: '',
   template: 'Hi {name}!',
   repetitions: 3,
   speed: 3,
 };
-
-const PROFILE_IDS = ['1', '2', '3'];
-
-function validatePattern(pattern: unknown): asserts pattern is string {
-  if (typeof pattern !== 'string' || pattern.length > 300) throw new Error('Name regex must be at most 300 characters.');
-  if (pattern) new RegExp(pattern, 'u');
-}
 
 function validateTemplate(template: unknown): asserts template is string {
   if (typeof template !== 'string' || !template.trim() || template.length > 200 || !/\{(?:name|firstname)\}/.test(template))
     throw new Error('Enter a greeting of at most 200 characters containing {name} or {firstname}.');
 }
 
-export function validateGreetingProfiles(value: unknown): GreetingProfileState {
-  if (!value || typeof value !== 'object') throw new Error('Invalid saved badge profiles.');
-  const state = value as Record<string, unknown>;
-  if (!Array.isArray(state.profiles) || state.profiles.length > 3) throw new Error('Save up to three badge profiles.');
-  const profiles = state.profiles.map((item): GreetingProfile => {
-    if (!item || typeof item !== 'object') throw new Error('Invalid saved badge profile.');
-    const profile = item as Record<string, unknown>;
-    if (typeof profile.id !== 'string' || !PROFILE_IDS.includes(profile.id) ||
-      typeof profile.note !== 'string' || !profile.note.trim() || profile.note.length > 60)
-      throw new Error('Each badge profile needs a note of at most 60 characters.');
-    validatePattern(profile.pattern);
-    validateTemplate(profile.template);
-    return { id: profile.id, note: profile.note.trim(), pattern: profile.pattern, template: profile.template };
-  });
-  if (new Set(profiles.map((profile) => profile.id)).size !== profiles.length)
-    throw new Error('Saved badge profile slots must be unique.');
-  if (state.selectedId !== null && (typeof state.selectedId !== 'string' || !profiles.some((profile) => profile.id === state.selectedId)))
-    throw new Error('The selected badge profile is not saved.');
-  return { selectedId: state.selectedId, profiles };
-}
-
 export function validateGreeting(value: unknown): GreetingSettings {
   if (!value || typeof value !== 'object') throw new Error('Invalid scanner settings.');
   const v = value as Record<string, unknown>;
-  validatePattern(v.pattern);
   validateTemplate(v.template);
   if (typeof v.repetitions !== 'number' || !Number.isSafeInteger(v.repetitions) || v.repetitions < 1 || v.repetitions > 65536)
     throw new Error('Repetitions must be a whole number between 1 and 65536 (GIF format limit).');
   if (typeof v.speed !== 'number' || !Number.isInteger(v.speed) || v.speed < 1 || v.speed > 10)
     throw new Error('Scroll speed must be between 1 and 10.');
-  return { pattern: v.pattern, template: v.template, repetitions: v.repetitions, speed: v.speed };
+  return { template: v.template, repetitions: v.repetitions, speed: v.speed };
 }
 
 function cleanField(value: string | undefined, field: string, required = false): string | undefined {
   const cleaned = value?.replace(/\\[nN]/g, ' ').replace(/\\([,;:\\\\])/g, '$1').trim().replace(/\s+/g, ' ');
   if (!cleaned) {
-    if (required) throw new Error('No usable name found. Set a regex with a capture group for the name.');
+    if (required) throw new Error('No usable name found in the scanned data.');
     return undefined;
   }
   if ((required && cleaned.length > 100) || /[\u0000-\u001f\u007f]/.test(cleaned))
@@ -275,36 +231,9 @@ function parseFreeText(text: string): Partial<ExtractedName> {
   return fields;
 }
 
-export function extractName(raw: string, pattern: string): ExtractedName {
+export function extractName(raw: string): ExtractedName {
   if (!raw.trim() || raw.length > 4096) throw new Error('Scan data must contain between 1 and 4096 characters.');
-  let fields: Partial<ExtractedName>;
-  if (pattern) {
-    const match = new RegExp(pattern, 'du').exec(raw);
-    if (!match) throw new Error('The name regex did not match the scanned data.');
-    const namedRanges = Object.entries(match.indices?.groups ?? {})
-      .filter(([field]) => ['name', 'firstname', 'lastname', 'company', 'title', 'email', 'phone', 'url', 'github', 'linkedin', 'notes'].includes(field))
-      .flatMap(([, range]) => range ? [range] : []);
-    const isNamedFieldCapture = (index: number) => {
-      const range = match.indices?.[index];
-      return !!range && namedRanges.some(([start, end]) => start === range[0] && end === range[1]);
-    };
-    fields = {
-      name: match.groups?.name ?? match.groups?.firstname ?? (isNamedFieldCapture(1) ? match[0] : match[1] ?? match[0]),
-      ...(match[2] !== undefined && !isNamedFieldCapture(2) ? { lastname: match[2] } : {}),
-      ...(match[3] !== undefined && !isNamedFieldCapture(3) ? { company: match[3] } : {}),
-      ...(match.groups?.name !== undefined ? { name: match.groups.name } : {}),
-      ...(match.groups?.firstname !== undefined ? { name: match.groups.firstname } : {}),
-      ...(match.groups?.lastname !== undefined ? { lastname: match.groups.lastname } : {}),
-      ...(match.groups?.company !== undefined ? { company: match.groups.company } : {}),
-      ...(match.groups?.title !== undefined ? { title: match.groups.title } : {}),
-      ...(match.groups?.email !== undefined ? { email: match.groups.email } : {}),
-      ...(match.groups?.phone !== undefined ? { phone: match.groups.phone } : {}),
-      ...(match.groups?.url !== undefined ? { url: match.groups.url } : {}),
-      ...(match.groups?.github !== undefined ? { github: match.groups.github } : {}),
-      ...(match.groups?.linkedin !== undefined ? { linkedin: match.groups.linkedin } : {}),
-      ...(match.groups?.notes !== undefined ? { notes: match.groups.notes } : {}),
-    };
-  } else fields = payloadFields(raw.trim());
+  const fields = payloadFields(raw.trim());
 
   const name = cleanField(fields.name, 'name', true)!;
   const lastname = cleanField(fields.lastname, 'last name');
