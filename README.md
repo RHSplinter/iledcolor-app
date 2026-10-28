@@ -77,6 +77,19 @@ public GitHub email for each handle. If the paper badge and the badge screen sho
 handles, both are recorded (`githubHandles`). Entries from one scan share a `scanId`. The scan log is
 never part of backups and may contain personal data.
 
+## Browser tests
+
+Run `npm run e2e` for the full production-build suite, including offline/service-worker
+checks and Firefox/WebKit navigation smoke tests. Tests run independently, including
+tests in the same file, with four workers locally and two in CI to limit contention.
+Override concurrency with `npm run e2e -- --workers=2` on a busy machine.
+
+For a focused check, pass a spec and optionally a title filter:
+`npm run e2e -- e2e/scanner.spec.ts --grep "saves three QR profiles"`.
+Use `npm run e2e:smoke` for navigation-only checks; it does not replace the full suite.
+Screenshots are saved on failure. Traces are recorded on the first retry (CI retries
+failed tests); for local debugging, use `npm run e2e -- --trace=retain-on-failure`.
+
 ## More docs
 
 Go to:

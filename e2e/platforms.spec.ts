@@ -105,6 +105,7 @@ for (const platform of ['ios', 'android']) {
 for (const platform of ['ios', 'android']) {
   test(`${platform} shell offers a newer GitHub release and checks manually`, async ({ page }) => {
     await installFakeHat(page);
+    await page.clock.install();
     const { version } = JSON.parse(await (await import('node:fs/promises')).readFile('package.json', 'utf8')) as { version: string };
     const tag = 'v999.0.0';
     const url = (name: string) => `https://github.com/harrybin/iledcolor-app-native-added/releases/download/${tag}/${name}`;
@@ -121,6 +122,7 @@ for (const platform of ['ios', 'android']) {
     }, platform);
     await page.goto('/');
     await connectHat(page);
+    await page.clock.fastForward(3500);
     await expect(page.locator('#banner')).toContainText('LED Hat 999.0.0 is available', { timeout: 10000 });
     await page.click('#btn-app-update-later');
     await expect(page.locator('#banner')).toBeHidden();
@@ -132,7 +134,7 @@ for (const platform of ['ios', 'android']) {
     // Startup checks are throttled; a reload must not hit the API again, but a manual check does.
     await page.reload();
     await connectHat(page);
-    await page.waitForTimeout(3500);
+    await page.clock.fastForward(3500);
     expect(calls).toBe(1);
     releases = [];
     await page.getByRole('tab', { name: 'Settings' }).click();
@@ -145,6 +147,7 @@ for (const platform of ['ios', 'android']) {
 
 test('web app does not query GitHub Releases', async ({ page }) => {
   await installFakeHat(page);
+  await page.clock.install();
   let calls = 0;
   await page.route('https://api.github.com/**', (route) => { calls++; return route.fulfill({ json: [] }); });
   await page.goto('/');
@@ -152,6 +155,6 @@ test('web app does not query GitHub Releases', async ({ page }) => {
   await page.getByRole('tab', { name: 'Settings' }).click();
   await expect(page.locator('#app-update')).toContainText('The web app updates itself');
   await expect(page.locator('#upd-check')).toHaveCount(0);
-  await page.waitForTimeout(3500);
+  await page.clock.fastForward(3500);
   expect(calls).toBe(0);
 });

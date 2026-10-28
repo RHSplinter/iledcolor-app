@@ -262,17 +262,24 @@ test('keepBlack keeps cap black when idle while displaying approach, sound and s
 test('approach calibration and walk record/replay (mock)', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await page.click('nav button[data-tab=approach]');
   await page.click('#ap-sim-peer');
+  await page.locator('#ap-peers [data-act=rssi]').fill('-40');
   await page.click('#ap-start');
+  await expect(page.locator('#ap-start')).toBeEnabled();
+  await page.clock.runFor(1500);
   await expect(page.locator('#ap-cal-src')).toContainText('(phone)', { timeout: 15_000 });
   await page.click('#ap-rec');
   await page.click('#ap-mark-together');
   await page.click('#ap-cal-together');
+  await page.clock.runFor(5500);
   await expect(page.locator('#ap-cal-msg')).toContainText('Together: median', { timeout: 10_000 });
   await page.click('#ap-mark-apart');
   await page.locator('#ap-peers [data-act=rssi]').fill('-90');
   await page.click('#ap-cal-away');
+  await page.clock.runFor(5500);
   await expect(page.locator('#ap-cal-msg')).toContainText('Suggested: near at', { timeout: 10_000 });
   await page.click('#ap-cal-apply');
   await expect(page.locator('#ap-enter')).not.toHaveValue('-70');
