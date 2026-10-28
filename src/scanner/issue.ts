@@ -78,7 +78,7 @@ function valueCell(field: IssueField): string {
   return cell(field.value);
 }
 
-export function issueBody(fields: IssueField[], scannedAt: Date): string {
+export function issueBody(fields: IssueField[], scannedAt: Date, source: 'qr' | 'ocr' = 'ocr'): string {
   const rows = fields.filter((f) => f.value.trim())
     .map((f) => `| ${cell(f.label)} | ${valueCell(f)} |`);
   return [
@@ -86,7 +86,7 @@ export function issueBody(fields: IssueField[], scannedAt: Date): string {
     '| Field | Value |', '| --- | --- |', ...rows, '',
     '## Notes', '', '', '',
     '---', '',
-    `Scanned via OCR on: ${formatScanDate(scannedAt)}`,
+    `Scanned via ${source.toUpperCase()} on: ${formatScanDate(scannedAt)}`,
   ].join('\n');
 }
 

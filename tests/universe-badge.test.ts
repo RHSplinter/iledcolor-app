@@ -30,7 +30,7 @@ describe('GitHub Universe badge QR decoding', () => {
     firstVector.replace('1793206736050001KxhX', 'different-badge-id'),
     firstVector.replace(/data=[^&]+/, 'data=not-base64!'),
     'not a URL',
-    'https://events.githubuniverse.com:443/badgeScan?badgeId=x&data=YWJj',
+    'https://events.githubuniverse.com:444/badgeScan?badgeId=x&data=YWJj',
   ])('rejects invalid badge QR input %s without throwing', (qrText) => {
     expect(() => decodeUniverseBadge(qrText)).not.toThrow();
     expect(decodeUniverseBadge(qrText)).toBeUndefined();
@@ -49,6 +49,16 @@ describe('GitHub Universe badge QR decoding', () => {
 
     await expect(detectUniverseBadge({} as HTMLCanvasElement)).resolves.toBeUndefined();
     expect(log).toHaveBeenCalledWith('No valid Universe badge QR found; falling back to OCR.');
+  });
+
+  it('returns a decoded badge from browser QR detection', async () => {
+    class Detector {
+      detect = vi.fn().mockResolvedValue([{ rawValue: firstVector }]);
+    }
+    vi.stubGlobal('BarcodeDetector', Detector);
+    await expect(detectUniverseBadge({} as HTMLCanvasElement)).resolves.toMatchObject({
+      source: 'qr', badgeId: '1793206736050001KxhX', firstName: 'Raymond', lastName: 'Splinter', company: 'Xebia',
+    });
   });
 
   it('logs a generic fallback when browser QR detection is unavailable', async () => {

@@ -74,6 +74,12 @@ describe('GitHub issue content', () => {
     ].join('\n'));
   });
 
+  it('includes the badge ID and QR source in an interaction record', () => {
+    const body = issueBody([{ label: 'Badge ID', value: '1793206736050001KxhX', type: 'badgeId' }], scannedAt, 'qr');
+    expect(body).toContain('| Badge ID | 1793206736050001KxhX |');
+    expect(body).toContain('Scanned via QR on: 08-Oct-2026 09:05');
+  });
+
   it('normalizes LinkedIn handles and links the full profile URL', () => {
     for (const value of ['jane-doe', '@jane-doe', 'in/jane-doe/', 'https://www.linkedin.com/in/jane-doe/?trk=x', 'linkedin.com/in/jane-doe'])
       expect(parseLinkedinHandle(value)).toBe('jane-doe');

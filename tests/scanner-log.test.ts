@@ -43,6 +43,16 @@ describe('local scan log', () => {
     expect(JSON.parse(options.data)).toEqual(ocrEntry);
   });
 
+  it('records QR captures with their badge ID and source', async () => {
+    const qrEntry: ScanLogEntry = {
+      ...entry, source: 'qr',
+      extracted: { source: 'qr', badgeId: '1793206736050001KxhX', name: 'Raymond Splinter', company: 'Xebia' },
+    };
+    await appendScanLog(qrEntry);
+    const options = vi.mocked(Filesystem.appendFile).mock.calls[0]![0];
+    expect(JSON.parse(options.data)).toEqual(qrEntry);
+  });
+
   it('does not hide write failures or missing native support', async () => {
     vi.mocked(Filesystem.appendFile).mockRejectedValue(new Error('Disk full'));
     await expect(appendScanLog(entry)).rejects.toThrow('Disk full');
