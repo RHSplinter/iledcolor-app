@@ -1,3 +1,10 @@
+// Without a size hint many browsers default to 640x480, too coarse for the dense Universe badge QR.
+export const BADGE_CAMERA_VIDEO: MediaTrackConstraints = {
+  facingMode: { ideal: 'environment' },
+  width: { ideal: 1920 },
+  height: { ideal: 1080 },
+};
+
 export class BadgeCamera {
   private generation = 0;
   private stream?: MediaStream;
@@ -12,7 +19,7 @@ export class BadgeCamera {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access is unavailable. Use HTTPS or the native app, or enter scan data below.');
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: BADGE_CAMERA_VIDEO, audio: false });
     } catch (e) {
       if (generation !== this.generation) return undefined;
       throw e;

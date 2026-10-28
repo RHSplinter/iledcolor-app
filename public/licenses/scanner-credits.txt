@@ -13,3 +13,8 @@ Apache-2.0. Both notices are included.
 https://github.com/naptha/tessdata
 Full licenses are included in tesseract-js-APACHE-2.0.txt,
 tesseract-core-APACHE-2.0.txt, and tesseract-data-MIT.txt.
+
+Badge QR codes are decoded locally by the native BarcodeDetector when available
+and otherwise by zxing-wasm (MIT), bundled with the app.
+https://github.com/Sec-ant/zxing-wasm
+Full license is included in zxing-wasm-MIT.txt.
