@@ -17,7 +17,6 @@ export interface ScanLogEntry {
   githubHandles?: { printed: string; configured: string };
   /** Results of the opt-in GitHub profile lookup; email is null unless the user made it public. */
   githubLookup?: { handle: string; origin: 'printed' | 'configured'; found: boolean; login?: string; email?: string | null }[];
-  profile: { id: string; note: string } | null;
 }
 
 function requireFilesystem() {

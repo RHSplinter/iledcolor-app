@@ -13,13 +13,13 @@ const group: GroupPreset = { id: 'group', name: 'Party', updatedAt: 2, groups: s
 const all = { creations: true, approach: true, scan: true, settings: true };
 const localCreation = { ...creation, id: 'local-creation' };
 const localGroup = { ...group, id: 'local-group' };
-const profiles = { selectedId: '1', profiles: [{ id: '1', note: 'Conference', pattern: '^(.+)$', template: 'Hello {name}!' }] };
 const features = {
   settings: { ...DEFAULT_SETTINGS, textFont: 'dotgothic' as const, brightness: 3, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90 as const, mirrorH: true, mirrorV: true } },
   createContent: { kind: 'text' as const, text: 'Current draft', fg: '#123456', bg: '#654321', speed: 9 },
-  qrGreeting: { pattern: 'name=(.+)', template: 'Welcome {name}!', repetitions: 17, speed: 8 },
+  qrGreeting: { template: 'Hi {firstname}! {lastname}, {role}, {company}, {githubhandle}', repetitions: 17, speed: 8 },
   qrScanLogging: true,
   qrGithubLookup: true,
+  qrIssue: { repoUrl: 'https://github.com/octo-org/leads', label: 'Universe' },
   github: { handle: 'octocat', prefix: 'Saved {handle}: ', postfix: '\u{1f389}' },
 };
 const approach = { ...DEFAULT_APPROACH, mode: 'hub' as const, beacon: false, countNearbyCaps: false, enterDbm: -62, settleMs: 4500 };
@@ -29,7 +29,7 @@ describe('selected backup categories', () => {
     it(`round-trips the ${id} LED font with display settings`, () => {
       const settings = { ...DEFAULT_SETTINGS, textFont: id };
       const data = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH,
-        { creations: false, approach: false, scan: false, settings: true }, undefined, { settings }));
+        { creations: false, approach: false, scan: false, settings: true }, { settings }));
       expect(data.settings).toEqual(settings);
     });
   }
@@ -50,7 +50,7 @@ describe('selected backup categories', () => {
     for (const keepBlack of [true, false]) {
       const settings = { ...DEFAULT_SETTINGS, keepBlack };
       const data = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH,
-        { creations: false, approach: false, scan: false, settings: true }, undefined, { settings }));
+        { creations: false, approach: false, scan: false, settings: true }, { settings }));
       expect(data.settings).toEqual(settings);
     }
     for (const version of [1, 2]) {
@@ -67,7 +67,7 @@ describe('selected backup categories', () => {
   for (let flags = 1; flags < 16; flags++) {
     const selection: ShareSelection = { creations: !!(flags & 1), approach: !!(flags & 2), scan: !!(flags & 4), settings: !!(flags & 8) };
     it(`round-trips selection ${JSON.stringify(selection)} without excluded categories`, () => {
-      const json = exportSelectedJson([creation, group], approach, selection, profiles, features);
+      const json = exportSelectedJson([creation, group], approach, selection, features);
       const data = parseSharedBackup(json);
       expect(data.version).toBe(2);
       if (data.version !== 2) throw new Error('Wrong version');
@@ -81,11 +81,12 @@ describe('selected backup categories', () => {
       expect(data.settings).toEqual(selection.settings ? features.settings : undefined);
       expect(data.createContent).toEqual(selection.creations ? features.createContent : undefined);
       expect(data.github).toEqual(selection.creations ? features.github : undefined);
-      expect(data.qrProfiles).toEqual(selection.scan ? profiles : undefined);
+      expect(data).not.toHaveProperty('qrProfiles');
       expect(data.qrGreeting).toEqual(selection.scan ? features.qrGreeting : undefined);
       expect(data.qrScanLogging).toEqual(selection.scan ? true : undefined);
-      expect(data.qrGithubLookup).toEqual(selection.scan ? true : undefined);
-      for (const excluded of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'qr-scan-log', 'qr-raw']) {
+      expect(data.qrIssue).toEqual(selection.scan ? features.qrIssue : undefined);
+      expect(data.qrGithubLookup).toBeUndefined();
+      for (const excluded of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'qr-scan-log', 'qr-raw', 'qrIssueAssignee']) {
         expect(json).not.toContain(excluded);
       }
       const merged = mergeSharedPresets([localCreation, localGroup], data);
@@ -116,8 +117,8 @@ describe('selected backup categories', () => {
     expect(data.settings).toBeUndefined();
     expect(data.qrGreeting).toBeUndefined();
     expect(data.qrScanLogging).toBeUndefined();
+    expect(data.qrIssue).toBeUndefined();
     expect(data.qrGithubLookup).toBeUndefined();
-    expect(data.qrProfiles).toBeUndefined();
   });
 
   describe('GitHub settings backup', () => {
@@ -130,7 +131,7 @@ describe('selected backup categories', () => {
       expect(() => parseSharedBackup(JSON.stringify({
         app: 'iledcolor-app', version: 2, scan: {}, github: features.github,
       }))).toThrow(/with creations/);
-      const data = parseSharedBackup(exportSelectedJson([], approach, all, undefined, { ...features, github: { handle: '' } }));
+      const data = parseSharedBackup(exportSelectedJson([], approach, all, { ...features, github: { handle: '' } }));
       if (data.version !== 2) throw new Error('Wrong version');
       expect(data.github).toEqual({ handle: '' });
     });
@@ -156,14 +157,14 @@ describe('selected backup categories', () => {
 
     it('round-trips empty captions and preserves absent fields in handle-only backups', () => {
       for (const github of [{ handle: 'octocat' }, { handle: 'octocat', prefix: '', postfix: '' }]) {
-        const data = parseSharedBackup(exportSelectedJson([], approach, all, undefined, { ...features, github }));
+        const data = parseSharedBackup(exportSelectedJson([], approach, all, { ...features, github }));
         if (data.version !== 2) throw new Error('Wrong version');
         expect(data.github).toEqual(github);
       }
     });
 
     it('ignores invalid captions when Creations is excluded', () => {
-      const json = exportSelectedJson([], approach, { creations: false, approach: false, scan: true }, undefined,
+      const json = exportSelectedJson([], approach, { creations: false, approach: false, scan: true },
         { github: { handle: 'octocat', prefix: 'x'.repeat(201), postfix: '\n' } });
       expect(JSON.parse(json)).not.toHaveProperty('github');
       expect(parseSharedBackup(json).version).toBe(2);
@@ -172,14 +173,14 @@ describe('selected backup categories', () => {
 
   it('preserves an explicitly disabled logging preference', () => {
     const data = parseSharedBackup(exportSelectedJson([], approach, { creations: false, approach: false, scan: true },
-      undefined, { qrScanLogging: false }));
+      { qrScanLogging: false }));
     if (data.version !== 2) throw new Error('Wrong version');
     expect(data.qrScanLogging).toBe(false);
   });
 
   it('does not validate excluded feature settings', () => {
     const data = parseSharedBackup(exportSelectedJson([], approach, { creations: true, approach: false, scan: false },
-      profiles, { qrGreeting: { ...DEFAULT_GREETING, repetitions: 0 } }));
+      { qrGreeting: { ...DEFAULT_GREETING, repetitions: 0 } }));
     if (data.version !== 2) throw new Error('Wrong version');
     expect(data.qrGreeting).toBeUndefined();
   });
@@ -189,25 +190,41 @@ describe('selected backup categories', () => {
     expect(mergeSharedPresets([localCreation, localGroup], data)).toEqual([localGroup]);
   });
 
-  it('shares QR profiles only when scan settings are selected', () => {
-    const profiles = { selectedId: null, profiles: [] };
-    const withScan = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, all, profiles, features));
-    expect(withScan.qrProfiles).toEqual(profiles);
-    const withoutScan = parseSharedBackup(exportSelectedJson([], DEFAULT_APPROACH, { ...all, scan: false }, profiles, features));
-    expect(withoutScan.qrProfiles).toBeUndefined();
-    expect(() => parseSharedBackup(JSON.stringify({
-      app: 'iledcolor-app', version: 2, creations: [], qrProfiles: profiles,
-    }))).toThrow(/with scan settings/);
-  });
-
   it('keeps legacy full backups importable with original replacement behavior', () => {
     const data = parseSharedBackup(exportJson(DEFAULT_SETTINGS, [creation, group]));
-    expect(data).toEqual({ version: 1, settings: DEFAULT_SETTINGS, presets: [creation, group], qrProfiles: { selectedId: null, profiles: [] } });
+    expect(data).toEqual({ version: 1, settings: DEFAULT_SETTINGS, presets: [creation, group] });
     expect(mergeSharedPresets([localCreation, localGroup], data)).toEqual([creation, group]);
   });
 
+  it('imports older backups while ignoring obsolete saved badge profiles', () => {
+    const state = { selectedId: '1', profiles: [{ id: '1', note: 'Old', pattern: '', template: 'Hi {name}!' }] };
+    const oldVersion1 = JSON.parse(exportJson(DEFAULT_SETTINGS, [creation]));
+    oldVersion1.qrProfiles = state;
+    expect(parseSharedBackup(JSON.stringify(oldVersion1))).toEqual({ version: 1, settings: DEFAULT_SETTINGS, presets: [creation] });
+    const oldVersion2 = { app: 'iledcolor-app', version: 2, scan: {
+      enterDbm: -70, leaveDbm: -75, settleMs: 2000, confirmMs: 1000, staleMs: 8000,
+    }, qrProfiles: state };
+    const imported = parseSharedBackup(JSON.stringify(oldVersion2));
+    expect(imported.version).toBe(2);
+    if (imported.version !== 2) throw new Error('Wrong version');
+    expect(imported).not.toHaveProperty('qrProfiles');
+  });
+
+  it('ignores obsolete greeting regexes in older backups and persists only current preferences', async () => {
+    const file = JSON.parse(exportSelectedJson([], approach, all, features));
+    for (const pattern of ['name=(.+)', '(a+)+$', '[']) {
+      const imported = parseSharedBackup(JSON.stringify({
+        ...file, qrGreeting: { ...features.qrGreeting, pattern },
+      }));
+      if (imported.version !== 2) throw new Error('Wrong version');
+      expect(imported.qrGreeting).toEqual(features.qrGreeting);
+      await restoreBackup([], undefined, undefined, imported);
+      expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
+    }
+  });
+
   it('rejects malformed or misplaced categories, duplicates, and invalid group content', () => {
-    const file = JSON.parse(exportSelectedJson([creation, group], DEFAULT_APPROACH, all, undefined, features));
+    const file = JSON.parse(exportSelectedJson([creation, group], DEFAULT_APPROACH, all, features));
     const invalid = [
       { ...file, creations: [group] },
       { ...file, creations: null },
@@ -230,14 +247,21 @@ describe('selected backup categories', () => {
   });
 
   it('rejects invalid feature preferences and preferences without their category', () => {
-    const file = JSON.parse(exportSelectedJson([creation, group], approach, all, profiles, features));
+    const file = JSON.parse(exportSelectedJson([creation, group], approach, all, features));
     const invalid = [
       { ...file, qrGreeting: null },
-      { ...file, qrGreeting: { ...features.qrGreeting, pattern: '(' } },
       { ...file, qrGreeting: { ...features.qrGreeting, repetitions: 0 } },
       { ...file, qrGreeting: { ...features.qrGreeting, speed: 11 } },
       { ...file, qrScanLogging: 'true' },
       { ...file, qrGithubLookup: 'true' },
+      { ...file, qrIssue: null },
+      { ...file, qrIssue: { ...features.qrIssue, repoUrl: 'https://gitlab.com/octo-org/leads' } },
+      { ...file, qrIssue: { ...features.qrIssue, repoUrl: 'javascript:alert(1)' } },
+      { ...file, qrIssue: { ...features.qrIssue, repoUrl: 'https://github.com/octo-org' } },
+      { ...file, qrIssue: { ...features.qrIssue, label: 3 } },
+      { ...file, qrIssue: { ...features.qrIssue, label: 'x'.repeat(101) } },
+      { ...file, qrIssue: { repoUrl: features.qrIssue.repoUrl } },
+      { app: file.app, version: 2, creations: [], qrIssue: features.qrIssue },
       { ...file, settings: { ...features.settings, brightness: -1 } },
       { ...file, createContent: { kind: 'solid', color: 'red' } },
       { ...file, approach: { ...file.approach, mode: 'unknown' } },
@@ -259,7 +283,7 @@ describe('selected backup categories', () => {
 
   it('rejects exports that are too large to import', () => {
     const huge = { ...creation, name: 'x'.repeat(4 * 1024 * 1024) };
-    expect(() => exportSelectedJson([huge], DEFAULT_APPROACH, all, undefined, features)).toThrow(/4 MB/);
+    expect(() => exportSelectedJson([huge], DEFAULT_APPROACH, all, features)).toThrow(/4 MB/);
   });
 });
 
@@ -307,35 +331,36 @@ describe('saving an imported backup', () => {
   });
 
   it('persists all feature preferences together and retains omitted preferences', async () => {
-    await restoreBackup([creation, group], features.settings, approach, { ...features, qrProfiles: profiles });
+    await restoreBackup([creation, group], features.settings, approach, features);
     expect(await loadSettings()).toEqual(features.settings);
     expect(await loadKv('approach')).toEqual(approach);
     expect(await loadKv('createContent')).toEqual(features.createContent);
     expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
-    expect(await loadKv('qrGreetingProfiles')).toEqual(profiles);
     expect(await loadKv('qrScanLogging')).toBe(true);
     expect(await loadKv('qrGithubLookup')).toBe(true);
+    expect(await loadKv('qrIssue')).toEqual(features.qrIssue);
     await restoreBackup([localCreation], undefined, undefined, { qrScanLogging: false });
     expect(await loadKv('qrScanLogging')).toBe(false);
+    expect(await loadKv('qrIssue')).toEqual(features.qrIssue);
     expect(await loadKv('qrGithubLookup')).toBe(true);
     expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
-    expect(await loadKv('qrGreetingProfiles')).toEqual(profiles);
     expect(await loadKv('createContent')).toEqual(features.createContent);
     expect(await loadSettings()).toEqual(features.settings);
     expect(await loadKv('approach')).toEqual(approach);
   });
 
   it('rolls back every category if a scanner preference cannot be saved', async () => {
-    await restoreBackup([creation], features.settings, approach, { ...features, qrProfiles: profiles });
+    await restoreBackup([creation], features.settings, approach, features);
     const original = IDBObjectStore.prototype.put;
     const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
-      if (key === 'qrGithubLookup') throw new DOMException('Scanner write failed', 'DataCloneError');
+      if (key === 'qrIssue') throw new DOMException('Scanner write failed', 'DataCloneError');
       return original.call(this, value, key);
     });
     try {
       await expect(restoreBackup([localCreation], DEFAULT_SETTINGS, DEFAULT_APPROACH, {
-        createContent: creation.content, qrProfiles: { selectedId: null, profiles: [] },
+        createContent: creation.content,
         qrGreeting: DEFAULT_GREETING, qrScanLogging: false, qrGithubLookup: false,
+        qrIssue: { repoUrl: 'https://github.com/other/repo', label: '' },
       })).rejects.toThrow(/Scanner write failed/);
     } finally { put.mockRestore(); }
     expect(await listPresets()).toEqual([creation]);
@@ -343,8 +368,9 @@ describe('saving an imported backup', () => {
     expect(await loadKv('approach')).toEqual(approach);
     expect(await loadKv('createContent')).toEqual(features.createContent);
     expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
-    expect(await loadKv('qrGreetingProfiles')).toEqual(profiles);
     expect(await loadKv('qrScanLogging')).toBe(true);
+    expect(await loadKv('qrGithubLookup')).toBe(true);
+    expect(await loadKv('qrIssue')).toEqual(features.qrIssue);
   });
 
   it('saves presets and optional settings together, retaining omitted settings', async () => {
@@ -380,7 +406,7 @@ describe('sound settings backup', () => {
   sound.reactions.greeting = { enabled: false, text: 'SERVUS' };
 
   it('round-trips sound settings without browser speech consent and keeps other categories excluded', () => {
-    const json = exportSelectedJson([creation, group], approach, { creations: false, approach: false, scan: false, sound: true }, profiles, { ...features, sound });
+    const json = exportSelectedJson([creation, group], approach, { creations: false, approach: false, scan: false, sound: true }, { ...features, sound });
     const raw = JSON.parse(json);
     expect(Object.keys(raw).sort()).toEqual(['app', 'sound', 'version']);
     const data = parseSharedBackup(json);
@@ -390,8 +416,8 @@ describe('sound settings backup', () => {
   });
 
   it('omits sound settings when unselected and requires them when selected', () => {
-    expect(JSON.parse(exportSelectedJson([creation], approach, all, profiles, { ...features, sound }))).not.toHaveProperty('sound');
-    expect(() => exportSelectedJson([creation], approach, { ...all, sound: true }, profiles, features)).toThrow('Sound settings are unavailable');
+    expect(JSON.parse(exportSelectedJson([creation], approach, all, { ...features, sound }))).not.toHaveProperty('sound');
+    expect(() => exportSelectedJson([creation], approach, { ...all, sound: true }, features)).toThrow('Sound settings are unavailable');
   });
 
   it('rejects invalid sound settings', () => {
@@ -410,7 +436,7 @@ describe('sound settings backup', () => {
   it('round-trips emoji cap texts and preserves them when importing older files without sound settings', async () => {
     const emoji = defaultPreferences();
     emoji.reactions.greeting.text = 'WELCOME 👋';
-    const json = exportSelectedJson([], approach, { creations: false, approach: false, scan: false, sound: true }, undefined, { sound: emoji });
+    const json = exportSelectedJson([], approach, { creations: false, approach: false, scan: false, sound: true }, { sound: emoji });
     const imported = parseSharedBackup(json);
     if (imported.version !== 2) throw new Error('Wrong version');
     expect(imported.sound).toEqual(emoji);

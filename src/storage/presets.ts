@@ -2,7 +2,6 @@ import type { Fit } from '../render/image';
 import type { Transform } from '../render/matrix';
 import { DEFAULT_TEXT_FONT, isTextFont, type TextFont } from '../render/fonts';
 import { TIER_IDS, type TierConfig, type TierId } from '../approach/tiers';
-import { validateGreetingProfiles, type GreetingProfileState } from '../scanner/greeting';
 import { validateGitHubGraph, validateGitHubSettings, type GitHubGraph, type GitHubSettings } from '../github/contributions';
 
 export type SingleContent =
@@ -59,11 +58,10 @@ export interface ExportFile {
   version: number;
   settings: Settings;
   presets: Preset[];
-  qrProfiles: GreetingProfileState;
 }
 
-export function exportJson(settings: Settings, presets: Preset[], qrProfiles: GreetingProfileState = { selectedId: null, profiles: [] }): string {
-  const f: ExportFile = { app: 'iledcolor-app', version: EXPORT_VERSION, settings, presets, qrProfiles: validateGreetingProfiles(qrProfiles) };
+export function exportJson(settings: Settings, presets: Preset[]): string {
+  const f: ExportFile = { app: 'iledcolor-app', version: EXPORT_VERSION, settings, presets };
   return JSON.stringify(f, null, 2);
 }
 
@@ -184,7 +182,7 @@ export function validateSettings(s: unknown): Settings {
 }
 
 /** Validates everything; throws with a readable message and never returns partial data. */
-export function parseImport(text: string): { settings: Settings; presets: Preset[]; qrProfiles: GreetingProfileState } {
+export function parseImport(text: string): { settings: Settings; presets: Preset[] } {
   if (text.length > MAX_IMPORT_BYTES) throw new Error('Import file is too large.');
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { throw new Error('File is not valid JSON.'); }
@@ -208,8 +206,5 @@ export function parseImport(text: string): { settings: Settings; presets: Preset
       throw new Error(`Preset ${i + 1}: ${(e as Error).message}`);
     }
   });
-  const qrProfiles = raw.qrProfiles === undefined
-    ? { selectedId: null, profiles: [] }
-    : validateGreetingProfiles(raw.qrProfiles);
-  return { settings: validateSettings(raw.settings), presets, qrProfiles };
+  return { settings: validateSettings(raw.settings), presets };
 }

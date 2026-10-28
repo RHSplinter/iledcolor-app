@@ -16,3 +16,7 @@ just saved content presets. Whenever adding or changing a feature setting:
 - Do not export phone identity, cap connections/device IDs, OS permissions, live
   running state, QR payloads, or scan-log contents. The scan-logging preference is
   configuration and belongs to Scan settings; make its privacy consequence clear.
+
+# Readme file
+
+The README.md in the root of the project should stay as simple as it is right now. If you want to add documentation, put it in the /docs folder. Only change the root README.md if something is incorrect or outdated.

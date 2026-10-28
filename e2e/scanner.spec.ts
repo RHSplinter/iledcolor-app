@@ -1,274 +1,93 @@
 import { expect, test } from '@playwright/test';
-import { openBackup, openCustomSection, connectHat, waitForServiceWorker } from './hat';
-import { createRequire } from 'node:module';
-import { readFile } from 'node:fs/promises';
+import { connectHat, waitForServiceWorker } from './hat';
 
-const require = createRequire(import.meta.url);
-const { default: QRCodeWriter }: typeof import('@zxing/library/cjs/core/qrcode/QRCodeWriter.js') = require('@zxing/library/cjs/core/qrcode/QRCodeWriter.js');
-const { default: BarcodeFormat }: typeof import('@zxing/library/cjs/core/BarcodeFormat.js') = require('@zxing/library/cjs/core/BarcodeFormat.js');
-
-test('camera decodes a QR code offline and greets the primary cap before restoring', async ({ page, context }) => {
-  const qr = new QRCodeWriter().encode('Rob', BarcodeFormat.QR_CODE, 256, 256, new Map());
-  const pixels: number[] = [];
-  for (let y = 0; y < qr.getHeight(); y++)
-    for (let x = 0; x < qr.getWidth(); x++) if (qr.get(x, y)) pixels.push(x, y);
-  await page.addInitScript(({ pixels }) => {
-    Object.assign(window, { feedbackVibrations: [] as number[] });
-    Object.defineProperty(navigator, 'vibrate', { value: (duration: number) => {
-      (window as Window & { feedbackVibrations: number[] }).feedbackVibrations.push(duration);
-      return true;
-    } });
-    const getUserMedia = async () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 256;
-      const ctx = canvas.getContext('2d')!;
-      const draw = () => {
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, 256, 256);
-        ctx.fillStyle = '#000';
-        for (let i = 0; i < pixels.length; i += 2) ctx.fillRect(pixels[i]!, pixels[i + 1]!, 1, 1);
-      };
-      draw();
-      const stream = canvas.captureStream(10);
-      setTimeout(draw, 100);
-      return stream;
-    };
-    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { value: getUserMedia });
-  }, { pixels });
+test('scanner settings persist after reload without manual scan entry', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
-  await waitForServiceWorker(page);
-  await context.setOffline(true);
+  await page.click('nav [data-tab=scan]');
+  await expect(page.locator('#qr-template-help')).toHaveText(
+    'Use {name} or {firstname}, {lastname}, {role}, {company}, or {githubhandle} for captured fields.',
+  );
+  await page.fill('#qr-template', 'Hi {firstname}!');
+  await page.fill('#qr-repetitions', '1');
+  await page.locator('#qr-speed').fill('10');
+  await page.locator('#qr-speed').blur();
   await page.reload();
   await connectHat(page);
-  await page.click('nav [data-tab=custom]');
-  await openCustomSection(page, 'solid');
-  await page.click('#btn-send-solid');
-  await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
   await page.click('nav [data-tab=scan]');
-  await expect(page.locator('#qr-repetitions')).toHaveValue('3');
-  await page.check('#qr-log-enabled');
-  await expect(page.locator('#qr-log-status')).toHaveText('Scan logging enabled.');
-  await page.locator('#qr-speed').fill('10');
-  await page.click('#qr-start');
-  await expect(page.locator('#qr-status')).toContainText('Hi Rob!', { timeout: 15000 });
-  await expect(page.locator('#qr-video')).toBeHidden();
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
-  await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 25000 });
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
-  await expect(page.locator('#qr-error')).toBeEmpty();
-  await expect(page.locator('#qr-start')).toBeEnabled();
-  await expect(page.locator('#qr-log-status')).toHaveText('Scan saved to qr-scan-log.jsonl.');
-  const downloadPromise = page.waitForEvent('download');
-  await page.click('#qr-log-share');
-  const download = await downloadPromise;
-  const path = await download.path();
-  if (!path) throw new Error('Missing scan log download.');
-  const entry = JSON.parse((await readFile(path, 'utf8')).trim());
-  expect(entry).toMatchObject({ raw: 'Rob', source: 'camera', profile: null });
-  expect(new Date(entry.timestamp).toISOString()).toBe(entry.timestamp);
+  await expect(page.locator('#qr-template')).toHaveValue('Hi {firstname}!');
+  await expect(page.locator('#view-scan')).not.toContainText('Enter scan data manually');
+  await expect(page.locator('#qr-raw, #qr-submit')).toHaveCount(0);
 });
 
-test('a greeting pauses only the primary cap while approach updates keep reaching other caps', async ({ page }) => {
-  await page.addInitScript(() => {
-    Object.assign(window, { feedbackVibrations: [] as number[] });
-    Object.defineProperty(navigator, 'vibrate', { value: (duration: number) => {
-      (window as Window & { feedbackVibrations: number[] }).feedbackVibrations.push(duration);
-      return true;
-    } });
-  });
-  await page.goto('/#mock');
-  await connectHat(page);
-  await page.click('nav [data-tab=approach]');
-  await page.check('input[name=ap-mode][value=hub]');
-  await page.click('#ap-add');
-  await expect(page.locator('#ap-caps li')).toHaveCount(2);
-  await page.fill('#ap-settle', '0');
-  await page.locator('#ap-settle').dispatchEvent('change');
-  await page.check('#ap-start');
-  await expect(page.locator('#ap-caps .cap-note').first()).toContainText('Hi ', { timeout: 15000 });
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
-  await page.click('nav [data-tab=scan]');
-  await page.fill('#qr-template', 'Hello {name}!');
-  await page.fill('#qr-repetitions', '30');
-  await page.locator('#view-scan summary').click();
-  await page.fill('#qr-raw', 'Rob');
-  await page.click('#qr-submit');
-  await expect(page.locator('#qr-status')).toContainText('Hello Rob!');
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200]);
-  await expect(page.locator('#status')).toContainText('Ready', { timeout: 15000 });
-  await page.click('nav [data-tab=approach]');
-  await page.click('#ap-sim-peer');
-  await expect(page.locator('#ap-caps .cap-note').nth(1)).toContainText('span ', { timeout: 15000 });
-  await expect(page.locator('#ap-caps .cap-note').first()).not.toContainText('span ');
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200, 200]);
-  await page.click('nav [data-tab=scan]');
-  await page.click('#qr-cancel');
-  await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15000 });
-  await page.click('nav [data-tab=approach]');
-  await expect(page.locator('#ap-caps .cap-note').first()).toContainText('span ', { timeout: 15000 });
-  // The resumed multi-cap approach greeting emits its own haptic after cancellation.
-  expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200, 200, 200, 200]);
-});
-
-test('regex errors leave content alone and settings persist without badge data', async ({ page }) => {
+test('greeting settings persist without saved badge data', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
   await page.click('nav [data-tab=settings]');
   await page.check('#s-keep-black');
   await page.click('nav [data-tab=scan]');
-  await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
-  await page.fill('#qr-pattern', '([^|]+)\\|([^|]+)\\|([^|]+)');
-  await page.fill('#qr-template', 'Hello {name} {lastname} from {company}!');
+  await page.fill('#qr-template', 'Welcome {name}!');
   await page.fill('#qr-repetitions', '1');
   await page.locator('#qr-speed').fill('10');
-  await page.locator('#view-scan summary').click();
-  await page.fill('#qr-raw', 'Rob|Bos|Xebia');
-  await page.click('#qr-submit');
-  await expect(page.locator('#qr-status')).toContainText('Hello Rob Bos from Xebia!', { timeout: 10000 });
-  await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 20000 });
-  await expect(page.locator('#qr-error')).toBeEmpty();
-  await page.click('nav [data-tab=approach]');
-  await expect(page.locator('#ap-caps .cap-note').first()).toHaveText('keep black (idle)');
-  await page.click('nav [data-tab=scan]');
-  await page.fill('#qr-pattern', 'name=(?<name>[^;]+)');
-  await page.fill('#qr-template', 'Welcome {name}!');
-  await page.fill('#qr-raw', 'id=123;');
-  await page.click('#qr-submit');
-  await expect(page.locator('#qr-error')).toContainText('did not match');
-  await expect(page.locator('#status')).toContainText('Ready');
-  await page.fill('#qr-pattern', '(a+)+$');
-  await page.fill('#qr-raw', 'a'.repeat(1000) + '!');
-  await page.click('#qr-submit');
-  await expect(page.locator('#qr-error')).toContainText('took too long');
-  await page.fill('#qr-pattern', 'name=(?<name>[^;]+)');
-  await page.locator('#qr-pattern').dispatchEvent('change');
   await page.reload();
   await connectHat(page);
   await page.click('nav [data-tab=scan]');
-  await expect(page.locator('#qr-pattern')).toHaveValue('name=(?<name>[^;]+)');
+  await expect(page.locator('#qr-pattern')).toHaveCount(0);
   await expect(page.locator('#qr-template')).toHaveValue('Welcome {name}!');
-  await expect(page.locator('#qr-raw')).toHaveValue('');
-  await expect(page.locator('#qr-submit')).toBeEnabled();
+  await expect(page.locator('#qr-raw, #qr-submit')).toHaveCount(0);
 });
 
-test('saves three QR profiles with notes, restores them on reload, and supports none', async ({ page }) => {
-  const tourPattern = String.raw`^[^^]*\^(?<firstname>[^^]+)\^(?<lastname>[^^]+)\^(?<company>[^^]+)\^`;
+test('scanner has no saved badge profile controls', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
   await page.click('nav [data-tab=scan]');
-  await page.fill('#qr-note', 'MS AI Tour');
-  await page.fill('#qr-pattern', tourPattern);
-  await page.fill('#qr-template', 'Hello {firstname} {lastname} from {company}!');
-  await page.click('#qr-profile-save');
-  await expect(page.locator('#qr-profile')).toHaveValue('1');
-
-  await page.reload();
-  await connectHat(page);
-  await page.click('nav [data-tab=scan]');
-  await expect(page.locator('#qr-profile option')).toHaveText(['None — general scan data', '1. MS AI Tour']);
-  await expect(page.locator('#qr-profile')).toHaveValue('1');
-  await expect(page.locator('#qr-profile-delete')).toBeVisible();
-  await expect(page.locator('#qr-note')).toHaveValue('MS AI Tour');
-  await expect(page.locator('#qr-pattern')).toHaveValue(tourPattern);
-  await expect(page.locator('#qr-template')).toHaveValue('Hello {firstname} {lastname} from {company}!');
-
-  for (const [note, expectedId] of [['Badge two', '2'], ['Badge three', '3']]) {
-    await page.selectOption('#qr-profile', '');
-    await page.fill('#qr-note', note);
-    await page.click('#qr-profile-save');
-    await expect(page.locator('#qr-profile')).toHaveValue(expectedId);
-  }
-  await page.selectOption('#qr-profile', '');
-  await page.fill('#qr-note', 'Fourth badge');
-  await page.click('#qr-profile-save');
-  await expect(page.locator('#qr-error')).toContainText('All three profile slots are in use');
-
-  await page.selectOption('#qr-profile', '3');
-  await openBackup(page);
-  const downloadPromise = page.waitForEvent('download');
-  await page.click('#btn-export');
-  const download = await downloadPromise;
-  const backupPath = await download.path();
-  if (!backupPath) throw new Error('QR profile export did not produce a file.');
-  const backup = JSON.parse(await readFile(backupPath, 'utf8'));
-  expect(backup.qrProfiles.selectedId).toBe('3');
-  expect(backup.qrProfiles.profiles).toHaveLength(3);
-
-  await page.click('nav [data-tab=scan]');
-  await page.selectOption('#qr-profile', '2');
-  await page.click('#qr-profile-delete');
-  await expect(page.locator('#qr-profile option')).toHaveCount(3);
-  await expect(page.locator('#qr-profile')).toHaveValue('');
-
-  await openBackup(page);
-  await page.locator('#p-import').setInputFiles(backupPath);
-  await expect(page.locator('#p-msg')).toContainText('3 QR profiles');
-  await page.click('nav [data-tab=scan]');
-  await expect(page.locator('#qr-profile option')).toHaveCount(4);
-  await expect(page.locator('#qr-profile')).toHaveValue('3');
-  await expect(page.locator('#qr-note')).toHaveValue('Badge three');
+  await expect(page.locator('#qr-template')).toBeVisible();
+  await expect(page.locator('#qr-profile, #qr-note, #qr-profile-save, #qr-profile-delete, #qr-pattern, #qr-pattern-help')).toHaveCount(0);
+  await expect(page.locator('#view-scan > .card')).toHaveCount(2);
+  await expect(page.locator('#qr-github-enabled')).toHaveCount(0);
+  await page.click('nav [data-tab=settings]');
+  await expect(page.locator('#view-settings > :last-child')).toHaveAttribute('id', 'settings-scan');
+  await expect(page.locator('#settings-scan h2')).toHaveText(['Save scans as GitHub issues', 'Scan log & privacy']);
+  await expect(page.locator('#view-scan')).not.toContainText('Name regex');
+  await expect(page.locator('#view-scan')).not.toContainText('Enter scan data manually');
+  await expect(page.locator('#qr-raw, #qr-submit')).toHaveCount(0);
 });
 
-test('scan logging is opt-in, persists, includes failed manual entries, and stops when disabled', async ({ page }) => {
+test('scan logging is opt-in, persists, and can be disabled', async ({ page }) => {
   await page.goto('/#mock');
   await connectHat(page);
   await page.click('nav [data-tab=settings]');
   await page.getByText('Test patterns (dim, static)', { exact: true }).click();
   await page.click('#btn-test-color');
   await expect(page.locator('#status')).toContainText('Ready');
-  await page.click('nav [data-tab=scan]');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#qr-log-enabled')).not.toBeChecked();
   await page.click('#qr-log-share');
   await expect(page.locator('#qr-log-error')).toContainText('Could not share scan log');
-  await page.locator('#view-scan summary').click();
-  await page.fill('#qr-pattern', '^name=(.+)$');
-  await page.fill('#qr-raw', 'not a matching badge');
-  await page.click('#qr-submit');
-  await expect(page.locator('#qr-error')).toContainText('did not match');
-  await page.click('#qr-log-share');
-  await expect(page.locator('#qr-log-error')).toContainText('Could not share scan log');
-
   await page.check('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toHaveText('Scan logging enabled.');
-  await page.fill('#qr-note', 'Evaluation');
-  await page.click('#qr-profile-save');
-  await expect(page.locator('#qr-profile')).toHaveValue('1');
-  const raw = 'unknown^person^company^\n"private": raw data';
-  await page.fill('#qr-raw', raw);
-  await page.click('#qr-submit');
-  await expect(page.locator('#qr-error')).toContainText('did not match');
-  await expect(page.locator('#qr-log-status')).toContainText('Scan saved');
   await page.reload();
   await connectHat(page);
-  await page.click('nav [data-tab=scan]');
+  await page.click('nav [data-tab=settings]');
   await expect(page.locator('#qr-log-enabled')).toBeChecked();
   await page.uncheck('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toContainText('Existing log kept');
 
-  await page.click('nav [data-tab=custom]');
-  await page.click('nav [data-tab=settings]');
-  await page.getByText('Test patterns (dim, static)', { exact: true }).click();
-  await page.click('#btn-test-color');
-  await expect(page.locator('#status')).toContainText('Ready');
-  await page.click('nav [data-tab=scan]');
-  await page.locator('#view-scan summary').click();
-  await page.fill('#qr-raw', 'not logged after disabling');
-  await page.click('#qr-submit');
-  await expect(page.locator('#qr-error')).toContainText('did not match');
-  const downloadPromise = page.waitForEvent('download');
-  await page.click('#qr-log-share');
-  const download = await downloadPromise;
-  const path = await download.path();
-  if (!path) throw new Error('Missing scan log download.');
-  const lines = (await readFile(path, 'utf8')).trim().split('\n');
-  expect(lines).toHaveLength(1);
-  expect(JSON.parse(lines[0]!)).toMatchObject({ raw, source: 'manual', profile: { id: '1', note: 'Evaluation' } });
 });
 
-test('offline OCR recognizes a printed badge and greets the primary cap', async ({ page, context }) => {
+for (const layout of ['single-line name', 'stacked name with handle', 'tightly stacked name with handle', 'public email', 'no public email']) {
+test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup accompanies OCR' : 'offline OCR greets a newly connected cap'} (${layout})`, async ({ page, context }) => {
+  const stacked = layout !== 'single-line name';
+  const tight = layout === 'tightly stacked name with handle';
+  const publicEmail = layout === 'public email';
+  const onlineLookup = layout.includes('email');
   test.setTimeout(90000);
-  await page.addInitScript(() => {
+  if (onlineLookup) {
+    await context.route('https://api.github.com/users/*', (route) => route.fulfill({
+      json: { login: 'FokkoVeegens', email: publicEmail ? 'public@example.org' : null },
+    }));
+  }
+  await page.addInitScript(({ stacked, tight }) => {
     Object.assign(window, { feedbackVibrations: [] as number[] });
     Object.defineProperty(navigator, 'vibrate', { value: () => true });
     const canvas = document.createElement('canvas');
@@ -279,10 +98,22 @@ test('offline OCR recognizes a printed badge and greets the primary cap', async 
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#000';
-      ctx.font = 'bold 62px Arial';
-      ctx.fillText('Rob Bos', 190, 175);
-      ctx.fillText('Software Engineer', 190, 275);
-      ctx.fillText('Xebia', 190, 375);
+      if (stacked) {
+        ctx.font = '56px Arial';
+        ctx.fillText('Fokko', 190, 145);
+        ctx.fillText('Veegens', 190, tight ? 194 : 210);
+        ctx.font = '32px Arial';
+        ctx.fillText('@FokkoVeegens', 190, 280);
+        ctx.fillText('DevOps Consultant', 190, 350);
+        ctx.fillText('Xebia', 190, 410);
+        ctx.font = '22px Arial';
+        ctx.fillText('Bewiea', 720, 410);
+      } else {
+        ctx.font = 'bold 62px Arial';
+        ctx.fillText('Rob Bos', 190, 175);
+        ctx.fillText('Software Engineer', 190, 275);
+        ctx.fillText('Xebia', 190, 375);
+      }
     };
     drawBadge();
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
@@ -292,26 +123,102 @@ test('offline OCR recognizes a printed badge and greets the primary cap', async 
         return stream;
       },
     });
-  });
+  }, { stacked, tight });
   await page.goto('/#mock');
   await waitForServiceWorker(page);
-  await context.setOffline(true);
+  await context.setOffline(!onlineLookup);
   await page.reload();
+  const scan = page.locator('#qr-text-start');
+  await expect(scan).toBeDisabled();
+  await expect(page.locator('#qr-start')).toHaveCount(0);
+  await expect(scan).toHaveText('Scan');
+  await expect(scan).toHaveCSS('background-color', 'rgb(77, 163, 255)');
   await page.click('#btn-connect');
   await expect(page.locator('#status')).toContainText('Ready');
-  await page.click('nav [data-tab=custom]');
-  await openCustomSection(page, 'solid');
-  await page.click('#btn-send-solid');
-  await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
   await page.click('nav [data-tab=scan]');
-  await page.click('#qr-text-start');
+  await expect(page.locator('#qr-github-result')).toBeHidden();
+  await expect(scan).toBeEnabled();
+  await scan.click();
   await expect(page.locator('#qr-ocr-controls')).toBeVisible();
   await page.waitForFunction(() => {
     const video = document.querySelector<HTMLVideoElement>('#qr-video');
     return !!video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0;
   });
   await page.click('#qr-capture');
-  await expect(page.locator('#qr-status')).toContainText('Hi Rob Bos!', { timeout: 60000 });
-  await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 30000 });
-  await expect(page.locator('#qr-error')).toBeEmpty();
+  await expect(page.locator('#qr-status')).toContainText(stacked ? 'Hi Fokko Veegens!' : 'Hi Rob Bos!', { timeout: 60000 });
+  const expected = stacked
+    ? ['Fokko', 'Veegens', '@FokkoVeegens', 'DevOps Consultant', 'Xebia']
+    : ['Rob', 'Bos', '', 'Software Engineer', 'Xebia'];
+  for (const [index, value] of expected.entries()) {
+    await expect(page.getByRole('textbox', { name: `Data item ${index + 1}`, exact: true })).toHaveValue(value);
+  }
+  const email = page.getByRole('textbox', { name: 'Email address', exact: true });
+  await expect(email).toHaveValue(publicEmail ? 'public@example.org' : '');
+  await expect(email.locator('..').locator('..').locator('select')).toHaveCount(0);
+  const firstInput = page.getByRole('textbox', { name: 'Data item 1', exact: true });
+  for (const property of ['background-color', 'border-radius', 'border-top-width', 'padding', 'font-size', 'color', 'width', 'height']) {
+    await expect(email).toHaveCSS(property, await firstInput.evaluate((input, key) => getComputedStyle(input).getPropertyValue(key), property));
+  }
+  const emailLabel = page.locator('label[for=qr-data-email]');
+  const typeSelect = page.getByRole('combobox', { name: 'Data item 1 type', exact: true });
+  for (const property of ['font-size', 'color', 'padding-left', 'height']) {
+    await expect(emailLabel).toHaveCSS(property, await typeSelect.evaluate((select, key) => getComputedStyle(select).getPropertyValue(key), property));
+  }
+  expect((await emailLabel.boundingBox())!.x).toBe((await typeSelect.boundingBox())!.x);
+  if (layout === 'no public email') {
+    await expect(page.locator('#qr-github-result')).toHaveText('@FokkoVeegens has no public email.');
+    await expect(page.locator('#qr-github-result')).toHaveCSS('border-left-width', '3px');
+  }
+  const phone = page.getByRole('textbox', { name: 'Phone number', exact: true });
+  await expect(phone).toHaveValue('');
+  await expect(phone).toHaveAttribute('type', 'tel');
+  for (const property of ['background-color', 'border-radius', 'padding', 'width', 'height']) {
+    await expect(phone).toHaveCSS(property, await firstInput.evaluate((input, key) => getComputedStyle(input).getPropertyValue(key), property));
+  }
+  const linkedin = page.getByRole('textbox', { name: 'LinkedIn handle', exact: true });
+  await expect(linkedin).toHaveAttribute('type', 'text');
+  for (const property of ['background-color', 'border-radius', 'padding', 'width', 'height']) {
+    await expect(linkedin).toHaveCSS(property, await firstInput.evaluate((input, key) => getComputedStyle(input).getPropertyValue(key), property));
+  }
+  const save = page.locator('#qr-data-save');
+  await email.fill('not-an-email');
+  await expect(save).toBeEnabled();
+  await phone.focus();
+  await expect(email).toHaveAttribute('aria-invalid', 'true');
+  await expect(email).toHaveCSS('border-top-color', 'rgb(255, 90, 90)');
+  await expect(save).toBeDisabled();
+  await email.fill('manual@example.org');
+  await expect(email).not.toHaveAttribute('aria-invalid');
+  await expect(save).toBeEnabled();
+  await expect(email).toHaveValue('manual@example.org');
+  await expect(page.locator('#qr-status')).toContainText('Display cleared to black.', { timeout: 30000 });
+  await expect(page.locator('#qr-status')).toHaveAttribute('role', 'status');
+  await expect(scan).toBeEnabled();
+  const note = page.locator('#qr-issue-note');
+  await expect(note).toBeVisible();
+  await expect(note).toContainText('signed in to GitHub with access to the xebia organization');
+  expect((await note.boundingBox())!.y).toBeGreaterThan((await save.boundingBox())!.y);
+  await page.evaluate(() => {
+    const opened: unknown[][] = [];
+    (window as unknown as { opened: unknown[][] }).opened = opened;
+    window.open = (...args: unknown[]) => { opened.push(args); return {} as Window; };
+  });
+  await save.click();
+  const [href, target] = await page.evaluate(() => (window as unknown as { opened: string[][] }).opened[0]!);
+  expect(target).toBe('_blank');
+  const issueUrl = new URL(href!);
+  expect(issueUrl.origin + issueUrl.pathname).toBe('https://github.com/xebia/badge-scanner/issues/new');
+  expect(issueUrl.searchParams.get('title')).toBe(stacked ? 'Badge scan: Fokko Veegens' : 'Badge scan: Rob Bos');
+  expect(issueUrl.searchParams.get('labels')).toBe('GitHubUniverse');
+  const body = issueUrl.searchParams.get('body')!;
+  expect(body).toContain('## Badge details');
+  expect(body).toContain('| Email address | manual@example.org |');
+  expect(body).toContain(stacked ? '| GitHub Handle | [@FokkoVeegens](https://github.com/FokkoVeegens) |' : '| Company | Xebia |');
+  expect(body).toMatch(/\n---\n\nScanned via OCR on: \d{2}-[A-Z][a-z]{2}-\d{4} \d{2}:\d{2}$/);
+  await expect(page.locator('#qr-status')).toContainText('Opened a pre-filled GitHub issue');
+  await page.click('#qr-data-clear');
+  await expect(page.locator('#qr-github-result')).toBeHidden();
+  await expect(page.locator('#qr-github-result')).toBeEmpty();
+  expect(await page.locator('#qr-github-result').boundingBox()).toBeNull();
 });
+}

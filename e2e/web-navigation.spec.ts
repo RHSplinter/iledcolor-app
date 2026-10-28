@@ -78,7 +78,7 @@ test.describe('web tab navigation @smoke', () => {
       await page.getByLabel('Text', { exact: true }).fill('Navigation regression');
 
       for (const [name, heading] of [
-        ['Scan', 'Badge greeting'], ['Sound', 'Sound & voice'],
+        ['Scan', 'Visitor scanning'], ['Sound', 'Sound & voice'],
         ['Settings', 'Settings'], ['Custom', 'Custom'],
       ] as const) {
         const tab = page.getByRole('tab', { name, exact: true });

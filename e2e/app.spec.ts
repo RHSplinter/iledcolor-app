@@ -109,7 +109,7 @@ test('share categories: scan-only file excludes creations and approach content, 
   await page.getByLabel('Scan settings', { exact: false }).check();
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export')]);
   const json = JSON.parse(await (await import('node:fs/promises')).readFile((await download.path())!, 'utf-8'));
-  expect(Object.keys(json).sort()).toEqual(['app', 'qrGithubLookup', 'qrGreeting', 'qrProfiles', 'qrScanLogging', 'scan', 'version']);
+  expect(Object.keys(json).sort()).toEqual(['app', 'qrGreeting', 'qrIssue', 'qrScanLogging', 'scan', 'version']);
   expect(json.scan.enterDbm).toBe(-65);
   json.scan.enterDbm = -60;
   await page.setInputFiles('#p-import', { name: 'scan.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(json)) });
@@ -246,14 +246,9 @@ test('keepBlack keeps cap black when idle while displaying approach, sound and s
   await expect(page.locator('#sound-status')).toContainText('Previous content restored', { timeout: 15_000 });
 
   await page.click('nav [data-tab=scan]');
-  await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
-  await page.locator('#view-scan summary').click();
-  await page.fill('#qr-raw', 'Ada');
-  await page.click('#qr-submit');
-  await expect(page.locator('#qr-status')).toContainText('Hi Ada!', { timeout: 15_000 });
-  await expect(page.locator('#status')).toContainText('Ready', { timeout: 15_000 });
-  await page.click('#qr-cancel');
-  await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15_000 });
+  await expect(page.locator('#qr-status')).toHaveText('Ready to scan a badge.');
+  await expect(page.locator('#view-scan')).not.toContainText('Enter scan data manually');
+  await expect(page.locator('#qr-raw, #qr-submit')).toHaveCount(0);
 
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-caps .cap-note')).toHaveText('keep black (idle)');

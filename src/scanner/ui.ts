@@ -6,15 +6,18 @@ import { ensureFont, renderSpanMarquee } from '../render/text';
 import { gifDelayMs } from '../render/span';
 import { loadKv, saveKv } from '../storage/db';
 import { vibrateFeedback } from '../feedback';
-import { QrCamera } from './camera';
-import { extractNameSafely } from './extract';
+import { BadgeCamera } from './camera';
 import { appendScanLog, shareScanLog } from './log';
 import { BadgeTextRecognizer } from './ocr';
-import { differingGithubHandles, fetchPublicProfile, findGithubHandles } from './githubLookup';
+import { differingGithubHandles, fetchPublicProfile, findGithubHandle, findGithubHandles } from './githubLookup';
 import {
-  DEFAULT_GREETING, greetingDuration, greetingText, validateGreeting, validateGreetingProfiles,
-  type ExtractedName, type GreetingProfile, type GreetingProfileState, type GreetingSettings, type ScannerBackup,
+  DEFAULT_GREETING, extractName, greetingDuration, greetingNameFields, greetingText, isValidEmail, validateGreeting,
+  type ExtractedName, type GreetingSettings, type ScannerBackup,
 } from './greeting';
+import {
+  DEFAULT_ISSUE, isValidAssignee, issueBody, issueTitle, newIssueUrl, parseLinkedinHandle, parseRepoUrl, validateIssueSettings,
+  type IssueField, type IssueSettings,
+} from './issue';
 
 interface ScannerContext {
   controller(): DeviceController;
@@ -26,31 +29,32 @@ interface ScannerContext {
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 export class GreetingUi {
-  private camera = new QrCamera();
+  private camera = new BadgeCamera();
   private recognizer = new BadgeTextRecognizer();
-  private cameraMode: 'codes' | 'text' | null = null;
   private scanning = false;
   private recognizing = false;
   private processing = false;
   private playing?: DeviceController;
   private scanId = 0;
-  private profiles: GreetingProfile[] = [];
-  private selectedProfileId: string | null = null;
   private loggingEnabled = false;
-  private githubLookupEnabled = false;
   private lookupId = 0;
   private savingLogging = false;
   private sharingLog = false;
+  private statusMessage = '';
+  private errorMessage = '';
+  private issueSettings: IssueSettings = DEFAULT_ISSUE;
+  private issueAssignee = '';
+  private scanFields?: () => IssueField[];
+  private scannedAt = new Date();
 
   constructor(private ctx: ScannerContext) {}
 
   async init() {
     $('view-scan').innerHTML = `
       <div class="card">
-        <h2>Badge greeting</h2>
+        <h2>Visitor scanning</h2>
         <div class="row scan-actions">
-          <button id="qr-start" class="primary">Scan QR / barcode</button>
-          <button id="qr-text-start">Scan printed text</button>
+          <button id="qr-text-start" class="primary">Scan</button>
           <button id="qr-stop" hidden>Stop camera</button>
           <button id="qr-cancel" hidden>End greeting</button>
         </div>
@@ -62,88 +66,74 @@ export class GreetingUi {
           <p class="small">Frame the printed name and company, then capture. Text is recognized on this device.</p>
           <button id="qr-capture" class="primary">Capture text</button>
         </div>
-        <p id="qr-status" role="status" aria-live="polite"></p>
-        <p id="qr-error" class="bad" role="alert"></p>
-        <p id="qr-ready" class="small" role="status"></p>
-        <p class="small">Scan a badge code or capture its printed text to greet its owner on this phone's primary cap. Other caps keep playing.
-        Send content to the cap first so it can be restored afterwards.</p>
-        <label for="qr-profile">Saved badge profile</label>
-        <select id="qr-profile"><option value="">None — general scan data</option></select>
-      </div>
-      <div class="card">
-        <h2>Badge profile</h2>
-        <label for="qr-note">Profile note</label>
-        <input id="qr-note" type="text" maxlength="60" placeholder="e.g. MS AI Tour" />
-        <div class="row">
-          <button id="qr-profile-save">Save profile</button>
-          <button id="qr-profile-delete" hidden>Delete profile</button>
-        </div>
-        <p class="small">Save up to three profiles. Select None for automatic badge-text, plain-text, JSON, vCard or MECARD extraction.</p>
-        <label for="qr-pattern">Name regex (optional)</label>
-        <input id="qr-pattern" type="text" maxlength="300" spellcheck="false" aria-describedby="qr-pattern-help" />
-        <p id="qr-pattern-help" class="small">Without a regex: printed badge text, plain names, JSON, vCards and MECARD.
-        Regex capture groups 1–3 map to firstname, lastname and company. Named groups may use firstname or name,
-        lastname, company, title, email, phone, url and notes. Example for MS AI Tour badges: ^[^^]*\\^(?&lt;firstname&gt;[^^]+)\\^(?&lt;lastname&gt;[^^]+)\\^(?&lt;company&gt;[^^]+)\\^.
-        Enter the pattern without / delimiters.</p>
+        <p id="qr-status" class="scan-status" role="status" aria-live="polite" aria-atomic="true"></p>
+        <p id="qr-github-result" class="scan-status" role="status" aria-live="polite" hidden></p>
+        <form id="qr-data" hidden aria-label="Scanned visitor data">
+          <hr class="scan-data-divider" />
+          <table class="scan-data-table">
+            <caption>Scanned visitor data</caption>
+            <tbody id="qr-data-rows"></tbody>
+          </table>
+          <div class="row scan-data-actions">
+            <button id="qr-data-save" type="submit" class="primary">Save</button>
+            <button id="qr-data-clear" type="button">Clear</button>
+          </div>
+          <p id="qr-issue-note" class="small scan-issue-note"><span class="scan-issue-icon" aria-hidden="true">!</span>
+            <span id="qr-issue-note-text"></span></p>
+        </form>
       </div>
       <div class="card">
         <h2>Greeting settings</h2>
         <label for="qr-template">Greeting</label>
         <input id="qr-template" type="text" maxlength="200" aria-describedby="qr-template-help" />
-        <p id="qr-template-help" class="small">Use {name} or {firstname}, {lastname}, {company}, {title}, {email}, {phone}, {url}, {github}, {linkedin} or {notes} for captured fields.</p>
+        <p id="qr-template-help" class="small">Use {name} or {firstname}, {lastname}, {role}, {company}, or {githubhandle} for captured fields.</p>
         <label for="qr-repetitions">Repetitions</label>
         <input id="qr-repetitions" type="number" min="1" max="65536" step="1" />
         <label for="qr-speed">Scroll speed</label>
         <input id="qr-speed" type="range" min="1" max="10" step="1" />
-        <details>
-          <summary>Enter scan data manually</summary>
-          <label for="qr-raw">Scan data (not saved)</label>
-          <textarea id="qr-raw" rows="3" maxlength="4096"></textarea>
-          <button id="qr-submit">Greet from scan data</button>
-        </details>
+      </div>`;
+    $('settings-scan').innerHTML = `
+      <div class="card">
+        <h2>Save scans as GitHub issues</h2>
+        <p class="small">Save on the Scan tab opens a pre-filled new issue in this repository in a new browser tab.
+        No GitHub token is used: you review the issue and choose Create while signed in to GitHub.</p>
+        <label for="qr-issue-repo">Repository URL</label>
+        <input id="qr-issue-repo" type="text" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" maxlength="200" />
+        <label for="qr-issue-label">Issue label</label>
+        <input id="qr-issue-label" type="text" maxlength="100" autocapitalize="off" autocomplete="off" aria-describedby="qr-issue-label-help" />
+        <p id="qr-issue-label-help" class="small">Optional; separate several labels with commas. GitHub only applies labels that exist in the repository
+        when you have triage access.</p>
+        <label for="qr-issue-assignee">Assign to (your GitHub username)</label>
+        <input id="qr-issue-assignee" type="text" maxlength="40" autocapitalize="off" autocomplete="off" spellcheck="false" aria-describedby="qr-issue-assignee-help" />
+        <p id="qr-issue-assignee-help" class="small">Optional. Without a token the app cannot detect who is signed in to GitHub, so enter your
+        username to pre-fill the assignee. Stored only on this device and never included in backups.</p>
+        <p id="qr-issue-error" class="bad" role="alert"></p>
       </div>
       <div class="card">
         <h2>Scan log &amp; privacy</h2>
         <label><input id="qr-log-enabled" type="checkbox" /> Save all scanned data to a local file</label>
-        <p class="small">Off by default. When enabled, logs complete camera, OCR and manual scan data (including failed greetings),
-        timestamps and profile notes in qr-scan-log.jsonl. This may include personal data.
+        <p class="small">Off by default. When enabled, logs complete camera and OCR scan data (including failed greetings),
+        timestamps and extracted fields in qr-scan-log.jsonl. This may include personal data.
         Turning logging off keeps the existing file. Logs are separate from preset backups.
         Share only with trusted recipients.</p>
         <button id="qr-log-share">Share scan log</button>
         <p id="qr-log-status" role="status" aria-live="polite"></p>
         <p id="qr-log-error" class="bad" role="alert"></p>
-        <label><input id="qr-github-enabled" type="checkbox" /> Look up public GitHub email for badges with an @handle</label>
-        <p class="small">Off by default. When enabled, a handle recognized from printed badge text (OCR) is sent to api.github.com
-        to check whether that user has a public email. Nothing else is sent.                 The result is shown on screen, and when scan logging is on it is also saved in the scan log.
-                The badge screen's contacts panel can show a different GitHub handle from the one printed on the paper badge; both are looked up.</p>
-                With logging on, each scan saves the name, company, title, handles and any public email for later processing.</p>
-        <p id="qr-github-result" role="status" aria-live="polite"></p>
         <p class="small">Scan data and OCR are processed locally and are only saved when logging is enabled. Only the greeting is sent to your cap over Bluetooth
-        (plus the handle to GitHub if the lookup above is enabled).
+        (plus recognized GitHub handles to api.github.com to find public email addresses).
+        Public emails are shown in the scan fields and included in the log when logging is enabled.
+        Save puts the reviewed visitor fields in the URL of a new GitHub issue tab; nothing is posted until you choose Create on GitHub.
         Camera access requires permission. The English text-recognition model is bundled for offline use.
         Keep the app open until the previous content is restored.</p>
         <p class="small">Inspired by <a href="https://github.com/xebia/badge-scanner" target="_blank" rel="noopener noreferrer">Rob Bos / Xebia's badge-scanner</a>.
-        QR decoding: <a href="https://github.com/zxing-js/browser" target="_blank" rel="noopener noreferrer">ZXing Browser (MIT)</a>,
-        <a href="https://github.com/zxing-js/library" target="_blank" rel="noopener noreferrer">ZXing JS (Apache-2.0)</a>.
         Independent integration; no badge-scanner source code copied.
         <a href="${import.meta.env.BASE_URL}licenses/scanner-credits.txt">Credits and licenses</a>.</p>
       </div>`;
     let settings: GreetingSettings = DEFAULT_GREETING;
-    let restoredSettings = false;
     try {
       const saved = await loadKv('qrGreeting');
-      if (saved !== undefined) { settings = validateGreeting(saved); restoredSettings = true; }
+      if (saved !== undefined) settings = validateGreeting(saved);
     } catch (e) { this.error(`Could not restore scanner settings: ${this.message(e)}`); }
-    try {
-      const savedProfiles = await loadKv('qrGreetingProfiles');
-      if (savedProfiles !== undefined) {
-        const state = validateGreetingProfiles(savedProfiles);
-        this.profiles = state.profiles;
-        this.selectedProfileId = state.selectedId;
-        const selected = this.profiles.find((profile) => profile.id === this.selectedProfileId);
-        if (selected && !restoredSettings) settings = { ...settings, pattern: selected.pattern, template: selected.template };
-      }
-    } catch (e) { this.error(`Could not restore saved badge profiles: ${this.message(e)}`); }
     try {
       const enabled = await loadKv('qrScanLogging');
       if (enabled !== undefined && typeof enabled !== 'boolean') throw new Error('Invalid logging preference.');
@@ -151,40 +141,203 @@ export class GreetingUi {
     } catch (e) { $('qr-log-error').textContent = `Could not restore scan logging preference: ${this.message(e)}`; }
     $<HTMLInputElement>('qr-log-enabled').checked = this.loggingEnabled;
     try {
-      const lookup = await loadKv('qrGithubLookup');
-      if (lookup !== undefined && typeof lookup !== 'boolean') throw new Error('Invalid GitHub lookup preference.');
-      this.githubLookupEnabled = lookup === true;
-    } catch (e) { $('qr-log-error').textContent = `Could not restore GitHub lookup preference: ${this.message(e)}`; }
-    $<HTMLInputElement>('qr-github-enabled').checked = this.githubLookupEnabled;
-    this.renderProfiles();
-    $<HTMLSelectElement>('qr-profile').value = this.selectedProfileId ?? '';
-    const selectedProfile = this.profiles.find((profile) => profile.id === this.selectedProfileId);
-    $<HTMLInputElement>('qr-note').value = selectedProfile?.note ?? '';
-    $<HTMLInputElement>('qr-pattern').value = settings.pattern;
+      const saved = await loadKv('qrIssue');
+      if (saved !== undefined) this.issueSettings = validateIssueSettings(saved);
+    } catch (e) { $('qr-issue-error').textContent = `Could not restore GitHub issue settings: ${this.message(e)}`; }
+    try {
+      const assignee = await loadKv('qrIssueAssignee');
+      if (assignee !== undefined && (typeof assignee !== 'string' || !isValidAssignee(assignee))) throw new Error('Invalid assignee.');
+      this.issueAssignee = assignee ?? '';
+    } catch (e) { $('qr-issue-error').textContent = `Could not restore issue assignee: ${this.message(e)}`; }
+    this.showIssueSettings();
+    $('qr-issue-repo').onchange = () => { void this.persistIssue(); };
+    $('qr-issue-label').onchange = () => { void this.persistIssue(); };
+    $('qr-issue-assignee').onchange = () => { void this.persistAssignee(); };
     $<HTMLInputElement>('qr-template').value = settings.template;
     $<HTMLInputElement>('qr-repetitions').value = String(settings.repetitions);
     $<HTMLInputElement>('qr-speed').value = String(settings.speed);
-    for (const id of ['qr-pattern', 'qr-template', 'qr-repetitions', 'qr-speed']) {
+    for (const id of ['qr-template', 'qr-repetitions', 'qr-speed']) {
       $(id).onchange = () => { void this.persist(); };
     }
-    $('qr-profile').onchange = () => { void this.selectProfile($<HTMLSelectElement>('qr-profile').value || null); };
-    $('qr-profile-save').onclick = () => { void this.saveProfile(); };
-    $('qr-profile-delete').onclick = () => { void this.deleteProfile(); };
-    $('qr-start').onclick = () => { void this.scan(); };
     $('qr-text-start').onclick = () => { void this.scanText(); };
     $('qr-capture').onclick = () => { void this.captureText(); };
     $('qr-stop').onclick = () => this.stopCamera();
-    $('qr-submit').onclick = () => { void this.greet($<HTMLTextAreaElement>('qr-raw').value, this.ctx.controller(), 'manual'); };
     $('qr-log-enabled').onchange = () => { void this.setLogging(); };
     $('qr-log-share').onclick = () => { void this.shareLog(); };
-    $('qr-github-enabled').onchange = () => { void this.setGithubLookup(); };
     $('qr-cancel').onclick = () => this.playing?.cancelUpload();
+    $('qr-data').onsubmit = (event) => { event.preventDefault(); this.openIssue(); };
+    $('qr-data-clear').onclick = () => {
+      this.clearScanData();
+      this.statusMessage = '';
+      this.errorMessage = '';
+      this.updateStatus();
+      $('qr-text-start').focus();
+    };
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.stopCamera(); });
     window.addEventListener('pagehide', () => this.stopCamera());
     this.updateStatus();
   }
 
   private message(e: unknown) { return e instanceof Error ? e.message : String(e); }
+
+  private clearScanData() {
+    this.lookupId++;
+    $('qr-github-result').textContent = '';
+    $('qr-github-result').hidden = true;
+    $('qr-data-rows').replaceChildren();
+    $('qr-data').hidden = true;
+    this.scanFields = undefined;
+  }
+
+  private showIssueSettings() {
+    $<HTMLInputElement>('qr-issue-repo').value = this.issueSettings.repoUrl;
+    $<HTMLInputElement>('qr-issue-label').value = this.issueSettings.label;
+    $<HTMLInputElement>('qr-issue-assignee').value = this.issueAssignee;
+    this.showIssueNote();
+  }
+
+  private showIssueNote() {
+    const { owner, repo } = parseRepoUrl(this.issueSettings.repoUrl);
+    $('qr-issue-note-text').textContent = `Save opens a new tab with a pre-filled issue in ${owner}/${repo}. `
+      + `Before pressing Save, make sure you are signed in to GitHub with access to the ${owner} organization.`;
+  }
+
+  private readIssueSettings(): IssueSettings {
+    return validateIssueSettings({
+      repoUrl: $<HTMLInputElement>('qr-issue-repo').value,
+      label: $<HTMLInputElement>('qr-issue-label').value,
+    });
+  }
+
+  private async persistIssue() {
+    const repoInput = $<HTMLInputElement>('qr-issue-repo');
+    const typed = repoInput.value;
+    try {
+      const settings = this.readIssueSettings();
+      await saveKv('qrIssue', settings);
+      this.issueSettings = settings;
+      $('qr-issue-error').textContent = '';
+      // Normalize only if the user has not kept typing while the save was pending.
+      if (repoInput.value === typed) repoInput.value = settings.repoUrl;
+      this.showIssueNote();
+    } catch (e) { $('qr-issue-error').textContent = `GitHub issue settings were not saved: ${this.message(e)}`; }
+  }
+
+  private async persistAssignee() {
+    const input = $<HTMLInputElement>('qr-issue-assignee');
+    const assignee = input.value.trim().replace(/^@/, '');
+    try {
+      if (!isValidAssignee(assignee)) throw new Error('Enter a valid GitHub username or leave it empty.');
+      await saveKv('qrIssueAssignee', assignee);
+      this.issueAssignee = assignee;
+      input.value = assignee;
+      $('qr-issue-error').textContent = '';
+    } catch (e) { $('qr-issue-error').textContent = `Issue assignee was not saved: ${this.message(e)}`; }
+  }
+
+  private openIssue() {
+    const save = $<HTMLButtonElement>('qr-data-save');
+    if (!this.scanFields || save.disabled) return;
+    const email = $<HTMLInputElement>('qr-data-email');
+    if (!isValidEmail(email.value)) {
+      email.setAttribute('aria-invalid', 'true');
+      save.disabled = true;
+      email.focus();
+      return;
+    }
+    const fields = this.scanFields();
+    const field = (type: string) => fields.find((f) => f.type === type)?.value ?? '';
+    const url = newIssueUrl(this.issueSettings, issueTitle(field('firstname'), field('lastname')),
+      issueBody(fields, this.scannedAt), this.issueAssignee);
+    // Not opened with "noopener": that always returns null, hiding a blocked pop-up.
+    const tab = window.open(url, '_blank');
+    if (!tab) {
+      this.error('The browser blocked the new GitHub tab. Allow pop-ups for this app, then press Save again.');
+      return;
+    }
+    try { tab.opener = null; } catch { /* cross-origin windows may refuse; GitHub isolates itself anyway */ }
+    this.error('');
+    this.status('Opened a pre-filled GitHub issue in a new tab. Review it there and choose Create.');
+  }
+
+  private showScanData(extracted: ExtractedName, raw: string, scannedAt = new Date()) {
+    const { firstname, lastname } = greetingNameFields(extracted);
+    const fields = [
+      { type: 'firstname', label: 'First name', value: firstname },
+      { type: 'lastname', label: 'Last name', value: lastname },
+      { type: 'github', label: 'GitHub Handle', value: extracted.github ?? findGithubHandle(raw) ?? '' },
+      { type: 'role', label: 'Role', value: extracted.title ?? '' },
+      { type: 'company', label: 'Company', value: extracted.company ?? '' },
+    ];
+    const rows = fields.map((field, index) => {
+      const row = document.createElement('tr');
+      const valueCell = row.insertCell();
+      const typeCell = row.insertCell();
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = field.value;
+      input.setAttribute('aria-label', `Data item ${index + 1}`);
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', `Data item ${index + 1} type`);
+      for (const option of fields) select.add(new Option(option.label, option.type));
+      select.value = field.type;
+      const normalizeHandle = () => {
+        if (select.value === 'github' && input.value) input.value = `@${input.value.replace(/^@+/, '')}`;
+      };
+      input.oninput = normalizeHandle;
+      select.onchange = normalizeHandle;
+      normalizeHandle();
+      valueCell.append(input);
+      typeCell.append(select);
+      return row;
+    });
+    const labelledRow = (id: string, type: string, label: string, value = '') => {
+      const row = document.createElement('tr');
+      const input = document.createElement('input');
+      input.id = id;
+      input.type = type;
+      input.value = value;
+      input.setAttribute('aria-label', label);
+      row.insertCell().append(input);
+      const labelElement = document.createElement('label');
+      labelElement.htmlFor = input.id;
+      labelElement.textContent = label;
+      row.insertCell().append(labelElement);
+      return { row, input };
+    };
+    const { row: emailRow, input: email } = labelledRow('qr-data-email', 'email', 'Email address');
+    const { row: phoneRow, input: phone } = labelledRow('qr-data-phone', 'tel', 'Phone number', extracted.phone ?? '');
+    phone.autocomplete = 'off';
+    const { row: linkedinRow, input: linkedin } = labelledRow('qr-data-linkedin', 'text', 'LinkedIn handle', extracted.linkedin ?? '');
+    linkedin.autocomplete = 'off';
+    linkedin.placeholder = 'handle';
+    // Pasted profile URLs are reduced to the handle; the issue links the full URL.
+    linkedin.addEventListener('blur', () => { linkedin.value = parseLinkedinHandle(linkedin.value) ?? linkedin.value.trim(); });
+    const save = $<HTMLButtonElement>('qr-data-save');
+    const validateEmail = () => {
+      const valid = isValidEmail(email.value);
+      if (valid) email.removeAttribute('aria-invalid');
+      else email.setAttribute('aria-invalid', 'true');
+      save.disabled = !valid;
+    };
+    email.addEventListener('blur', validateEmail);
+    // Once flagged, re-check while typing so the error clears as soon as the address is fixed.
+    email.addEventListener('input', () => { if (email.hasAttribute('aria-invalid')) validateEmail(); });
+    save.disabled = false;
+    this.scannedAt = scannedAt;
+    this.scanFields = () => [
+      ...rows.map((row) => {
+        const select = row.querySelector('select')!;
+        return { label: select.selectedOptions[0]?.text ?? '', value: row.querySelector('input')!.value, type: select.value };
+      }),
+      { label: 'Email address', value: email.value },
+      { label: 'Phone number', value: phone.value },
+      { label: 'LinkedIn', value: linkedin.value, type: 'linkedin' },
+    ];
+    $('qr-data-rows').replaceChildren(...rows, emailRow, phoneRow, linkedinRow);
+    $('qr-data').hidden = false;
+  }
+
   private async setLogging() {
     const input = $<HTMLInputElement>('qr-log-enabled');
     this.savingLogging = true;
@@ -200,29 +353,18 @@ export class GreetingUi {
     } finally { this.savingLogging = false; this.updateStatus(); }
   }
 
-  private async setGithubLookup() {
-    const input = $<HTMLInputElement>('qr-github-enabled');
-    this.savingLogging = true;
-    this.updateStatus();
-    try {
-      await saveKv('qrGithubLookup', input.checked);
-      this.githubLookupEnabled = input.checked;
-      if (!input.checked) { this.lookupId++; $('qr-github-result').textContent = ''; }
-      $('qr-log-error').textContent = '';
-    } catch (e) {
-      input.checked = this.githubLookupEnabled;
-      $('qr-log-error').textContent = `Could not save GitHub lookup preference: ${this.message(e)}`;
-    } finally { this.savingLogging = false; this.updateStatus(); }
-  }
-
   private async lookupGithub(raw: string, scanId: string) {
     const result = $('qr-github-result');
+    const email = $<HTMLInputElement>('qr-data-email');
+    let edited = false;
+    email.addEventListener('input', () => { edited = true; }, { once: true });
     const id = ++this.lookupId;
     result.textContent = '';
-    if (!this.githubLookupEnabled) return;
+    result.hidden = true;
     const { printed, configured } = findGithubHandles(raw);
     const handles = [...new Map([printed, configured].flatMap((h) => h ? [[h.toLowerCase(), h] as const] : [])).values()];
     if (!handles.length) return;
+    result.hidden = false;
     result.textContent = `Checking GitHub for ${handles.map((h) => `@${h}`).join(' and ')}…`;
     try {
       const results = await Promise.all(handles.map(async (handle) => ({
@@ -230,6 +372,8 @@ export class GreetingUi {
         profile: await fetchPublicProfile(handle, AbortSignal.timeout(8000)),
       })));
       if (id !== this.lookupId) return;
+      const publicEmail = results.find(({ profile }) => profile?.email)?.profile?.email;
+      if (publicEmail && !edited && !email.value) email.value = publicEmail;
       result.textContent = results.map(({ handle, origin, profile }) => {
         const label = results.length > 1 ? (origin === 'printed' ? 'printed ' : 'badge screen ') : '';
         return !profile ? `${label}@${handle} was not found on GitHub. Check the OCR text.`
@@ -237,11 +381,9 @@ export class GreetingUi {
           : `${label}@${profile.login} has no public email.`;
       }).join(' ');
       if (this.loggingEnabled) {
-        const selected = this.profiles.find((item) => item.id === this.selectedProfileId);
         try {
           await appendScanLog({
             timestamp: new Date().toISOString(), scanId, source: 'ocr', raw,
-            profile: selected ? { id: selected.id, note: selected.note } : null,
             githubLookup: results.map(({ handle, origin, profile }) => ({
               handle, origin, found: !!profile, ...(profile ? { login: profile.login, email: profile.email } : {}),
             })),
@@ -264,11 +406,17 @@ export class GreetingUi {
     } catch (e) { $('qr-log-error').textContent = `Could not share scan log: ${this.message(e)}. Enable logging and scan a badge to create the file.`; }
     finally { this.sharingLog = false; this.updateStatus(); }
   }
-  private error(message: string) { $('qr-error').textContent = message; }
-  private status(message: string) { $('qr-status').textContent = message; }
+  private error(message: string) {
+    this.errorMessage = message;
+    if (message) this.statusMessage = '';
+    this.updateStatus();
+  }
+  private status(message: string) {
+    this.statusMessage = message;
+    this.updateStatus();
+  }
   private readSettings() {
     return validateGreeting({
-      pattern: $<HTMLInputElement>('qr-pattern').value,
       template: $<HTMLInputElement>('qr-template').value,
       repetitions: Number($<HTMLInputElement>('qr-repetitions').value),
       speed: Number($<HTMLInputElement>('qr-speed').value),
@@ -280,51 +428,27 @@ export class GreetingUi {
     catch (e) { this.error(`Could not save scanner settings: ${this.message(e)}`); }
   }
 
-  private renderProfiles() {
-    const select = $<HTMLSelectElement>('qr-profile');
-    select.replaceChildren(new Option('None — general scan data', ''));
-    for (const profile of this.profiles) select.add(new Option(`${profile.id}. ${profile.note}`, profile.id));
-    $<HTMLButtonElement>('qr-profile-delete').hidden = !this.selectedProfileId;
-  }
-
-  exportProfiles(): GreetingProfileState {
-    return validateGreetingProfiles({ profiles: this.profiles, selectedId: this.selectedProfileId });
-  }
-
   exportSettings(): ScannerBackup {
-    return { qrGreeting: this.readSettings(), qrScanLogging: this.loggingEnabled, qrGithubLookup: this.githubLookupEnabled };
+    return { qrGreeting: this.readSettings(), qrScanLogging: this.loggingEnabled, qrIssue: this.issueSettings };
   }
 
-  /** Prepare legacy profile-only imports before committing any backup data. */
   prepareImport(value: ScannerBackup): ScannerBackup {
-    const state = value.qrProfiles === undefined ? undefined : validateGreetingProfiles(value.qrProfiles);
-    const active = state?.profiles.find((profile) => profile.id === state.selectedId);
-    const settings = value.qrGreeting !== undefined ? validateGreeting(value.qrGreeting)
-      : state ? validateGreeting({
-        ...this.readSettings(),
-        pattern: active?.pattern ?? DEFAULT_GREETING.pattern,
-        template: active?.template ?? DEFAULT_GREETING.template,
-      }) : undefined;
     return {
-      ...(state ? { qrProfiles: state } : {}),
-      ...(settings ? { qrGreeting: settings } : {}),
+      ...(value.qrGreeting !== undefined ? { qrGreeting: validateGreeting(value.qrGreeting) } : {}),
       ...(value.qrScanLogging !== undefined ? { qrScanLogging: value.qrScanLogging } : {}),
       ...(value.qrGithubLookup !== undefined ? { qrGithubLookup: value.qrGithubLookup } : {}),
+      ...(value.qrIssue !== undefined ? { qrIssue: validateIssueSettings(value.qrIssue) } : {}),
     };
   }
 
   applyImportedSettings(value: ScannerBackup) {
-    if (value.qrProfiles) {
-      this.profiles = value.qrProfiles.profiles;
-      this.selectedProfileId = value.qrProfiles.selectedId;
-      this.renderProfiles();
-      $<HTMLSelectElement>('qr-profile').value = this.selectedProfileId ?? '';
-      const active = this.profiles.find((profile) => profile.id === this.selectedProfileId);
-      $<HTMLInputElement>('qr-note').value = active?.note ?? '';
+    if (value.qrIssue) {
+      this.issueSettings = value.qrIssue;
+      $('qr-issue-error').textContent = '';
+      this.showIssueSettings();
     }
     if (value.qrGreeting) {
       const settings = value.qrGreeting;
-      $<HTMLInputElement>('qr-pattern').value = settings.pattern;
       $<HTMLInputElement>('qr-template').value = settings.template;
       $<HTMLInputElement>('qr-repetitions').value = String(settings.repetitions);
       $<HTMLInputElement>('qr-speed').value = String(settings.speed);
@@ -334,92 +458,34 @@ export class GreetingUi {
       $<HTMLInputElement>('qr-log-enabled').checked = this.loggingEnabled;
       $('qr-log-status').textContent = this.loggingEnabled ? 'Scan logging enabled by imported settings.' : 'Scan logging disabled. Existing log kept.';
     }
-    if (value.qrGithubLookup !== undefined) {
-      this.githubLookupEnabled = value.qrGithubLookup;
-      $<HTMLInputElement>('qr-github-enabled').checked = this.githubLookupEnabled;
-      if (!this.githubLookupEnabled) { this.lookupId++; $('qr-github-result').textContent = ''; }
-    }
-  }
-
-  private async persistProfiles(profiles = this.profiles, selectedId = this.selectedProfileId) {
-    await saveKv('qrGreetingProfiles', validateGreetingProfiles({ profiles, selectedId }));
-  }
-
-  private async selectProfile(id: string | null) {
-    const profile = this.profiles.find((item) => item.id === id);
-    if (id && !profile) {
-      this.error('That badge profile is no longer saved.');
-      return;
-    }
-    this.selectedProfileId = id;
-    $<HTMLSelectElement>('qr-profile').value = id ?? '';
-    $<HTMLInputElement>('qr-note').value = profile?.note ?? '';
-    $<HTMLInputElement>('qr-pattern').value = profile?.pattern ?? DEFAULT_GREETING.pattern;
-    $<HTMLInputElement>('qr-template').value = profile?.template ?? DEFAULT_GREETING.template;
-    try {
-      await Promise.all([saveKv('qrGreeting', this.readSettings()), this.persistProfiles()]);
-      this.error('');
-    } catch (e) { this.error(`Could not select badge profile: ${this.message(e)}`); }
-  }
-
-  private async saveProfile() {
-    try {
-      const settings = this.readSettings();
-      const note = $<HTMLInputElement>('qr-note').value.trim();
-      if (!note || note.length > 60) throw new Error('Add a profile note of at most 60 characters.');
-      const id = this.selectedProfileId ?? ['1', '2', '3'].find((slot) => !this.profiles.some((profile) => profile.id === slot));
-      if (!id) throw new Error('All three profile slots are in use. Select one to replace it.');
-      const profile = { id, note, pattern: settings.pattern, template: settings.template };
-      const profiles = [...this.profiles.filter((item) => item.id !== id), profile].sort((a, b) => a.id.localeCompare(b.id));
-      await this.persistProfiles(profiles, id);
-      this.profiles = profiles;
-      this.selectedProfileId = id;
-      this.renderProfiles();
-      $<HTMLSelectElement>('qr-profile').value = id;
-      this.error('');
-      this.status(`Saved badge profile "${note}".`);
-    } catch (e) { this.error(`Could not save badge profile: ${this.message(e)}`); }
-  }
-
-  private async deleteProfile() {
-    if (!this.selectedProfileId) return;
-    const profiles = this.profiles.filter((profile) => profile.id !== this.selectedProfileId);
-    try {
-      await this.persistProfiles(profiles, null);
-      this.profiles = profiles;
-      this.selectedProfileId = null;
-      this.renderProfiles();
-      $<HTMLInputElement>('qr-note').value = '';
-      $<HTMLInputElement>('qr-pattern').value = DEFAULT_GREETING.pattern;
-      $<HTMLInputElement>('qr-template').value = DEFAULT_GREETING.template;
-      await saveKv('qrGreeting', this.readSettings());
-      this.error('');
-      this.status('Deleted badge profile.');
-    } catch (e) { this.error(`Could not delete badge profile: ${this.message(e)}`); }
   }
 
   updateStatus() {
-    if (!document.getElementById('qr-start')) return;
+    if (!document.getElementById('qr-text-start')) return;
     const ctl = this.ctx.controller();
-    const unavailable = ctl.state !== 'Ready' || !ctl.canRestoreContent || ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
-    $('qr-ready').textContent = this.scanning ? '' : ctl.state !== 'Ready' ? 'Connect your primary cap on Connect before scanning.'
-      : !ctl.canRestoreContent ? 'Send content from Connect first so it can be restored after the greeting.'
+    const unavailable = ctl.state !== 'Ready' || ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
+    const readiness = this.scanning ? 'Starting camera. Allow camera access when prompted.' : ctl.state !== 'Ready' ? 'Connect your primary cap before scanning.'
       : ctl.temporaryActive || this.processing ? 'Wait for the current greeting to finish, or end it above.'
       : this.sharingLog || this.savingLogging ? 'Wait for the scan log operation to finish.' : 'Ready to scan a badge.';
-    $<HTMLButtonElement>('qr-start').disabled = unavailable || this.scanning;
+    const status = $('qr-status');
+    status.textContent = this.errorMessage ? [this.errorMessage, this.statusMessage].filter(Boolean).join(' ')
+      : (ctl.state !== 'Ready' && !this.processing && !this.scanning) || this.sharingLog || this.savingLogging
+        ? readiness : this.statusMessage || readiness;
+    status.classList.toggle('bad', !!this.errorMessage);
+    status.setAttribute('role', this.errorMessage ? 'alert' : 'status');
+    status.setAttribute('aria-live', this.errorMessage ? 'assertive' : 'polite');
     $<HTMLButtonElement>('qr-text-start').disabled = unavailable || this.scanning;
-    $<HTMLButtonElement>('qr-submit').disabled = unavailable || this.scanning;
     const video = $<HTMLVideoElement>('qr-video');
     const videoReady = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0;
-    $<HTMLButtonElement>('qr-capture').disabled = !this.scanning || this.cameraMode !== 'text' || this.recognizing || !videoReady;
+    $<HTMLButtonElement>('qr-capture').disabled = !this.scanning || this.recognizing || !videoReady;
     $('qr-video-wrap').hidden = !this.scanning;
-    $('qr-ocr-controls').hidden = !this.scanning || this.cameraMode !== 'text';
-    $('qr-reticle').hidden = this.cameraMode !== 'text';
+    $('qr-ocr-controls').hidden = !this.scanning;
+    $('qr-reticle').hidden = !this.scanning;
     $('qr-stop').hidden = !this.scanning;
     $('qr-cancel').hidden = !this.playing;
     $<HTMLInputElement>('qr-log-enabled').disabled = this.processing || this.scanning || this.savingLogging || this.sharingLog;
     $<HTMLButtonElement>('qr-log-share').disabled = this.processing || this.scanning || this.sharingLog;
-    for (const id of ['qr-profile', 'qr-note', 'qr-pattern', 'qr-template', 'qr-repetitions', 'qr-speed', 'qr-raw', 'qr-profile-save', 'qr-profile-delete']) {
+    for (const id of ['qr-template', 'qr-repetitions', 'qr-speed']) {
       $<HTMLInputElement>(id).disabled = this.processing || this.scanning;
     }
   }
@@ -429,19 +495,17 @@ export class GreetingUi {
     const wasScanning = this.scanning;
     this.camera.stop();
     this.scanning = false;
-    this.cameraMode = null;
     const video = $<HTMLVideoElement>('qr-video');
     if (video) { video.onloadeddata = null; video.srcObject = null; }
     if (wasScanning) this.status('Camera stopped.');
     this.updateStatus();
   }
 
-  private async startCamera(mode: 'codes' | 'text') {
-    const target = this.ctx.controller();
+  private async scanText() {
     const attempt = ++this.scanId;
     this.scanning = true;
-    this.cameraMode = mode;
-    this.updateStatus();
+    this.error('');
+    this.status('Starting camera. Allow camera access when prompted.');
     try {
       const settings = this.readSettings();
       await saveKv('qrGreeting', settings);
@@ -450,29 +514,17 @@ export class GreetingUi {
       const video = $<HTMLVideoElement>('qr-video');
       video.onloadeddata = () => this.updateStatus();
       this.status('Starting camera. Allow camera access when prompted.');
-      if (mode === 'codes') {
-        await this.camera.start(video, (raw) => {
-          this.stopCamera();
-          void this.greet(raw, target, 'camera');
-        }, (e) => { this.stopCamera(); this.error(`Camera failed: ${this.message(e)}. Retry or enter scan data manually.`); });
-      } else {
-        await this.camera.preview(video);
-      }
-      if (this.scanning) this.status(mode === 'codes'
-        ? 'Point the camera at a QR code or barcode. The greeting starts immediately after scanning.'
-        : 'Frame the printed name and company, then capture the text.');
+      await this.camera.preview(video);
+      if (this.scanning) this.status('Frame the printed name and company, then capture the text.');
     } catch (e) {
       if (attempt !== this.scanId) return;
       this.stopCamera();
-      this.error(`Could not start scanner: ${this.message(e)}. Retry or enter scan data manually.`);
+      this.error(`Could not start scanner: ${this.message(e)}. Retry or check camera permissions.`);
     }
   }
 
-  private async scan() { await this.startCamera('codes'); }
-  private async scanText() { await this.startCamera('text'); }
-
   private async captureText() {
-    if (!this.scanning || this.cameraMode !== 'text' || this.recognizing) return;
+    if (!this.scanning || this.recognizing) return;
     const video = $<HTMLVideoElement>('qr-video');
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
       this.error('Camera is not ready yet. Wait for the preview, then capture again.');
@@ -508,7 +560,6 @@ export class GreetingUi {
       if (attempt !== this.scanId) return;
       this.stopCamera();
       const scanId = new Date().toISOString();
-      void this.lookupGithub(raw, scanId);
       void this.greet(raw, target, 'ocr', scanId);
     } catch (e) {
       if (attempt === this.scanId) {
@@ -521,53 +572,53 @@ export class GreetingUi {
     }
   }
 
-  private async greet(raw: string, target: DeviceController, source: 'camera' | 'ocr' | 'manual', scanId = new Date().toISOString()) {
+  private async greet(raw: string, target: DeviceController, source: 'ocr' | 'manual', scanId = new Date().toISOString()) {
     if (this.processing) return;
     this.processing = true;
+    this.clearScanData();
     this.error('');
-    this.updateStatus();
+    this.status('Preparing greeting…');
     try {
       if (this.loggingEnabled) {
-        const profile = this.profiles.find((item) => item.id === this.selectedProfileId);
         let loggedFields: ExtractedName | undefined;
-        try { loggedFields = await extractNameSafely(raw, this.readSettings().pattern); } catch { /* raw text is still logged */ }
+        try { loggedFields = extractName(raw); } catch { /* raw text is still logged */ }
         try {
           await appendScanLog({
             timestamp: scanId, scanId, source, raw,
             ...(loggedFields ? { extracted: loggedFields } : {}),
             ...(source === 'ocr' ? (() => { const githubHandles = differingGithubHandles(raw); return githubHandles ? { githubHandles } : {}; })() : {}),
-            profile: profile ? { id: profile.id, note: profile.note } : null,
           });
           $('qr-log-error').textContent = '';
           $('qr-log-status').textContent = 'Scan saved to qr-scan-log.jsonl.';
         } catch (e) { $('qr-log-error').textContent = `Scan was NOT saved: ${this.message(e)}`; }
       }
+      const extracted = extractName(raw);
+      this.showScanData(extracted, raw, new Date(scanId));
+      if (source === 'ocr') void this.lookupGithub(raw, scanId);
       const settings = this.readSettings();
       await saveKv('qrGreeting', settings);
-      const extracted: ExtractedName = await extractNameSafely(raw, settings.pattern);
       const text = greetingText(settings.template, extracted);
       await ensureFont();
       const [width, height] = this.ctx.logicalDims();
       const marquee = renderSpanMarquee(text, width, height, 1, 0, parseHexColor('#ffffff'), parseHexColor('#000000'));
-      if (marquee.unsupported.length) throw new Error(`Unsupported characters: ${marquee.unsupported.join(' ')}. Adjust the regex or greeting.`);
+      if (marquee.unsupported.length) throw new Error(`Unsupported characters: ${marquee.unsupported.join(' ')}. Adjust the scan data or greeting.`);
       const frames = marquee.frames.map((frame) => this.ctx.physical(frame));
       frames.push(this.ctx.physical(solid(width, height, [0, 0, 0])));
       const delay = gifDelayMs(this.ctx.marqueeDelay(settings.speed) * marquee.step / 2);
       const duration = greetingDuration(frames.length, delay, settings.repetitions);
       if (target !== this.ctx.controller()) throw new Error('The primary cap changed. Scan again for the current cap.');
-      if (target.state !== 'Ready' || target.temporaryActive || !target.canRestoreContent) {
+      if (target.state !== 'Ready' || target.temporaryActive) {
         throw new Error(target.temporaryActive ? 'A greeting is already playing'
-          : target.state !== 'Ready' ? 'Connect the primary cap first'
-          : 'Send content to the cap first so it can be restored after the greeting');
+          : 'Connect the primary cap first');
       }
       const gif = encodeGif(frames, delay, { nonce: gifNonce(), plays: settings.repetitions });
       this.playing = target;
       this.updateStatus();
-      this.status(`Playing "${text}" ${settings.repetitions} time(s), then restoring the previous content.`);
+      const restoreMessage = target.canRestoreContent ? 'Previous content restored.' : 'Display cleared to black.';
+      this.status(`Playing "${text}" ${settings.repetitions} time(s), then ${target.canRestoreContent ? 'restoring the previous content' : 'clearing the display to black'}.`);
       void vibrateFeedback();
-      const result = await target.playTemporary(gif, frames[0]!, duration);
-      this.status(result === 'cancelled' ? 'Greeting ended early. Previous content restored.' : 'Greeting finished. Previous content restored.');
-      $<HTMLTextAreaElement>('qr-raw').value = '';
+      const result = await target.playTemporary(gif, frames[0]!, duration, { clearIfUnknown: true });
+      this.status(`${result === 'cancelled' ? 'Greeting ended early.' : 'Greeting finished.'} ${restoreMessage}`);
     } catch (e) {
       this.status('');
       this.error(`Greeting failed: ${this.message(e)}`);

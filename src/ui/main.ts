@@ -884,7 +884,7 @@ async function renderBackup(message = '') {
         <legend>Include in shared file</legend>
         <label><input type="checkbox" id="p-include-creations" ${backupSelection.creations ? 'checked' : ''} /> <span>Creations <small>Saved text, colors, images, GIFs, GitHub presets and sequences (${presets.filter((p) => !isGroupPreset(p)).length}), all Custom editor drafts and text fonts, current content and sequence, and GitHub handle, captions, font and scroll speed</small></span></label>
         <label><input type="checkbox" id="p-include-approach" ${backupSelection.approach ? 'checked' : ''} /> <span>Approach settings <small>Saved group presets (${presets.filter(isGroupPreset).length}), current group content, mode, beacon and nearby-cap detection</small></span></label>
-        <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Proximity thresholds, timing, QR profiles, current greeting, repetitions, speed and logging preference (not log contents)</small></span></label>
+        <label><input type="checkbox" id="p-include-scan" ${backupSelection.scan ? 'checked' : ''} /> <span>Scan settings <small>Proximity thresholds, timing, current greeting, repetitions, speed and logging preference (not log contents)</small></span></label>
         <label><input type="checkbox" id="p-include-settings" ${backupSelection.settings ? 'checked' : ''} /> <span>Display &amp; transport settings <small>LED text font, dimensions, brightness, rotation, mirroring and Bluetooth write settings</small></span></label>
         <label><input type="checkbox" id="p-include-sound" ${backupSelection.sound ? 'checked' : ''} /> <span>Sound settings <small>Room sounds, phrases, language, pocket pause and reaction texts (not your voice sample or browser speech permission)</small></span></label>
       </fieldset>
@@ -913,8 +913,7 @@ async function renderBackup(message = '') {
     updateSelection();
     try {
       const all = await listPresets();
-      const json = exportSelectedJson(all, getApproachSettings(), backupSelection,
-        backupSelection.scan ? scanner?.exportProfiles() : undefined, {
+      const json = exportSelectedJson(all, getApproachSettings(), backupSelection, {
           settings: { ...settings, keepBlack: Boolean(settings.keepBlack) },
           ...(backupSelection.creations ? { createContent: activeKind === 'image' && !imageDataUrl && !sequenceOn ? undefined : currentContent(), customDrafts: customDrafts(), createSequence: sequence } : {}),
           ...(backupSelection.creations && github ? { github: github.exportSettings() } : {}),
@@ -941,7 +940,7 @@ async function renderBackup(message = '') {
         ...(data.approach?.countNearbyCaps !== undefined ? { countNearbyCaps: data.approach.countNearbyCaps } : {}),
         tiers: data.approach?.groups ?? currentApproach.tiers,
       } : undefined;
-      const scanSettings = scanner?.prepareImport(data);
+      const scanSettings = data.version === 2 ? scanner?.prepareImport(data) : undefined;
       const createContent = data.version === 2 ? data.createContent : undefined;
       const createSequence = data.version === 2 ? data.createSequence : undefined;
       const drafts = data.version === 2 ? data.customDrafts : undefined;
@@ -981,8 +980,8 @@ async function renderBackup(message = '') {
       await refreshPreview();
       await renderPresets();
       await renderBackup(data.version === 1
-        ? `Imported ${data.presets.length} presets and ${data.qrProfiles.profiles.length} QR profiles. Restart the connection to apply transport settings.`
-        : `Imported shared categories.${data.qrProfiles ? ` Imported ${data.qrProfiles.profiles.length} QR profiles.` : ''} Excluded presets and settings were kept.${data.settings ? ' Restart the connection to apply transport settings.' : ''}`);
+        ? `Imported ${data.presets.length} presets. Restart the connection to apply transport settings.`
+        : `Imported shared categories. Excluded presets and settings were kept.${data.settings ? ' Restart the connection to apply transport settings.' : ''}`);
     } catch (e) { $('#p-msg', root).textContent = `Import failed: ${(e as Error).message}`; }
   };
   const persisted = await navigator.storage?.persisted?.().catch(() => false);

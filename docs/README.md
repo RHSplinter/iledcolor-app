@@ -39,8 +39,8 @@ tab navigation and responsive controls on Android, iOS and web.
   Every spanning **Marquee** choice is marked **unstable**:
   physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
 - **Scan:** the scan/stop/end-greeting actions, camera and status come first, followed by
-  the profile selector, QR profile editor, greeting settings, manual entry, and scan-log/privacy controls.
-  A recognized QR greeting (camera or manual entry) vibrates once immediately when the greeting
+  greeting settings and scan-log/privacy controls.
+  A recognized badge greeting vibrates once immediately when the greeting
   starts on the primary cap; stopping the camera or a failure does not vibrate.
 - **Sound:** opt-in applause/whistle detection, wearer voice sampling, English/German
   phrase reactions, pocket-pause settings, dictionary and editable animation text.
@@ -81,7 +81,7 @@ Font copyright and SIL Open Font License notices are bundled in [public/licenses
 The UI retains its dark theme and blue accent, with larger touch targets, visible keyboard
 focus, arrow/Home/End tab navigation, a non-colour selected-tab marker, responsive form
 grids and wrapping long preset names. Diagnostics are expandable, not removed.
-Existing stored content, settings, QR profiles, backup formats and BLE preset sharing are preserved.
+Existing stored content, settings, backup formats and BLE preset sharing are preserved.
 See [the UI change record](docs/ui-improvements.md) for the expert review and implementation details.
 
 ## Native apps and approach mode
@@ -89,8 +89,8 @@ See [the UI change record](docs/ui-improvements.md) for the expert review and im
 Besides the PWA, the project builds **Android** and **iOS** apps (Capacitor, `android/` and `ios/`) with the shared UI plus **Approach mode**: when caps come close, they show greetings for each other or one marquee spanning all caps, configurable for 1, 2, up to 4, up to 8, and more than 8 caps. While approach mode runs, presets can also be shared with a nearby phone; the receiver must accept the preset before it is transferred. See [docs/approaching-mode.md](docs/approaching-mode.md) for the detection design and [docs/INSTALL.md](docs/INSTALL.md) for building the APK.
 
 Web Bluetooth requires a supported browser (for example Chrome on Android or desktop);
-Safari on iOS does not support it. Editing, presets, QR profiles, manual QR entry and
-backup/import work offline but require a connected cap, so they are not available in a
+Safari on iOS does not support it. Editing, presets and backup/import work offline but
+require a connected cap, so they are not available in a
 browser without Bluetooth. Camera scanning requires HTTPS
 and permission. Imported native group presets are retained and can be exported again,
 but cannot be loaded in the browser. Nearby BLE sharing is native-only; JSON file
@@ -274,8 +274,10 @@ all current Custom section drafts including text font and image fit/background b
 choosing a file, current content and sequence steps including a paused sequence draft,
 plus the current GitHub handle, prefix/postfix text and independent scroll speed),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
-**Scan settings** (proximity thresholds, timing, QR profiles, current greeting/regex,
-repetitions, speed and scan-logging preference), **Display & transport settings**
+**Scan settings** (proximity thresholds, timing, current greeting,
+repetitions, speed, scan-logging preference, and the GitHub issue repository URL and
+label used by **Save**; the personal **Assign to** username is not shared; greeting templates retain all
+placeholders, including `{firstname}`, `{role}` and `{githubhandle}`), **Display & transport settings**
 (LED text font, keep-cap-black-when-idle preference, dimensions, brightness, rotation,
 mirroring and Bluetooth write settings; older backups without a font or keep-black
 preference keep your current choice), and
@@ -289,8 +291,18 @@ keeping excluded presets and settings unchanged. Importing Scan settings can ena
 local scan logging; log contents and scanned QR payloads are never included. Phone
 identity, cap connections, permissions and live running state are not shared.
 Older version-2 files keep newer settings they do not contain. Older full JSON backups
-remain importable with their original full-replacement behavior. Reconnect after importing
+remain importable with their original full-replacement behavior; obsolete saved badge
+profiles and custom name regexes in those files are ignored. Reconnect after importing
 transport settings to apply the new write profile.
+
+**Scan log & privacy** is at the bottom of **Settings**. Logging remains opt-in.
+Recognized GitHub handles are always checked for a public email using the GitHub API;
+the former lookup preference in older backups no longer changes this behavior and
+is omitted from new backups. The scan table includes an editable **Email address**
+with a fixed field type. It stays empty when no public email is available or the
+lookup fails, and late lookup results never overwrite manual edits.
+Lookup messages appear in a status bar; **Clear** removes both the visitor fields
+and the lookup status bar.
 
 ## GitHub contribution graph
 
@@ -332,27 +344,64 @@ local values, including handle-only backups from earlier versions.
 
 ## Badge scanning and greetings
 
-The **Scan** tab reads QR codes and 1D barcodes with the camera, or captures printed
-badge text for on-device English OCR. Scanning works in the Android/iOS apps and in an
+The **Scan** tab has a blue **Scan** button that captures printed badge text for
+on-device English OCR. QR/barcode camera scanning is no longer available.
+Scanning works in the Android/iOS apps and in an
 HTTPS browser with camera permission. Scanner assets, including the OCR engine and
 English model, are bundled and cached for offline use (about 7 MB). Scan data is not
 sent to a server. Only the primary cap connected to the scanning phone is interrupted;
-other connected caps continue unchanged. The camera stops after a code scan or OCR
+other connected caps continue unchanged. The camera stops after an OCR
 capture, on Stop, on changing tabs, or when the app is hidden.
 
 For OCR, center the printed name and company in the preview and tap **Capture text**.
 The parser recognizes plain text, JSON, vCard, MECARD, and multiline badge text,
 including company, job title, email, phone, URL, and notes. Configure a greeting such as
-`Hi {name}!`, its scroll speed, and repetition count (**3 by default**). Save up to
-**three scan profiles** locally, each with a regex, greeting template, and note; **None**
-selects the general parser. Regex named groups can include `name`, `firstname`,
-`lastname`, `company`, `title`, `email`, `phone`, `url`, and `notes`; greeting templates
-can use each of these fields. Manual scan-data entry is available when a camera cannot
-be used. Invalid or unmatched patterns show an error without changing the cap.
+`Hi {name}!`, scroll speed, and repetition count (**3 by default**).
+Names and contact fields are extracted automatically; greeting templates can use the
+captured fields listed below the greeting input. `{name}` uses the full name;
+`Hi {firstname}!` uses only the first name. `{lastname}`, `{role}`, `{company}` and
+`{githubhandle}` insert the corresponding captured fields (missing fields are empty).
+Older placeholders such as `{title}` and `{github}` remain supported.
+Manual scan-data entry is available
+when a camera cannot be used. Invalid scan data shows an error without changing the cap.
+Badges with first name, last name, GitHub handle, role and company on consecutive
+lines use that fixed order, preserving multiword names, short or unfamiliar roles,
+and company punctuation, including when OCR combines the names into one row.
+Other layouts retain automatic field detection without
+treating printed social handles or contact details as name fragments.
+OCR uses word positions to recover tightly stacked name rows and separate widely
+spaced text, keeping distant QR-code artifacts out of the company line. Recognition is still
+best-effort: frame the whole name and company, avoid glare, and check the review fields.
 
-Send content to the cap once before scanning, or enable **Keep cap black when idle**:
+Readiness, camera/OCR progress, errors and greeting completion share one compact
+status bar with smaller text, a tinted background and a left accent edge.
+Completion stays visible until another scan or status change.
+After a successful extraction, a divider separates the status bar from the
+**Scanned visitor data** table. Its headerless rows have editable values and type
+selectors for First name, Last name, GitHub Handle, Role and Company.
+**Save** opens a pre-filled new issue on GitHub in a new tab (no token is used, so
+you must already be signed in to GitHub with access to the repository's organization;
+a notice below the button names that organization). The issue is titled
+`Badge scan: {firstname} {lastname}`, gets the configured label, and its body has a
+**Badge details** table with the non-empty reviewed fields (including email, phone and
+LinkedIn), an empty **Notes** section for you to fill in, a horizontal rule, and
+`Scanned via OCR on: dd-MMM-yyyy HH:mm` (scan time, local). GitHub handles are linked
+rather than @-mentioned, so visitors are not notified. Enter only the LinkedIn handle
+(a scanned handle is pre-filled; a pasted profile URL is reduced to the handle); the
+issue shows the full `https://www.linkedin.com/in/{handle}` URL. Nothing is posted until you choose
+**Create** on GitHub. Configure the target in **Settings → Save scans as GitHub issues**:
+the repository URL (default `https://github.com/xebia/badge-scanner`), the label
+(default `GitHubUniverse`; GitHub applies only existing labels and only for users with
+triage access) and an optional **Assign to** username. GitHub's new-issue link cannot
+detect the signed-in user, so enter your own username to pre-fill the assignee; it stays
+on this device and is not included in backups.
+**Clear** removes and hides the review fields and divider. Review edits remain temporary
+and do not change the greeting or scan log.
+
+Scanning is available immediately after connecting a cap. If no content has been
+sent during this connection, the display is cleared to black after the greeting:
 the protocol cannot read back content installed by another app or before the current
-connection. The app retains the last successfully sent image or GIF, including content
+connection. Otherwise, the app restores the last successfully sent image or GIF, including content
 sent by Approach mode; when keep-black is enabled, the cap restores its black,
 display-off state after the greeting. The greeting scrolls using a finite-loop GIF and
 the requested repetition count. Approach updates for the primary cap wait during the
@@ -362,10 +411,10 @@ background.
 
 Scanner configuration stays in local storage. Scanned data is not persisted unless
 **Save all scanned data to a local file** is enabled (off by default). While enabled,
-camera scans, OCR captures, and submitted manual entries are logged before extraction,
-including scans whose greeting fails. The local `qr-scan-log.jsonl` file contains one
-JSON object per line with a UTC timestamp, source (`camera`/`ocr`/`manual`), the complete
-unmodified payload, and selected profile ID/note (or `null`). Logs may contain personal
+camera/OCR scans are logged before extraction, including scans whose greeting fails.
+The local `qr-scan-log.jsonl` file contains one JSON object per line with a UTC timestamp,
+source (`camera`/`ocr`; older logs may also contain `manual` entries), the complete
+unmodified payload, and extracted fields when available. Logs may contain personal
 data; obtain appropriate consent and share only with trusted recipients. The app does
 not upload scans; logs are excluded from preset backups. **Share scan log** opens the
 native share sheet or shares/downloads the file in supported browsers.

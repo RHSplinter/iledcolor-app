@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  DEFAULT_GREETING, extractName, greetingDuration, greetingText, validateGreeting, validateGreetingProfiles,
+  DEFAULT_GREETING, extractName, greetingDuration, greetingText, validateGreeting,
 } from '../src/scanner/greeting';
 import { DeviceController } from '../src/controller/deviceController';
 import { MockTransport } from '../src/transport/mock';
@@ -8,6 +8,7 @@ import { SPIKE_PROFILE } from '../src/transport/types';
 import { buildGifStream, buildImageStream, Cmd } from '../src/protocol/framing';
 import { encodeGif, renewGif } from '../src/render/gif';
 import { gifDelayMs } from '../src/render/span';
+import { solid } from '../src/render/matrix';
 
 const img = { width: 4, height: 2, pixels: new Uint8Array(24).fill(12) };
 const still = { ...img, pixels: new Uint8Array(24).fill(99) };
@@ -43,11 +44,10 @@ describe('QR names and greeting settings', () => {
     ['BEGIN:VCARD\nFN:Rob\n Bos\nEND:VCARD', 'RobBos'],
     ['MECARD:N:Bos,Rob;ORG:Xebia;EMAIL:rob@example.org;;', 'Rob Bos'],
     ['Xebia Build\n7 Rob\nBos\nSoftware Engineer\nXebia', 'Rob Bos'],
-  ])('extracts supported data without a regex: %s', (raw, name) => expect(extractName(raw, '').name).toBe(name));
+  ])('automatically extracts supported data: %s', (raw, name) => expect(extractName(raw).name).toBe(name));
   it('parses badge contact fields and makes them available to greeting templates', () => {
     const parsed = extractName(
       'BEGIN:VCARD\nFN:Rob Bos\nORG:Xebia\nTITLE:Software Engineer\nEMAIL:rob@example.org\nTEL:+31 20 123 4567\nURL:https://example.org\nNOTE:Speaker\nEND:VCARD',
-      '',
     );
     expect(parsed).toEqual({
       name: 'Rob Bos', company: 'Xebia', title: 'Software Engineer', email: 'rob@example.org',
@@ -58,73 +58,111 @@ describe('QR names and greeting settings', () => {
   });
   it('keeps oversized optional vCard notes from blocking a valid name', () => {
     const notes = 'S'.repeat(350);
-    const parsed = extractName(`BEGIN:VCARD\nFN:Rob Bos\nNOTE:${notes}\nEND:VCARD`, '');
+    const parsed = extractName(`BEGIN:VCARD\nFN:Rob Bos\nNOTE:${notes}\nEND:VCARD`);
     expect(parsed).toMatchObject({ name: 'Rob Bos', notes });
     expect(greetingText('Hi {name}!', parsed)).toBe('Hi Rob Bos!');
     expect(() => greetingText('Hi {name}: {notes}', parsed)).toThrow(/too long/);
   });
   it('respects escaped delimiters in MECARD values', () => {
-    const parsed = extractName(String.raw`MECARD:N:Doe\, Jr.,John;NOTE:Speaker\;Tier\;ORG:Ignored;ORG:Xebia;;`, '');
+    const parsed = extractName(String.raw`MECARD:N:Doe\, Jr.,John;NOTE:Speaker\;Tier\;ORG:Ignored;ORG:Xebia;;`);
     expect(parsed).toEqual({ name: 'John Doe, Jr.', company: 'Xebia', notes: 'Speaker;Tier;ORG:Ignored' });
   });
   it('does not interpret escaped MECARD delimiters as fields or structured-name separators', () => {
-    expect(extractName(String.raw`MECARD:N:Bos,Rob;NOTE:Contact\;TEL:12345678;;`, ''))
+    expect(extractName(String.raw`MECARD:N:Bos,Rob;NOTE:Contact\;TEL:12345678;;`))
       .toEqual({ name: 'Rob Bos', notes: 'Contact;TEL:12345678' });
-    expect(extractName(String.raw`MECARD:N:Smith\, Jr.,Jane;;`, ''))
+    expect(extractName(String.raw`MECARD:N:Smith\, Jr.,Jane;;`))
       .toEqual({ name: 'Jane Smith, Jr.' });
   });
   it('reconstructs noisy OCR names and extracts contacts from printed text', () => {
-    const parsed = extractName('Conference\n7Rob\nBos\nSoftware Engineer\nXebia\nrob@example.org\n+31 20 123 4567', '');
+    const parsed = extractName('Conference\n7Rob\nBos\nSoftware Engineer\nXebia\nrob@example.org\n+31 20 123 4567');
     expect(parsed).toMatchObject({
       name: 'Rob Bos', title: 'Software Engineer', company: 'Xebia',
       email: 'rob@example.org', phone: '+31 20 123 4567',
     });
-    expect(extractName('Rob Bos\nSoftware Engineer\nXebia\nSpeaker', '').notes).toBe('Badge tier: Speaker');
+    expect(extractName('Rob Bos\nSoftware Engineer\nXebia\nSpeaker').notes).toBe('Badge tier: Speaker');
   });
   it('preserves Unicode letters in OCR names and reconstructs names without a title', () => {
-    expect(extractName('José Nuñez\nSoftware Engineer\nXebia', '').name).toBe('José Nuñez');
-    expect(extractName('Zoë\nSoftware Engineer\nXebia', '').name).toBe('Zoë');
-    expect(extractName('Rob\nBos\nXebia', '')).toMatchObject({ name: 'Rob Bos', company: 'Xebia' });
+    expect(extractName('José Nuñez\nSoftware Engineer\nXebia').name).toBe('José Nuñez');
+    expect(extractName('Zoë\nSoftware Engineer\nXebia').name).toBe('Zoë');
+    expect(extractName('Rob\nBos\nXebia')).toMatchObject({ name: 'Rob Bos', company: 'Xebia' });
   });
-  it('supports a named group, first capture group, full match and literal replacement', () => {
-    expect(extractName('id=3;name=Rob Bos;', 'name=(?<name>[^;]+)')).toEqual({ name: 'Rob Bos' });
-    expect(extractName('id=3;name=Rob;', 'name=([^;]+)')).toEqual({ name: 'Rob' });
-    expect(extractName('id=3;name=Rob;', 'Rob')).toEqual({ name: 'Rob' });
-    expect(extractName('Rob|Bos|Xebia', '([^|]+)\\|([^|]+)\\|([^|]+)')).toEqual({ name: 'Rob', lastname: 'Bos', company: 'Xebia' });
-    expect(extractName('Rob|Bos|Xebia|Engineer|rob@example.org', '(?<name>[^|]+)\\|(?<lastname>[^|]+)\\|(?<company>[^|]+)\\|(?<title>[^|]+)\\|(?<email>[^|]+)'))
-      .toMatchObject({ name: 'Rob', lastname: 'Bos', company: 'Xebia', title: 'Engineer', email: 'rob@example.org' });
-    expect(extractName('Rob,Bos,Xebia', '(?<name>[^,]+),(?<lastname>[^,]+),(?<company>[^,]+)')).toEqual({
-      name: 'Rob', lastname: 'Bos', company: 'Xebia',
+  it.each([
+    '@FokkoVeegens', 'GitHub: FokkoVeegens', 'https://github.com/FokkoVeegens',
+    'LinkedIn: FokkoVeegens', 'https://linkedin.com/in/FokkoVeegens',
+    'fokko@example.org', '+31 20 123 4567',
+  ])('does not use a contact line as part of a stacked badge name: %s', (contact) => {
+    expect(extractName(`Fokko\nVeegens\n${contact}\nDevOps Consultant\nXebia`)).toMatchObject({
+      name: 'Fokko Veegens', title: 'DevOps Consultant', company: 'Xebia',
     });
-    expect(extractName('Rob|Engineer|rob@example.org', '(?<name>[^|]+)\\|(?<title>[^|]+)\\|(?<email>[^|]+)'))
-      .toEqual({ name: 'Rob', title: 'Engineer', email: 'rob@example.org' });
-    expect(extractName('Rob|Bos|Xebia|Engineer', '(?<name>[^|]+)\\|([^|]+)\\|([^|]+)\\|(?<title>[^|]+)'))
-      .toEqual({ name: 'Rob', lastname: 'Bos', company: 'Xebia', title: 'Engineer' });
-    expect(greetingText('Hi {name}, {lastname} at {company}!', extractName('Rob|Bos|Xebia', '([^|]+)\\|([^|]+)\\|([^|]+)')))
-      .toBe('Hi Rob, Bos at Xebia!');
+  });
+  it('keeps printed handles out of names and companies even without a role', () => {
+    expect(extractName('Fokko\nVeegens\n@FokkoVeegens\nXebia')).toEqual({
+      name: 'Fokko Veegens', github: 'FokkoVeegens', company: 'Xebia',
+    });
+    expect(extractName('Fokko\nVeegens\n@FokkoVeegens\nDevOps Consultant\nXebia')).toEqual({
+      name: 'Fokko Veegens', lastname: 'Veegens', github: 'FokkoVeegens', title: 'DevOps Consultant', company: 'Xebia',
+    });
+  });
+  it.each([
+    ['Anne Marie', 'van der Meer', 'SRE', 'ACME R&D 24/7'],
+    ['Li', 'Ng', 'QA', 'XY'],
+    ['ALEXANDER', 'SMITH-JONES', 'Customer Success Representative', 'International Business Machines Corporation'],
+  ])('uses the fixed badge order without guessing from field lengths: %s %s', (first, last, title, company) => {
+    expect(extractName(`${first}\n${last}\n@badge-user\n${title}\n${company}\nQR artifact`)).toEqual({
+      name: `${first} ${last}`, lastname: last, github: 'badge-user', title, company,
+    });
+  });
+  it('substitutes captured fields literally and leaves missing fields empty', () => {
+    expect(greetingText('Hello {firstname} from {company}!', extractName('{"name":"Rob","company":"Xebia"}')))
+      .toBe('Hello Rob from Xebia!');
     expect(greetingText('Hi {name} {lastname} {company}!', { name: 'Rob' })).toBe('Hi Rob  !');
     expect(greetingText('Hi {name}, {name}!', '$&')).toBe('Hi $&, $&!');
   });
-  it('extracts the MS AI Tour badge format and accepts firstname as the greeting token', () => {
-    const pattern = String.raw`^[^^]*\^(?<firstname>[^^]+)\^(?<lastname>[^^]+)\^(?<company>[^^]+)\^`;
-    const fields = extractName('badge^Rob^Bos^MS AI Tour^', pattern);
-    expect(fields).toEqual({ name: 'Rob', lastname: 'Bos', company: 'MS AI Tour' });
-    expect(greetingText('Hello {firstname} {lastname} from {company}!', fields))
-      .toBe('Hello Rob Bos from MS AI Tour!');
+  it.each([
+    'Rob Bos',
+    '{"firstName":"Rob","lastName":"Bos"}',
+    'BEGIN:VCARD\nN:Bos;Rob;;;\nEND:VCARD',
+    'MECARD:N:Bos,Rob;;',
+    'Rob\nBos\n@octocat\nEngineer\nXebia',
+  ])('uses only the first name when requested: %s', (raw) => {
+    const parsed = extractName(raw);
+    expect(greetingText('Hi {firstname}!', parsed)).toBe('Hi Rob!');
+    expect(greetingText('Hi {name}!', parsed)).toBe('Hi Rob Bos!');
+    expect(greetingText('{firstname} {lastname}', parsed)).toBe('Rob Bos');
   });
-  it('validates up to three unique, named scanner profiles and a none selection', () => {
-    const profile = (id: string) => ({ id, note: `Badge ${id}`, pattern: '([^|]+)\\|([^|]+)\\|([^|]+)', template: 'Hi {name} {lastname} at {company}!' });
-    expect(validateGreetingProfiles({ selectedId: null, profiles: [] })).toEqual({ selectedId: null, profiles: [] });
-    expect(validateGreetingProfiles({ selectedId: '3', profiles: [profile('1'), profile('2'), profile('3')] }).selectedId).toBe('3');
-    expect(() => validateGreetingProfiles({ selectedId: null, profiles: [profile('1'), profile('2'), profile('3'), profile('1')] })).toThrow(/up to three/);
-    expect(() => validateGreetingProfiles({ selectedId: '2', profiles: [profile('1')] })).toThrow(/not saved/);
+  it('preserves multiword names when the badge identifies the last name', () => {
+    const parsed = extractName('Anne Marie\nvan der Meer\n@octocat\nSRE\nXebia');
+    expect(greetingText('Hi {firstname}! {lastname}', parsed)).toBe('Hi Anne Marie! van der Meer');
+  });
+  it('supports the advertised role and GitHub handle placeholders and legacy aliases', () => {
+    const parsed = extractName('Rob\nBos\n@octocat\nEngineer\nXebia');
+    expect(greetingText('Hi {firstname}, {role} at {company} ({githubhandle})!', parsed))
+      .toBe('Hi Rob, Engineer at Xebia (octocat)!');
+    expect(greetingText('{role}/{title} {githubhandle}/{github}', parsed))
+      .toBe('Engineer/Engineer octocat/octocat');
+    expect(greetingText('Hi {firstname}!{lastname}{role}{githubhandle}', 'Rob')).toBe('Hi Rob!');
+    expect(greetingText('{firstname} {firstname}', '$& Bos')).toBe('$& $&');
+  });
+  it.each([
+    ['Li Ng', 'Li Ng'],
+    ['Anne Marie van der Meer', 'Anne Marie van der Meer'],
+    ['Fokko Veegens', 'Fokko Veegens'],
+  ])('keeps a merged name row before a badge handle: %s', (row, name) => {
+    expect(extractName(`${row}\n@badge-user\nSRE\nACME R&D 24/7`)).toEqual({
+      name, github: 'badge-user', title: 'SRE', company: 'ACME R&D 24/7',
+    });
+  });
+  it('ignores obsolete regex settings without resetting greeting preferences', () => {
+    const settings = { template: 'Welcome {name}!', repetitions: 17, speed: 8 };
+    for (const pattern of ['name=(.+)', '(a+)+$', '[', null]) {
+      expect(validateGreeting({ ...settings, pattern })).toEqual(settings);
+    }
   });
   it.each(['https://example.org/123', '{"email":"private@example.org"}', '{invalid', '', 'a'.repeat(4097)])('rejects data without a usable name', (raw) => {
-    expect(() => extractName(raw, '')).toThrow();
+    expect(() => extractName(raw)).toThrow();
   });
-  it('rejects unmatched patterns and invalid settings', () => {
-    expect(() => extractName('Rob', 'name=(.+)')).toThrow(/did not match/);
-    for (const patch of [{ pattern: '[' }, { template: 'Hi' }, { repetitions: 0 }, { repetitions: 1.5 }, { repetitions: 65537 }, { speed: 11 }])
+  it('rejects invalid settings', () => {
+    for (const patch of [{ template: 'Hi' }, { repetitions: 0 }, { repetitions: 1.5 }, { repetitions: 65537 }, { speed: 11 }])
       expect(() => validateGreeting({ ...DEFAULT_GREETING, ...patch })).toThrow();
   });
   it('uses the encoded GIF delay and exactly X full periods', () => {
@@ -161,13 +199,33 @@ describe('temporary cap playback', () => {
     await expect(controller.playTemporary(gif, still, 1000)).rejects.toThrow(/Send content/);
     expect(transport.writes).toHaveLength(2);
   });
+  it.each([false, true])('clears unknown content to black when opted in (cancelled: %s)', async (cancel) => {
+    vi.useFakeTimers();
+    const { controller, transport } = await setup();
+    expect(controller.canRestoreContent).toBe(false);
+    const playback = controller.playTemporary(gif, still, 1000, { clearIfUnknown: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.temporaryActive).toBe(true);
+    expect(streams(transport)).toHaveLength(2);
+    if (cancel) controller.cancelUpload();
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(playback).resolves.toBe(cancel ? 'cancelled' : 'completed');
+    const black = solid(still.width, still.height, [0, 0, 0]);
+    expect(streams(transport).at(-1)).toEqual(buildImageStream(black).bytes);
+    expect(controller.temporaryActive).toBe(false);
+    expect(controller.canRestoreContent).toBe(true);
+    const next = controller.playTemporary(gif, still, 100);
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(next).resolves.toBe('completed');
+    expect(streams(transport).at(-1)).toEqual(buildImageStream(black).bytes);
+  });
   it('restores the last sent image, not the edited preview, after exactly the requested duration', async () => {
     vi.useFakeTimers();
     const { controller, transport } = await setup();
     const original = structuredClone(img);
     await controller.upload(original);
     original.pixels.fill(0);
-    const playback = controller.playTemporary(gif, still, 1000);
+    const playback = controller.playTemporary(gif, still, 1000, { clearIfUnknown: true });
     await vi.advanceTimersByTimeAsync(0);
     expect(controller.temporaryActive).toBe(true);
     expect(streams(transport)).toHaveLength(3);
@@ -232,11 +290,11 @@ describe('temporary cap playback', () => {
     expect(controls[0]!.frame[4]).toBe(1);
     expect(controls[1]!.frame[4]).toBe(0);
   });
-  it('reports connection loss and never sends stale restoration after reconnect', async () => {
+  it.each([false, true])('reports connection loss and never sends stale restoration after reconnect (unknown content: %s)', async (clearIfUnknown) => {
     vi.useFakeTimers();
     const { controller, transport } = await setup();
-    await controller.upload(img);
-    const playback = controller.playTemporary(gif, still, 1000);
+    if (!clearIfUnknown) await controller.upload(img);
+    const playback = controller.playTemporary(gif, still, 1000, { clearIfUnknown });
     const rejected = expect(playback).rejects.toThrow(/could not be restored/);
     await vi.advanceTimersByTimeAsync(0);
     transport.drop();
