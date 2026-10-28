@@ -1,5 +1,7 @@
 import 'fake-indexeddb/auto';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { builtinPresets } from '../src/storage/builtinPresets';
 import { DEFAULT_APPROACH } from '../src/approach/tiers';
@@ -19,10 +21,10 @@ describe('built-in presets', () => {
       .toBe('72c7443855bd7fafabf7b386094c08fb3fafceaf4fe82d3f3360cc2edf0aad36');
   });
 
-  it('provides nine valid, independent presets without changing settings', () => {
+  it('provides thirteen valid, independent presets without changing settings', () => {
     const presets = builtinPresets();
-    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', 'Octocat animation', '<header>', 'LGTM 👍']);
-    expect(new Set(presets.map((p) => p.id)).size).toBe(9);
+    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', 'Rainbow', 'Nijan cat', 'Star', 'Octocat animation', 'GitHub Copilot head (animated)', '<header>', 'LGTM 👍']);
+    expect(new Set(presets.map((p) => p.id)).size).toBe(13);
     for (const p of presets) expect(validateContent(p.content)).toEqual(p.content);
     expect(parseImport(exportJson(DEFAULT_SETTINGS, presets)).presets).toEqual(presets);
     const first = presets[0]!;
@@ -37,6 +39,18 @@ describe('built-in presets', () => {
     const gif = Buffer.from(preset.content.dataUrl.split(',')[1]!, 'base64');
     expect(gif.toString('ascii', 0, 6)).toBe('GIF89a');
     expect(gif.toString('ascii')).toContain('NETSCAPE2.0');
+  });
+
+  it.each([
+    ['Rainbow', 'builtin-rainbow', 'rainbow.gif', '2d983b1f63fe31dec40a37fe02ee25c04320ee8e782956c4b8e7b718cbfb4b30'],
+    ['Nijan cat', 'builtin-nijan-cat', 'nijan-cat.gif', 'f3f85853755c7b227e8e5f64b23d374863885b39f2a0d44c578688008a7ba98d'],
+    ['Star', 'builtin-star', 'star.gif', 'ad79f48f106caeb5cd35cf870566237944d8be8ce5959862bdbef3fb1b878d2a'],
+  ])('bundles the original %s GIF unchanged', (_name, id, filename, hash) => {
+    const preset = builtinPresets().find((p) => p.id === id)!;
+    if (preset.content.kind !== 'image') throw new Error('Expected image content');
+    const bytes = readFileSync(join('src', 'assets', 'presets', filename));
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(hash);
+    expect(preset.content.dataUrl).toBe(`data:image/gif;base64,${bytes.toString('base64')}`);
   });
 
   for (const preset of builtinPresets()) {

@@ -58,6 +58,15 @@ connected cap without leaving Presets or changing Custom editor drafts. Send pro
 and errors appear on Presets; sending is disabled while the cap is unavailable or busy.
 Share and Delete remain separate actions. Group presets apply Approach content without
 leaving Presets and update caps when Approach is running (native app or mock mode only).
+The built-in **GitHub Copilot head (animated)** is an additional preset; the existing
+**Octocat animation** remains available unchanged. The Copilot GIF crops the empty border and centers
+proportional 19x16 artwork on the 32x16 LED display, with black side margins,
+a dark faceplate, bright cyan eyes,
+and preserved outline and shadow details from the original animation,
+a shared 16-color palette for a retro pixel-art look, and a short back-and-forth turn
+with a reduced turning range, temporally smoothed eye movement, and intermediate
+frames for a slow 10.4-second loop, no middle pause,
+and a continuous transition between loop endpoints.
 GitHub presets
 store the handle, captions, caption font and their own scroll speed. When the graph was loaded before
 saving, the preset also keeps that graph and its date, so it can be shown, used in
