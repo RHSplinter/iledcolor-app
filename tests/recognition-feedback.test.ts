@@ -143,7 +143,7 @@ it('plays and vibrates once after deferred frame rendering when the cap remains 
   expect(vibrateFeedback).toHaveBeenCalledOnce();
 });
 
-it.each(['camera', 'manual'] as const)('vibrates once when a recognized %s scan greeting starts playing, before completion', async (source) => {
+it.each(['ocr', 'manual'] as const)('vibrates once when a recognized %s scan greeting starts playing, before completion', async (source) => {
   const ui = new GreetingUi(context);
   await ui.init();
   let finish!: (result: string) => void;
@@ -162,15 +162,42 @@ it.each([
   ['upload starts', { state: 'Uploading' }],
   ['cap disconnects', { state: 'Disconnected' }],
   ['temporary playback starts', { temporaryActive: true }],
-  ['restorable content disappears', { canRestoreContent: false }],
 ])('does not vibrate for a scan greeting when %s before playback or on camera stop', async (_reason, change) => {
   const ui = new GreetingUi(context);
   await ui.init();
   Object.assign(target, change);
-  await ui['greet']('Rob', target, 'camera');
+  await ui['greet']('Rob', target, 'ocr');
   ui.stopCamera();
   expect(playback).not.toHaveBeenCalled();
   expect(vibrateFeedback).not.toHaveBeenCalled();
+});
+
+it.each(['completed', 'cancelled'])('enables Scan and clears unknown content after a %s greeting', async (result) => {
+  Object.assign(target, { canRestoreContent: false });
+  playback.mockResolvedValueOnce(result);
+  const ui = new GreetingUi(context);
+  await ui.init();
+  const scan = document.getElementById('qr-text-start') as HTMLButtonElement;
+  expect(scan.textContent).toBe('Scan');
+  expect(scan.classList.contains('primary')).toBe(true);
+  expect(scan.disabled).toBe(false);
+  expect(document.getElementById('qr-start')).toBeNull();
+  await ui['greet']('Rob', target, 'ocr');
+  expect(playback).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(Object), expect.any(Number), { clearIfUnknown: true });
+  expect(vibrateFeedback).toHaveBeenCalledOnce();
+  expect(document.getElementById('qr-status')!.textContent)
+    .toBe(`${result === 'cancelled' ? 'Greeting ended early.' : 'Greeting finished.'} Display cleared to black.`);
+  expect(scan.disabled).toBe(false);
+});
+
+it.each([
+  { state: 'Disconnected' }, { state: 'Connecting' }, { state: 'Uploading' },
+  { state: 'Error' }, { temporaryActive: true },
+])('disables Scan when the cap is unavailable: %j', async (change) => {
+  Object.assign(target, change);
+  const ui = new GreetingUi(context);
+  await ui.init();
+  expect((document.getElementById('qr-text-start') as HTMLButtonElement).disabled).toBe(true);
 });
 
 it('updates the #status-listening header pill across idle, starting, enrolling, active, paused, and stopping states', async () => {

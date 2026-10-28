@@ -213,11 +213,14 @@ export class DeviceController {
     return this.uploadStreams(streams, content, opts, immediate);
   }
 
-  /** Holds the operation queue through playback and restoration; other caps have independent queues. */
-  async playTemporary(gif: Uint8Array, still: RgbImage, durationMs: number): Promise<'completed' | 'cancelled'> {
+  /**
+   * Holds the operation queue through playback and restoration; other caps have independent queues.
+   * Scanning can opt into clearing to black when no prior content is known for this connection.
+   */
+  async playTemporary(gif: Uint8Array, still: RgbImage, durationMs: number, opts: { clearIfUnknown?: boolean } = {}): Promise<'completed' | 'cancelled'> {
     if (this.temporary) throw new DeviceError('A greeting is already playing', 'busy');
     if (this.state !== 'Ready') throw new DeviceError('Connect the primary cap first', 'disconnected');
-    if (!this.displayed && !this.keepBlack) throw new DeviceError('Send content to the cap first so it can be restored after the greeting', 'invalid');
+    if (!this.displayed && !this.keepBlack && !opts.clearIfUnknown) throw new DeviceError('Send content to the cap first so it can be restored after the greeting', 'invalid');
     if (!Number.isFinite(durationMs) || durationMs <= 0) throw new DeviceError('Invalid greeting duration', 'invalid');
     const greeting = { gif: gif.slice(), width: still.width, height: still.height, still: structuredClone(still) };
     // Validate before taking the queue or changing the display.
@@ -228,7 +231,7 @@ export class DeviceController {
     try {
       return await this.exclusive(async () => {
         if (epoch !== this.epoch) throw new DeviceError('Connection changed before greeting', 'disconnected');
-        const previous: DisplayContent | undefined = this.keepBlack
+        const previous: DisplayContent | undefined = this.keepBlack || (!this.displayed && opts.clearIfUnknown)
           ? { image: solid(still.width, still.height, [0, 0, 0]) }
           : this.displayed;
         if (!previous) throw new DeviceError('Previous content is no longer available', 'disconnected');

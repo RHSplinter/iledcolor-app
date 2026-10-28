@@ -1,14 +1,9 @@
-import type { IScannerControls } from '@zxing/browser';
-
-export class QrCamera {
+export class BadgeCamera {
   private generation = 0;
   private stream?: MediaStream;
-  private controls?: IScannerControls;
 
   stop() {
     this.generation++;
-    this.controls?.stop();
-    this.controls = undefined;
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = undefined;
   }
@@ -33,36 +28,5 @@ export class QrCamera {
     this.stop();
     const generation = this.generation;
     await this.open(video, generation);
-  }
-
-  async start(video: HTMLVideoElement, onResult: (text: string) => void, onError: (error: Error) => void) {
-    this.stop();
-    const generation = this.generation;
-    try {
-      const stream = await this.open(video, generation);
-      if (!stream || generation !== this.generation) return;
-      const [{ BrowserMultiFormatReader }, { NotFoundException, ChecksumException, FormatException }] = await Promise.all([
-        import('@zxing/browser'), import('@zxing/library'),
-      ]);
-      if (generation !== this.generation) return;
-      const reader = new BrowserMultiFormatReader();
-      const controls = await reader.decodeFromStream(stream, video, (result, error) => {
-        if (generation !== this.generation) return;
-        if (result) {
-          const text = result.getText();
-          this.stop();
-          onResult(text);
-        } else if (error && !(error instanceof NotFoundException || error instanceof ChecksumException || error instanceof FormatException)) {
-          this.stop();
-          onError(error);
-        }
-      });
-      if (generation !== this.generation) controls.stop();
-      else this.controls = controls;
-    } catch (e) {
-      if (generation !== this.generation) return;
-      this.stop();
-      throw e;
-    }
   }
 }

@@ -90,6 +90,19 @@ Use `npm run e2e:smoke` for navigation-only checks; it does not replace the full
 Screenshots are saved on failure. Traces are recorded on the first retry (CI retries
 failed tests); for local debugging, use `npm run e2e -- --trace=retain-on-failure`.
 
+## Badge scanning
+
+Connect a cap, open **Scan**, and tap the blue **Scan** button. Frame the printed
+badge text and tap **Capture text** for offline, on-device recognition. QR/barcode
+camera scanning is no longer available; manual scan-data entry and saved badge
+profiles remain supported.
+
+Scanning works immediately after connecting, without sending content first. After
+the greeting (or **End greeting**), the app restores the last content it sent. If no
+content is known for this connection, it clears the display to black instead.
+Content already on the cap cannot be read back. Other caps continue playing.
+Scan preferences remain covered by the **Scan settings** backup category.
+
 ## More docs
 
 Go to:

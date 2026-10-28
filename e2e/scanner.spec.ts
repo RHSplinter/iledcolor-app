@@ -1,40 +1,15 @@
 import { expect, test } from '@playwright/test';
 import { openBackup, openCustomSection, connectHat, waitForServiceWorker } from './hat';
-import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 
-const require = createRequire(import.meta.url);
-const { default: QRCodeWriter }: typeof import('@zxing/library/cjs/core/qrcode/QRCodeWriter.js') = require('@zxing/library/cjs/core/qrcode/QRCodeWriter.js');
-const { default: BarcodeFormat }: typeof import('@zxing/library/cjs/core/BarcodeFormat.js') = require('@zxing/library/cjs/core/BarcodeFormat.js');
-
-test('camera decodes a QR code offline and greets the primary cap before restoring', async ({ page, context }) => {
-  const qr = new QRCodeWriter().encode('Rob', BarcodeFormat.QR_CODE, 256, 256, new Map());
-  const pixels: number[] = [];
-  for (let y = 0; y < qr.getHeight(); y++)
-    for (let x = 0; x < qr.getWidth(); x++) if (qr.get(x, y)) pixels.push(x, y);
-  await page.addInitScript(({ pixels }) => {
+test('manual scan greets offline, logs the scan and restores previous content', async ({ page, context }) => {
+  await page.addInitScript(() => {
     Object.assign(window, { feedbackVibrations: [] as number[] });
     Object.defineProperty(navigator, 'vibrate', { value: (duration: number) => {
       (window as Window & { feedbackVibrations: number[] }).feedbackVibrations.push(duration);
       return true;
     } });
-    const getUserMedia = async () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 256;
-      const ctx = canvas.getContext('2d')!;
-      const draw = () => {
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, 256, 256);
-        ctx.fillStyle = '#000';
-        for (let i = 0; i < pixels.length; i += 2) ctx.fillRect(pixels[i]!, pixels[i + 1]!, 1, 1);
-      };
-      draw();
-      const stream = canvas.captureStream(10);
-      setTimeout(draw, 100);
-      return stream;
-    };
-    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { value: getUserMedia });
-  }, { pixels });
+  });
   await page.goto('/#mock');
   await connectHat(page);
   await waitForServiceWorker(page);
@@ -50,14 +25,16 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   await page.check('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toHaveText('Scan logging enabled.');
   await page.locator('#qr-speed').fill('10');
-  await page.click('#qr-start');
+  await page.locator('#view-scan summary').click();
+  await page.fill('#qr-raw', 'Rob');
+  await page.click('#qr-submit');
   await expect(page.locator('#qr-status')).toContainText('Hi Rob!', { timeout: 15000 });
   await expect(page.locator('#qr-video')).toBeHidden();
   expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
   await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 25000 });
   expect(await page.evaluate(() => (window as Window & { feedbackVibrations: number[] }).feedbackVibrations)).toEqual([200]);
   await expect(page.locator('#qr-error')).toBeEmpty();
-  await expect(page.locator('#qr-start')).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Scan', exact: true })).toBeEnabled();
   await expect(page.locator('#qr-log-status')).toHaveText('Scan saved to qr-scan-log.jsonl.');
   const downloadPromise = page.waitForEvent('download');
   await page.click('#qr-log-share');
@@ -65,7 +42,7 @@ test('camera decodes a QR code offline and greets the primary cap before restori
   const path = await download.path();
   if (!path) throw new Error('Missing scan log download.');
   const entry = JSON.parse((await readFile(path, 'utf8')).trim());
-  expect(entry).toMatchObject({ raw: 'Rob', source: 'camera', profile: null });
+  expect(entry).toMatchObject({ raw: 'Rob', source: 'manual', profile: null });
   expect(new Date(entry.timestamp).toISOString()).toBe(entry.timestamp);
 });
 
@@ -266,7 +243,7 @@ test('scan logging is opt-in, persists, includes failed manual entries, and stop
   expect(JSON.parse(lines[0]!)).toMatchObject({ raw, source: 'manual', profile: { id: '1', note: 'Evaluation' } });
 });
 
-test('offline OCR recognizes a printed badge and greets the primary cap', async ({ page, context }) => {
+test('Scan is blue and offline OCR greets a newly connected cap without sending content first', async ({ page, context }) => {
   test.setTimeout(90000);
   await page.addInitScript(() => {
     Object.assign(window, { feedbackVibrations: [] as number[] });
@@ -297,14 +274,16 @@ test('offline OCR recognizes a printed badge and greets the primary cap', async 
   await waitForServiceWorker(page);
   await context.setOffline(true);
   await page.reload();
+  const scan = page.locator('#qr-text-start');
+  await expect(scan).toBeDisabled();
+  await expect(page.locator('#qr-start')).toHaveCount(0);
+  await expect(scan).toHaveText('Scan');
+  await expect(scan).toHaveCSS('background-color', 'rgb(77, 163, 255)');
   await page.click('#btn-connect');
   await expect(page.locator('#status')).toContainText('Ready');
-  await page.click('nav [data-tab=custom]');
-  await openCustomSection(page, 'solid');
-  await page.click('#btn-send-solid');
-  await expect(page.locator('#send-note')).toHaveText('Upload confirmed.');
   await page.click('nav [data-tab=scan]');
-  await page.click('#qr-text-start');
+  await expect(scan).toBeEnabled();
+  await scan.click();
   await expect(page.locator('#qr-ocr-controls')).toBeVisible();
   await page.waitForFunction(() => {
     const video = document.querySelector<HTMLVideoElement>('#qr-video');
@@ -312,6 +291,7 @@ test('offline OCR recognizes a printed badge and greets the primary cap', async 
   });
   await page.click('#qr-capture');
   await expect(page.locator('#qr-status')).toContainText('Hi Rob Bos!', { timeout: 60000 });
-  await expect(page.locator('#qr-status')).toContainText('Previous content restored.', { timeout: 30000 });
+  await expect(page.locator('#qr-status')).toContainText('Display cleared to black.', { timeout: 30000 });
   await expect(page.locator('#qr-error')).toBeEmpty();
+  await expect(scan).toBeEnabled();
 });

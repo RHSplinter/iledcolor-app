@@ -84,10 +84,11 @@ test('keyboard tabs, scan-first ordering and every marquee choice are accessible
   await page.getByRole('tab', { name: 'Approach' }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Scan' })).toBeFocused();
-  const start = await page.locator('#qr-start').boundingBox();
+  const start = await page.locator('#qr-text-start').boundingBox();
   const profile = await page.locator('#qr-profile').boundingBox();
   expect(start!.y).toBeLessThan(profile!.y);
-  await expect(page.locator('#qr-ready')).toContainText('Connect');
+  await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
+  await expect(page.getByRole('button', { name: 'Scan', exact: true })).toBeEnabled();
   await page.keyboard.press('End');
   await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
   await page.keyboard.press('Home');
@@ -112,7 +113,7 @@ test('all tabs fit narrow, landscape, desktop and enlarged text layouts', async 
       expect(tab!.height).toBeGreaterThanOrEqual(44);
       expect(tab!.width).toBeGreaterThanOrEqual(44);
       if (name === 'Scan') {
-        const action = await page.locator('#qr-start').boundingBox();
+        const action = await page.locator('#qr-text-start').boundingBox();
         expect(action!.y + action!.height).toBeLessThan(tab!.y);
       }
     }

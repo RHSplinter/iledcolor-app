@@ -6,7 +6,7 @@ import { ensureFont, renderSpanMarquee } from '../render/text';
 import { gifDelayMs } from '../render/span';
 import { loadKv, saveKv } from '../storage/db';
 import { vibrateFeedback } from '../feedback';
-import { QrCamera } from './camera';
+import { BadgeCamera } from './camera';
 import { extractNameSafely } from './extract';
 import { appendScanLog, shareScanLog } from './log';
 import { BadgeTextRecognizer } from './ocr';
@@ -26,9 +26,8 @@ interface ScannerContext {
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 export class GreetingUi {
-  private camera = new QrCamera();
+  private camera = new BadgeCamera();
   private recognizer = new BadgeTextRecognizer();
-  private cameraMode: 'codes' | 'text' | null = null;
   private scanning = false;
   private recognizing = false;
   private processing = false;
@@ -49,8 +48,7 @@ export class GreetingUi {
       <div class="card">
         <h2>Badge greeting</h2>
         <div class="row scan-actions">
-          <button id="qr-start" class="primary">Scan QR / barcode</button>
-          <button id="qr-text-start">Scan printed text</button>
+          <button id="qr-text-start" class="primary">Scan</button>
           <button id="qr-stop" hidden>Stop camera</button>
           <button id="qr-cancel" hidden>End greeting</button>
         </div>
@@ -65,8 +63,8 @@ export class GreetingUi {
         <p id="qr-status" role="status" aria-live="polite"></p>
         <p id="qr-error" class="bad" role="alert"></p>
         <p id="qr-ready" class="small" role="status"></p>
-        <p class="small">Scan a badge code or capture its printed text to greet its owner on this phone's primary cap. Other caps keep playing.
-        Send content to the cap first so it can be restored afterwards.</p>
+        <p class="small">Capture a badge's printed text to greet its owner on this phone's primary cap. Other caps keep playing.
+        Previously sent content is restored afterwards. If no content has been sent yet, the display is cleared to black.</p>
         <label for="qr-profile">Saved badge profile</label>
         <select id="qr-profile"><option value="">None — general scan data</option></select>
       </div>
@@ -123,8 +121,6 @@ export class GreetingUi {
         Camera access requires permission. The English text-recognition model is bundled for offline use.
         Keep the app open until the previous content is restored.</p>
         <p class="small">Inspired by <a href="https://github.com/xebia/badge-scanner" target="_blank" rel="noopener noreferrer">Rob Bos / Xebia's badge-scanner</a>.
-        QR decoding: <a href="https://github.com/zxing-js/browser" target="_blank" rel="noopener noreferrer">ZXing Browser (MIT)</a>,
-        <a href="https://github.com/zxing-js/library" target="_blank" rel="noopener noreferrer">ZXing JS (Apache-2.0)</a>.
         Independent integration; no badge-scanner source code copied.
         <a href="${import.meta.env.BASE_URL}licenses/scanner-credits.txt">Credits and licenses</a>.</p>
       </div>`;
@@ -170,7 +166,6 @@ export class GreetingUi {
     $('qr-profile').onchange = () => { void this.selectProfile($<HTMLSelectElement>('qr-profile').value || null); };
     $('qr-profile-save').onclick = () => { void this.saveProfile(); };
     $('qr-profile-delete').onclick = () => { void this.deleteProfile(); };
-    $('qr-start').onclick = () => { void this.scan(); };
     $('qr-text-start').onclick = () => { void this.scanText(); };
     $('qr-capture').onclick = () => { void this.captureText(); };
     $('qr-stop').onclick = () => this.stopCamera();
@@ -399,22 +394,20 @@ export class GreetingUi {
   }
 
   updateStatus() {
-    if (!document.getElementById('qr-start')) return;
+    if (!document.getElementById('qr-text-start')) return;
     const ctl = this.ctx.controller();
-    const unavailable = ctl.state !== 'Ready' || !ctl.canRestoreContent || ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
-    $('qr-ready').textContent = this.scanning ? '' : ctl.state !== 'Ready' ? 'Connect your primary cap on Connect before scanning.'
-      : !ctl.canRestoreContent ? 'Send content from Connect first so it can be restored after the greeting.'
+    const unavailable = ctl.state !== 'Ready' || ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
+    $('qr-ready').textContent = this.scanning ? '' : ctl.state !== 'Ready' ? 'Connect your primary cap before scanning.'
       : ctl.temporaryActive || this.processing ? 'Wait for the current greeting to finish, or end it above.'
       : this.sharingLog || this.savingLogging ? 'Wait for the scan log operation to finish.' : 'Ready to scan a badge.';
-    $<HTMLButtonElement>('qr-start').disabled = unavailable || this.scanning;
     $<HTMLButtonElement>('qr-text-start').disabled = unavailable || this.scanning;
     $<HTMLButtonElement>('qr-submit').disabled = unavailable || this.scanning;
     const video = $<HTMLVideoElement>('qr-video');
     const videoReady = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0;
-    $<HTMLButtonElement>('qr-capture').disabled = !this.scanning || this.cameraMode !== 'text' || this.recognizing || !videoReady;
+    $<HTMLButtonElement>('qr-capture').disabled = !this.scanning || this.recognizing || !videoReady;
     $('qr-video-wrap').hidden = !this.scanning;
-    $('qr-ocr-controls').hidden = !this.scanning || this.cameraMode !== 'text';
-    $('qr-reticle').hidden = this.cameraMode !== 'text';
+    $('qr-ocr-controls').hidden = !this.scanning;
+    $('qr-reticle').hidden = !this.scanning;
     $('qr-stop').hidden = !this.scanning;
     $('qr-cancel').hidden = !this.playing;
     $<HTMLInputElement>('qr-log-enabled').disabled = this.processing || this.scanning || this.savingLogging || this.sharingLog;
@@ -429,18 +422,15 @@ export class GreetingUi {
     const wasScanning = this.scanning;
     this.camera.stop();
     this.scanning = false;
-    this.cameraMode = null;
     const video = $<HTMLVideoElement>('qr-video');
     if (video) { video.onloadeddata = null; video.srcObject = null; }
     if (wasScanning) this.status('Camera stopped.');
     this.updateStatus();
   }
 
-  private async startCamera(mode: 'codes' | 'text') {
-    const target = this.ctx.controller();
+  private async scanText() {
     const attempt = ++this.scanId;
     this.scanning = true;
-    this.cameraMode = mode;
     this.updateStatus();
     try {
       const settings = this.readSettings();
@@ -450,17 +440,8 @@ export class GreetingUi {
       const video = $<HTMLVideoElement>('qr-video');
       video.onloadeddata = () => this.updateStatus();
       this.status('Starting camera. Allow camera access when prompted.');
-      if (mode === 'codes') {
-        await this.camera.start(video, (raw) => {
-          this.stopCamera();
-          void this.greet(raw, target, 'camera');
-        }, (e) => { this.stopCamera(); this.error(`Camera failed: ${this.message(e)}. Retry or enter scan data manually.`); });
-      } else {
-        await this.camera.preview(video);
-      }
-      if (this.scanning) this.status(mode === 'codes'
-        ? 'Point the camera at a QR code or barcode. The greeting starts immediately after scanning.'
-        : 'Frame the printed name and company, then capture the text.');
+      await this.camera.preview(video);
+      if (this.scanning) this.status('Frame the printed name and company, then capture the text.');
     } catch (e) {
       if (attempt !== this.scanId) return;
       this.stopCamera();
@@ -468,11 +449,8 @@ export class GreetingUi {
     }
   }
 
-  private async scan() { await this.startCamera('codes'); }
-  private async scanText() { await this.startCamera('text'); }
-
   private async captureText() {
-    if (!this.scanning || this.cameraMode !== 'text' || this.recognizing) return;
+    if (!this.scanning || this.recognizing) return;
     const video = $<HTMLVideoElement>('qr-video');
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
       this.error('Camera is not ready yet. Wait for the preview, then capture again.');
@@ -521,7 +499,7 @@ export class GreetingUi {
     }
   }
 
-  private async greet(raw: string, target: DeviceController, source: 'camera' | 'ocr' | 'manual', scanId = new Date().toISOString()) {
+  private async greet(raw: string, target: DeviceController, source: 'ocr' | 'manual', scanId = new Date().toISOString()) {
     if (this.processing) return;
     this.processing = true;
     this.error('');
@@ -555,18 +533,18 @@ export class GreetingUi {
       const delay = gifDelayMs(this.ctx.marqueeDelay(settings.speed) * marquee.step / 2);
       const duration = greetingDuration(frames.length, delay, settings.repetitions);
       if (target !== this.ctx.controller()) throw new Error('The primary cap changed. Scan again for the current cap.');
-      if (target.state !== 'Ready' || target.temporaryActive || !target.canRestoreContent) {
+      if (target.state !== 'Ready' || target.temporaryActive) {
         throw new Error(target.temporaryActive ? 'A greeting is already playing'
-          : target.state !== 'Ready' ? 'Connect the primary cap first'
-          : 'Send content to the cap first so it can be restored after the greeting');
+          : 'Connect the primary cap first');
       }
       const gif = encodeGif(frames, delay, { nonce: gifNonce(), plays: settings.repetitions });
       this.playing = target;
       this.updateStatus();
-      this.status(`Playing "${text}" ${settings.repetitions} time(s), then restoring the previous content.`);
+      const restoreMessage = target.canRestoreContent ? 'Previous content restored.' : 'Display cleared to black.';
+      this.status(`Playing "${text}" ${settings.repetitions} time(s), then ${target.canRestoreContent ? 'restoring the previous content' : 'clearing the display to black'}.`);
       void vibrateFeedback();
-      const result = await target.playTemporary(gif, frames[0]!, duration);
-      this.status(result === 'cancelled' ? 'Greeting ended early. Previous content restored.' : 'Greeting finished. Previous content restored.');
+      const result = await target.playTemporary(gif, frames[0]!, duration, { clearIfUnknown: true });
+      this.status(`${result === 'cancelled' ? 'Greeting ended early.' : 'Greeting finished.'} ${restoreMessage}`);
       $<HTMLTextAreaElement>('qr-raw').value = '';
     } catch (e) {
       this.status('');

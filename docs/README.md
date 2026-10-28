@@ -39,8 +39,8 @@ tab navigation and responsive controls on Android, iOS and web.
   Every spanning **Marquee** choice is marked **unstable**:
   physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
 - **Scan:** the scan/stop/end-greeting actions, camera and status come first, followed by
-  the profile selector, QR profile editor, greeting settings, manual entry, and scan-log/privacy controls.
-  A recognized QR greeting (camera or manual entry) vibrates once immediately when the greeting
+  the profile selector, badge profile editor, greeting settings, manual entry, and scan-log/privacy controls.
+  A recognized badge greeting (OCR or manual entry) vibrates once immediately when the greeting
   starts on the primary cap; stopping the camera or a failure does not vibrate.
 - **Sound:** opt-in applause/whistle detection, wearer voice sampling, English/German
   phrase reactions, pocket-pause settings, dictionary and editable animation text.
@@ -332,12 +332,13 @@ local values, including handle-only backups from earlier versions.
 
 ## Badge scanning and greetings
 
-The **Scan** tab reads QR codes and 1D barcodes with the camera, or captures printed
-badge text for on-device English OCR. Scanning works in the Android/iOS apps and in an
+The **Scan** tab has a blue **Scan** button that captures printed badge text for
+on-device English OCR. QR/barcode camera scanning is no longer available.
+Scanning works in the Android/iOS apps and in an
 HTTPS browser with camera permission. Scanner assets, including the OCR engine and
 English model, are bundled and cached for offline use (about 7 MB). Scan data is not
 sent to a server. Only the primary cap connected to the scanning phone is interrupted;
-other connected caps continue unchanged. The camera stops after a code scan or OCR
+other connected caps continue unchanged. The camera stops after an OCR
 capture, on Stop, on changing tabs, or when the app is hidden.
 
 For OCR, center the printed name and company in the preview and tap **Capture text**.
@@ -350,9 +351,10 @@ selects the general parser. Regex named groups can include `name`, `firstname`,
 can use each of these fields. Manual scan-data entry is available when a camera cannot
 be used. Invalid or unmatched patterns show an error without changing the cap.
 
-Send content to the cap once before scanning, or enable **Keep cap black when idle**:
+Scanning is available immediately after connecting a cap. If no content has been
+sent during this connection, the display is cleared to black after the greeting:
 the protocol cannot read back content installed by another app or before the current
-connection. The app retains the last successfully sent image or GIF, including content
+connection. Otherwise, the app restores the last successfully sent image or GIF, including content
 sent by Approach mode; when keep-black is enabled, the cap restores its black,
 display-off state after the greeting. The greeting scrolls using a finite-loop GIF and
 the requested repetition count. Approach updates for the primary cap wait during the

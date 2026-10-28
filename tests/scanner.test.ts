@@ -8,6 +8,7 @@ import { SPIKE_PROFILE } from '../src/transport/types';
 import { buildGifStream, buildImageStream, Cmd } from '../src/protocol/framing';
 import { encodeGif, renewGif } from '../src/render/gif';
 import { gifDelayMs } from '../src/render/span';
+import { solid } from '../src/render/matrix';
 
 const img = { width: 4, height: 2, pixels: new Uint8Array(24).fill(12) };
 const still = { ...img, pixels: new Uint8Array(24).fill(99) };
@@ -161,13 +162,33 @@ describe('temporary cap playback', () => {
     await expect(controller.playTemporary(gif, still, 1000)).rejects.toThrow(/Send content/);
     expect(transport.writes).toHaveLength(2);
   });
+  it.each([false, true])('clears unknown content to black when opted in (cancelled: %s)', async (cancel) => {
+    vi.useFakeTimers();
+    const { controller, transport } = await setup();
+    expect(controller.canRestoreContent).toBe(false);
+    const playback = controller.playTemporary(gif, still, 1000, { clearIfUnknown: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.temporaryActive).toBe(true);
+    expect(streams(transport)).toHaveLength(2);
+    if (cancel) controller.cancelUpload();
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(playback).resolves.toBe(cancel ? 'cancelled' : 'completed');
+    const black = solid(still.width, still.height, [0, 0, 0]);
+    expect(streams(transport).at(-1)).toEqual(buildImageStream(black).bytes);
+    expect(controller.temporaryActive).toBe(false);
+    expect(controller.canRestoreContent).toBe(true);
+    const next = controller.playTemporary(gif, still, 100);
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(next).resolves.toBe('completed');
+    expect(streams(transport).at(-1)).toEqual(buildImageStream(black).bytes);
+  });
   it('restores the last sent image, not the edited preview, after exactly the requested duration', async () => {
     vi.useFakeTimers();
     const { controller, transport } = await setup();
     const original = structuredClone(img);
     await controller.upload(original);
     original.pixels.fill(0);
-    const playback = controller.playTemporary(gif, still, 1000);
+    const playback = controller.playTemporary(gif, still, 1000, { clearIfUnknown: true });
     await vi.advanceTimersByTimeAsync(0);
     expect(controller.temporaryActive).toBe(true);
     expect(streams(transport)).toHaveLength(3);
@@ -232,11 +253,11 @@ describe('temporary cap playback', () => {
     expect(controls[0]!.frame[4]).toBe(1);
     expect(controls[1]!.frame[4]).toBe(0);
   });
-  it('reports connection loss and never sends stale restoration after reconnect', async () => {
+  it.each([false, true])('reports connection loss and never sends stale restoration after reconnect (unknown content: %s)', async (clearIfUnknown) => {
     vi.useFakeTimers();
     const { controller, transport } = await setup();
-    await controller.upload(img);
-    const playback = controller.playTemporary(gif, still, 1000);
+    if (!clearIfUnknown) await controller.upload(img);
+    const playback = controller.playTemporary(gif, still, 1000, { clearIfUnknown });
     const rejected = expect(playback).rejects.toThrow(/could not be restored/);
     await vi.advanceTimersByTimeAsync(0);
     transport.drop();

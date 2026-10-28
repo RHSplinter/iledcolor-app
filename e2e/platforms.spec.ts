@@ -25,7 +25,7 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await page.getByRole('tab', { name: 'Custom' }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Scan' })).toBeFocused();
-  await expect(page.locator('#qr-start')).toBeVisible();
+  await expect(page.locator('#qr-text-start')).toBeVisible();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Sound' })).toBeFocused();
   await page.keyboard.press('ArrowRight');
@@ -93,7 +93,7 @@ for (const platform of ['ios', 'android']) {
     for (const option of await page.locator('#view-approach option[value=span]').all())
       await expect(option).toContainText('unstable');
     await page.getByRole('tab', { name: 'Scan', exact: true }).click();
-    const action = await page.locator('#qr-start').boundingBox();
+    const action = await page.locator('#qr-text-start').boundingBox();
     const profile = await page.locator('#qr-profile').boundingBox();
     expect(action!.y).toBeLessThan(profile!.y);
     await page.getByRole('tab', { name: 'Settings' }).click();
