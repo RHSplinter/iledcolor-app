@@ -175,6 +175,11 @@ test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup acco
   for (const property of ['background-color', 'border-radius', 'padding', 'width', 'height']) {
     await expect(phone).toHaveCSS(property, await firstInput.evaluate((input, key) => getComputedStyle(input).getPropertyValue(key), property));
   }
+  const linkedin = page.getByRole('textbox', { name: 'LinkedIn handle', exact: true });
+  await expect(linkedin).toHaveAttribute('type', 'text');
+  for (const property of ['background-color', 'border-radius', 'padding', 'width', 'height']) {
+    await expect(linkedin).toHaveCSS(property, await firstInput.evaluate((input, key) => getComputedStyle(input).getPropertyValue(key), property));
+  }
   const save = page.locator('#qr-data-save');
   await email.fill('not-an-email');
   await expect(save).toBeEnabled();

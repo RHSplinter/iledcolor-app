@@ -15,7 +15,7 @@ import {
   type ExtractedName, type GreetingSettings, type ScannerBackup,
 } from './greeting';
 import {
-  DEFAULT_ISSUE, isValidAssignee, issueBody, issueTitle, newIssueUrl, parseRepoUrl, validateIssueSettings,
+  DEFAULT_ISSUE, isValidAssignee, issueBody, issueTitle, newIssueUrl, parseLinkedinHandle, parseRepoUrl, validateIssueSettings,
   type IssueField, type IssueSettings,
 } from './issue';
 
@@ -308,6 +308,11 @@ export class GreetingUi {
     const { row: emailRow, input: email } = labelledRow('qr-data-email', 'email', 'Email address');
     const { row: phoneRow, input: phone } = labelledRow('qr-data-phone', 'tel', 'Phone number', extracted.phone ?? '');
     phone.autocomplete = 'off';
+    const { row: linkedinRow, input: linkedin } = labelledRow('qr-data-linkedin', 'text', 'LinkedIn handle', extracted.linkedin ?? '');
+    linkedin.autocomplete = 'off';
+    linkedin.placeholder = 'handle';
+    // Pasted profile URLs are reduced to the handle; the issue links the full URL.
+    linkedin.addEventListener('blur', () => { linkedin.value = parseLinkedinHandle(linkedin.value) ?? linkedin.value.trim(); });
     const save = $<HTMLButtonElement>('qr-data-save');
     const validateEmail = () => {
       const valid = isValidEmail(email.value);
@@ -327,8 +332,9 @@ export class GreetingUi {
       }),
       { label: 'Email address', value: email.value },
       { label: 'Phone number', value: phone.value },
+      { label: 'LinkedIn', value: linkedin.value, type: 'linkedin' },
     ];
-    $('qr-data-rows').replaceChildren(...rows, emailRow, phoneRow);
+    $('qr-data-rows').replaceChildren(...rows, emailRow, phoneRow, linkedinRow);
     $('qr-data').hidden = false;
   }
 

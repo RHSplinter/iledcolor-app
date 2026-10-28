@@ -383,10 +383,12 @@ selectors for First name, Last name, GitHub Handle, Role and Company.
 you must already be signed in to GitHub with access to the repository's organization;
 a notice below the button names that organization). The issue is titled
 `Badge scan: {firstname} {lastname}`, gets the configured label, and its body has a
-**Badge details** table with the non-empty reviewed fields (including email and phone),
-an empty **Notes** section for you to fill in, a horizontal rule, and
+**Badge details** table with the non-empty reviewed fields (including email, phone and
+LinkedIn), an empty **Notes** section for you to fill in, a horizontal rule, and
 `Scanned via OCR on: dd-MMM-yyyy HH:mm` (scan time, local). GitHub handles are linked
-rather than @-mentioned, so visitors are not notified. Nothing is posted until you choose
+rather than @-mentioned, so visitors are not notified. Enter only the LinkedIn handle
+(a scanned handle is pre-filled; a pasted profile URL is reduced to the handle); the
+issue shows the full `https://www.linkedin.com/in/{handle}` URL. Nothing is posted until you choose
 **Create** on GitHub. Configure the target in **Settings → Save scans as GitHub issues**:
 the repository URL (default `https://github.com/xebia/badge-scanner`), the label
 (default `GitHubUniverse`; GitHub applies only existing labels and only for users with

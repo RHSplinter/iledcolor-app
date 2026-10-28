@@ -25,6 +25,19 @@ This is the Xebia Led hat used/introduced at GitHub Universe 2026.
 6. Press the connect button at the top of the page and connect to the Bluetooth name of the cap you discovered in step 2.
 7. Familiarize yourself with the controls in the app and ask questions if you don't understand it. We have loaded the app with some presets you can use.
 
+## Badge scanning
+
+This app has a "Scan" tab that allows users to scan the conference badge text and use that to create an issue in GitHub. Follow these steps to make it work:
+
+1. Connect your cap to your phone.
+2. Go to the settings tab.
+3. Scroll down to the "Save scans as GitHub issues" section and fill your GitHub username in "Assign to (your GitHub username)".
+4. Go to the "Scan" tab and click the "Scan" button.
+5. Allow camera access.
+6. Position the conference badge within the camera view to scan it. Ensure it's as close as possible to the lens, so "UNIVERSE'26" is outside the frame, as well as the visitor type (e.g. "Attendee").
+7. Tap the "Capture text" button below the camera view.
+8. Fill in remaining fields and click "Save".
+
 ## More docs
 
 Go to:

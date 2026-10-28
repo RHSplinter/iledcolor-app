@@ -57,9 +57,30 @@ function githubCell(value: string): string {
   return OWNER.test(handle) ? `[@${handle}](https://github.com/${handle})` : cell(value);
 }
 
+/** The bare LinkedIn handle from "handle", "@handle", "in/handle" or a linkedin.com/in/ profile URL. */
+export function parseLinkedinHandle(value: string): string | undefined {
+  const handle = value.trim()
+    .replace(/^(?:https?:\/\/)?(?:[\w-]+\.)?linkedin\.com\//i, '')
+    .replace(/^\/?(?:in|pub)\//i, '')
+    .replace(/^@+/, '')
+    .replace(/[/?#].*$/, '');
+  return /^[\w%-]{3,100}$/.test(handle) ? handle : undefined;
+}
+
+function linkedinCell(value: string): string {
+  const handle = parseLinkedinHandle(value);
+  return handle ? `<https://www.linkedin.com/in/${handle}>` : cell(value);
+}
+
+function valueCell(field: IssueField): string {
+  if (field.type === 'github') return githubCell(field.value);
+  if (field.type === 'linkedin') return linkedinCell(field.value);
+  return cell(field.value);
+}
+
 export function issueBody(fields: IssueField[], scannedAt: Date): string {
   const rows = fields.filter((f) => f.value.trim())
-    .map((f) => `| ${cell(f.label)} | ${f.type === 'github' ? githubCell(f.value) : cell(f.value)} |`);
+    .map((f) => `| ${cell(f.label)} | ${valueCell(f)} |`);
   return [
     '## Badge details', '',
     '| Field | Value |', '| --- | --- |', ...rows, '',

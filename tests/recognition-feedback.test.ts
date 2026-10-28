@@ -163,7 +163,7 @@ it.each(['ocr', 'manual'] as const)('shows editable visitor data for a recognize
   expect(form.hidden).toBe(false);
   const inputs = [...form.querySelectorAll('input')];
   const selects = [...form.querySelectorAll('select')];
-  expect(inputs.map((input) => input.value)).toEqual(['Rob', 'Bos', '@octocat', 'Software Engineer', 'Xebia', '', '']);
+  expect(inputs.map((input) => input.value)).toEqual(['Rob', 'Bos', '@octocat', 'Software Engineer', 'Xebia', '', '', '']);
   expect(inputs[5]!.type).toBe('email');
   expect(inputs[5]!.getAttribute('aria-label')).toBe('Email address');
   expect(inputs[5]!.closest('tr')!.querySelector('select')).toBeNull();
@@ -171,6 +171,10 @@ it.each(['ocr', 'manual'] as const)('shows editable visitor data for a recognize
   expect(inputs[6]!.getAttribute('aria-label')).toBe('Phone number');
   expect(document.querySelector('label[for=qr-data-phone]')!.textContent).toBe('Phone number');
   expect(inputs[6]!.closest('tr')!.querySelector('select')).toBeNull();
+  expect(inputs[7]!.type).toBe('text');
+  expect(inputs[7]!.getAttribute('aria-label')).toBe('LinkedIn handle');
+  expect(document.querySelector('label[for=qr-data-linkedin]')!.textContent).toBe('LinkedIn handle');
+  expect(inputs[7]!.closest('tr')!.querySelector('select')).toBeNull();
   expect(selects.map((select) => select.value)).toEqual(['firstname', 'lastname', 'github', 'role', 'company']);
   for (const select of selects) {
     expect([...select.options].map((option) => option.text)).toEqual([
@@ -219,7 +223,7 @@ it.each(['ocr', 'manual'] as const)('preserves multiword first and last names in
   await ui.init();
   await ui['greet']('Anne Marie\nvan der Meer\n@badge-user\nSRE\nACME R&D 24/7', target, source);
   expect([...document.querySelectorAll<HTMLInputElement>('#qr-data input')].map((input) => input.value))
-    .toEqual(['Anne Marie', 'van der Meer', '@badge-user', 'SRE', 'ACME R&D 24/7', '', '']);
+    .toEqual(['Anne Marie', 'van der Meer', '@badge-user', 'SRE', 'ACME R&D 24/7', '', '', '']);
   expect(playback).toHaveBeenCalledOnce();
 });
 
@@ -232,8 +236,8 @@ it('replaces previous visitor data, leaves optional fields empty and removes sta
   expect(document.querySelector('#qr-data img')).toBeNull();
   await ui['greet']('Ada', target, 'manual');
   expect([...document.querySelectorAll<HTMLInputElement>('#qr-data input')].map((input) => input.value))
-    .toEqual(['Ada', '', '', '', '', '', '']);
-  expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(7);
+    .toEqual(['Ada', '', '', '', '', '', '', '']);
+  expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(8);
   await ui['greet']('{"email":"private@example.org"}', target, 'manual');
   expect(document.getElementById('qr-data')!.hidden).toBe(true);
   expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(0);
@@ -299,6 +303,22 @@ it.each(['edit', 'clear', 'rescan'] as const)('does not overwrite visitor data a
     expect(document.getElementById('qr-data')!.hidden).toBe(true);
     expect(document.getElementById('qr-github-result')!.hidden).toBe(true);
   }
+});
+
+it('prefills a scanned LinkedIn handle, reduces pasted URLs to the handle and links the profile in the issue', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  await ui['greet']('Ada Lovelace\nLinkedIn: ada-lovelace', target, 'manual');
+  const linkedin = document.getElementById('qr-data-linkedin') as HTMLInputElement;
+  expect(linkedin.value).toBe('ada-lovelace');
+  linkedin.value = 'https://www.linkedin.com/in/ada-l/';
+  linkedin.dispatchEvent(new Event('blur'));
+  expect(linkedin.value).toBe('ada-l');
+  const open = vi.spyOn(window, 'open').mockReturnValue({ opener: null } as unknown as Window);
+  document.getElementById('qr-data')!.dispatchEvent(new Event('submit', { cancelable: true }));
+  const body = new URL(String(open.mock.calls[0]![0])).searchParams.get('body')!;
+  expect(body).toContain('| LinkedIn | <https://www.linkedin.com/in/ada-l> |');
+  open.mockRestore();
 });
 
 it('shows a scanned phone number without looking it up', async () => {
