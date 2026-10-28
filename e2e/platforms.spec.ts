@@ -43,7 +43,10 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await expect(page.locator('#c-str')).toHaveValue('Web greeting');
   await context.setOffline(true);
   await page.reload();
-  await connectHat(page, 'presets');
+  // Refresh restores the live owner asynchronously; do not race it by trying
+  // to pair again while the disconnected controls are being replaced.
+  await expect(page.locator('#status')).toContainText('Ready');
+  await expect(page.locator('#view-presets')).toBeVisible();
   await expect(page.getByRole('tab')).toHaveCount(5);
   await expect(page.locator('#c-str')).toHaveValue('Web greeting');
   expect(errors).toEqual([]);

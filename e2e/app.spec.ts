@@ -248,11 +248,15 @@ test('keepBlack keeps cap black when idle while displaying approach, sound and s
 
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
+  // Keep playback active long enough to exercise cancellation on a busy runner.
+  await page.fill('#qr-repetitions', '30');
   await page.locator('#view-scan summary').click();
   await page.fill('#qr-raw', 'Ada');
   await page.click('#qr-submit');
   await expect(page.locator('#qr-status')).toContainText('Hi Ada!', { timeout: 15_000 });
-  // End the greeting while it is active; Ready can mean playback has already finished.
+  // Wait for upload to finish before cancelling playback. The extended repeat
+  // count above keeps the greeting active after the controller returns to Ready.
+  await expect(page.locator('#status')).toContainText('Ready', { timeout: 15_000 });
   await page.click('#qr-cancel');
   await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15_000 });
   await expect(page.locator('#status')).toContainText('Ready', { timeout: 15_000 });
