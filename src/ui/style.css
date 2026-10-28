@@ -56,6 +56,14 @@ button:not(:disabled):active { filter:brightness(.85); }
 .preset-save input { flex:1 1 180px; }
 .scan-actions { margin-bottom:var(--space-3); }
 .scan-actions .primary { flex:1; }
+.scan-status { padding:var(--space-2) var(--space-3); border-left:3px solid var(--accent); border-radius:0 4px 4px 0; background:#4da3ff14; color:#ccc; font-size:13px; line-height:1.4; }
+.scan-status.bad { border-left-color:var(--bad); background:#ff5a5a14; color:var(--bad); }
+.scan-data-divider { margin:var(--space-4) 0; border:0; border-top:1px solid var(--border); }
+.scan-data-table { width:100%; table-layout:fixed; border-spacing:0 8px; }
+.scan-data-table caption { text-align:left; font-weight:600; }
+.scan-data-table td:first-child { padding-right:8px; }
+.scan-data-actions { align-items:stretch; }
+.scan-data-actions > button { flex:1; }
 summary { min-height:44px; padding:10px 0; cursor:pointer; font-weight:600; }
 details.card > summary { font-size:16px; }
 details.card[open] > summary { margin-bottom:var(--space-3); }

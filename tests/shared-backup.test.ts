@@ -16,7 +16,7 @@ const localGroup = { ...group, id: 'local-group' };
 const features = {
   settings: { ...DEFAULT_SETTINGS, textFont: 'dotgothic' as const, brightness: 3, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90 as const, mirrorH: true, mirrorV: true } },
   createContent: { kind: 'text' as const, text: 'Current draft', fg: '#123456', bg: '#654321', speed: 9 },
-  qrGreeting: { template: 'Welcome {name}!', repetitions: 17, speed: 8 },
+  qrGreeting: { template: 'Hi {firstname}! {lastname}, {role}, {company}, {githubhandle}', repetitions: 17, speed: 8 },
   qrScanLogging: true,
   qrGithubLookup: true,
   github: { handle: 'octocat', prefix: 'Saved {handle}: ', postfix: '\u{1f389}' },

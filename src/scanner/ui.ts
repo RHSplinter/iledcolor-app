@@ -9,9 +9,9 @@ import { vibrateFeedback } from '../feedback';
 import { BadgeCamera } from './camera';
 import { appendScanLog, shareScanLog } from './log';
 import { BadgeTextRecognizer } from './ocr';
-import { differingGithubHandles, fetchPublicProfile, findGithubHandles } from './githubLookup';
+import { differingGithubHandles, fetchPublicProfile, findGithubHandle, findGithubHandles } from './githubLookup';
 import {
-  DEFAULT_GREETING, extractName, greetingDuration, greetingText, validateGreeting,
+  DEFAULT_GREETING, extractName, greetingDuration, greetingNameFields, greetingText, validateGreeting,
   type ExtractedName, type GreetingSettings, type ScannerBackup,
 } from './greeting';
 
@@ -37,6 +37,8 @@ export class GreetingUi {
   private lookupId = 0;
   private savingLogging = false;
   private sharingLog = false;
+  private statusMessage = '';
+  private errorMessage = '';
 
   constructor(private ctx: ScannerContext) {}
 
@@ -57,15 +59,24 @@ export class GreetingUi {
           <p class="small">Frame the printed name and company, then capture. Text is recognized on this device.</p>
           <button id="qr-capture" class="primary">Capture text</button>
         </div>
-        <p id="qr-status" role="status" aria-live="polite"></p>
-        <p id="qr-error" class="bad" role="alert"></p>
-        <p id="qr-ready" class="small" role="status"></p>
+        <p id="qr-status" class="scan-status" role="status" aria-live="polite" aria-atomic="true"></p>
+        <form id="qr-data" hidden aria-label="Scanned visitor data">
+          <hr class="scan-data-divider" />
+          <table class="scan-data-table">
+            <caption>Scanned visitor data</caption>
+            <tbody id="qr-data-rows"></tbody>
+          </table>
+          <div class="row scan-data-actions">
+            <button id="qr-data-save" type="submit" class="primary">Save</button>
+            <button id="qr-data-clear" type="button">Clear</button>
+          </div>
+        </form>
       </div>
       <div class="card">
         <h2>Greeting settings</h2>
         <label for="qr-template">Greeting</label>
         <input id="qr-template" type="text" maxlength="200" aria-describedby="qr-template-help" />
-        <p id="qr-template-help" class="small">Use {name} or {firstname}, {lastname}, {company}, {title}, {email}, {phone}, {url}, {github}, {linkedin} or {notes} for captured fields.</p>
+        <p id="qr-template-help" class="small">Use {name} or {firstname}, {lastname}, {role}, {company}, or {githubhandle} for captured fields.</p>
         <label for="qr-repetitions">Repetitions</label>
         <input id="qr-repetitions" type="number" min="1" max="65536" step="1" />
         <label for="qr-speed">Scroll speed</label>
@@ -132,12 +143,61 @@ export class GreetingUi {
     $('qr-log-share').onclick = () => { void this.shareLog(); };
     $('qr-github-enabled').onchange = () => { void this.setGithubLookup(); };
     $('qr-cancel').onclick = () => this.playing?.cancelUpload();
+    $('qr-data').onsubmit = (event) => event.preventDefault();
+    $('qr-data-clear').onclick = () => {
+      this.clearScanData();
+      this.statusMessage = '';
+      this.errorMessage = '';
+      this.updateStatus();
+      $('qr-text-start').focus();
+    };
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.stopCamera(); });
     window.addEventListener('pagehide', () => this.stopCamera());
     this.updateStatus();
   }
 
   private message(e: unknown) { return e instanceof Error ? e.message : String(e); }
+
+  private clearScanData() {
+    $('qr-data-rows').replaceChildren();
+    $('qr-data').hidden = true;
+  }
+
+  private showScanData(extracted: ExtractedName, raw: string) {
+    const { firstname, lastname } = greetingNameFields(extracted);
+    const fields = [
+      { type: 'firstname', label: 'First name', value: firstname },
+      { type: 'lastname', label: 'Last name', value: lastname },
+      { type: 'github', label: 'GitHub Handle', value: extracted.github ?? findGithubHandle(raw) ?? '' },
+      { type: 'role', label: 'Role', value: extracted.title ?? '' },
+      { type: 'company', label: 'Company', value: extracted.company ?? '' },
+    ];
+    const rows = fields.map((field, index) => {
+      const row = document.createElement('tr');
+      const valueCell = row.insertCell();
+      const typeCell = row.insertCell();
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = field.value;
+      input.setAttribute('aria-label', `Data item ${index + 1}`);
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', `Data item ${index + 1} type`);
+      for (const option of fields) select.add(new Option(option.label, option.type));
+      select.value = field.type;
+      const normalizeHandle = () => {
+        if (select.value === 'github' && input.value) input.value = `@${input.value.replace(/^@+/, '')}`;
+      };
+      input.oninput = normalizeHandle;
+      select.onchange = normalizeHandle;
+      normalizeHandle();
+      valueCell.append(input);
+      typeCell.append(select);
+      return row;
+    });
+    $('qr-data-rows').replaceChildren(...rows);
+    $('qr-data').hidden = false;
+  }
+
   private async setLogging() {
     const input = $<HTMLInputElement>('qr-log-enabled');
     this.savingLogging = true;
@@ -215,8 +275,15 @@ export class GreetingUi {
     } catch (e) { $('qr-log-error').textContent = `Could not share scan log: ${this.message(e)}. Enable logging and scan a badge to create the file.`; }
     finally { this.sharingLog = false; this.updateStatus(); }
   }
-  private error(message: string) { $('qr-error').textContent = message; }
-  private status(message: string) { $('qr-status').textContent = message; }
+  private error(message: string) {
+    this.errorMessage = message;
+    if (message) this.statusMessage = '';
+    this.updateStatus();
+  }
+  private status(message: string) {
+    this.statusMessage = message;
+    this.updateStatus();
+  }
   private readSettings() {
     return validateGreeting({
       template: $<HTMLInputElement>('qr-template').value,
@@ -265,9 +332,16 @@ export class GreetingUi {
     if (!document.getElementById('qr-text-start')) return;
     const ctl = this.ctx.controller();
     const unavailable = ctl.state !== 'Ready' || ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
-    $('qr-ready').textContent = this.scanning ? '' : ctl.state !== 'Ready' ? 'Connect your primary cap before scanning.'
+    const readiness = this.scanning ? 'Starting camera. Allow camera access when prompted.' : ctl.state !== 'Ready' ? 'Connect your primary cap before scanning.'
       : ctl.temporaryActive || this.processing ? 'Wait for the current greeting to finish, or end it above.'
       : this.sharingLog || this.savingLogging ? 'Wait for the scan log operation to finish.' : 'Ready to scan a badge.';
+    const status = $('qr-status');
+    status.textContent = this.errorMessage ? [this.errorMessage, this.statusMessage].filter(Boolean).join(' ')
+      : (ctl.state !== 'Ready' && !this.processing && !this.scanning) || this.sharingLog || this.savingLogging
+        ? readiness : this.statusMessage || readiness;
+    status.classList.toggle('bad', !!this.errorMessage);
+    status.setAttribute('role', this.errorMessage ? 'alert' : 'status');
+    status.setAttribute('aria-live', this.errorMessage ? 'assertive' : 'polite');
     $<HTMLButtonElement>('qr-text-start').disabled = unavailable || this.scanning;
     $<HTMLButtonElement>('qr-submit').disabled = unavailable || this.scanning;
     const video = $<HTMLVideoElement>('qr-video');
@@ -299,7 +373,8 @@ export class GreetingUi {
   private async scanText() {
     const attempt = ++this.scanId;
     this.scanning = true;
-    this.updateStatus();
+    this.error('');
+    this.status('Starting camera. Allow camera access when prompted.');
     try {
       const settings = this.readSettings();
       await saveKv('qrGreeting', settings);
@@ -370,8 +445,9 @@ export class GreetingUi {
   private async greet(raw: string, target: DeviceController, source: 'ocr' | 'manual', scanId = new Date().toISOString()) {
     if (this.processing) return;
     this.processing = true;
+    this.clearScanData();
     this.error('');
-    this.updateStatus();
+    this.status('Preparing greeting…');
     try {
       if (this.loggingEnabled) {
         let loggedFields: ExtractedName | undefined;
@@ -386,9 +462,10 @@ export class GreetingUi {
           $('qr-log-status').textContent = 'Scan saved to qr-scan-log.jsonl.';
         } catch (e) { $('qr-log-error').textContent = `Scan was NOT saved: ${this.message(e)}`; }
       }
+      const extracted = extractName(raw);
+      this.showScanData(extracted, raw);
       const settings = this.readSettings();
       await saveKv('qrGreeting', settings);
-      const extracted = extractName(raw);
       const text = greetingText(settings.template, extracted);
       await ensureFont();
       const [width, height] = this.ctx.logicalDims();

@@ -275,7 +275,8 @@ choosing a file, current content and sequence steps including a paused sequence 
 plus the current GitHub handle, prefix/postfix text and independent scroll speed),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
 **Scan settings** (proximity thresholds, timing, current greeting,
-repetitions, speed and scan-logging preference), **Display & transport settings**
+repetitions, speed and scan-logging preference; greeting templates retain all
+placeholders, including `{firstname}`, `{role}` and `{githubhandle}`), **Display & transport settings**
 (LED text font, keep-cap-black-when-idle preference, dimensions, brightness, rotation,
 mirroring and Bluetooth write settings; older backups without a font or keep-black
 preference keep your current choice), and
@@ -347,8 +348,30 @@ The parser recognizes plain text, JSON, vCard, MECARD, and multiline badge text,
 including company, job title, email, phone, URL, and notes. Configure a greeting such as
 `Hi {name}!`, scroll speed, and repetition count (**3 by default**).
 Names and contact fields are extracted automatically; greeting templates can use the
-captured fields listed below the greeting input. Manual scan-data entry is available
+captured fields listed below the greeting input. `{name}` uses the full name;
+`Hi {firstname}!` uses only the first name. `{lastname}`, `{role}`, `{company}` and
+`{githubhandle}` insert the corresponding captured fields (missing fields are empty).
+Older placeholders such as `{title}` and `{github}` remain supported.
+Manual scan-data entry is available
 when a camera cannot be used. Invalid scan data shows an error without changing the cap.
+Badges with first name, last name, GitHub handle, role and company on consecutive
+lines use that fixed order, preserving multiword names, short or unfamiliar roles,
+and company punctuation, including when OCR combines the names into one row.
+Other layouts retain automatic field detection without
+treating printed social handles or contact details as name fragments.
+OCR uses word positions to recover tightly stacked name rows and separate widely
+spaced text, keeping distant QR-code artifacts out of the company line. Recognition is still
+best-effort: frame the whole name and company, avoid glare, and check the review fields.
+
+Readiness, camera/OCR progress, errors and greeting completion share one compact
+status bar with smaller text, a tinted background and a left accent edge.
+Completion stays visible until another scan or status change.
+After a successful extraction, a divider separates the status bar from the
+**Scanned visitor data** table. Its headerless rows have editable values and type
+selectors for First name, Last name, GitHub Handle, Role and Company.
+**Save** is a placeholder for a later step; **Clear** removes and hides the review
+fields and divider. Review edits remain temporary and do not change the greeting
+or scan log.
 
 Scanning is available immediately after connecting a cap. If no content has been
 sent during this connection, the display is cleared to black after the greeting:

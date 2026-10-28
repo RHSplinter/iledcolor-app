@@ -87,7 +87,7 @@ test('keyboard tabs, scan-first ordering and every marquee choice are accessible
   const start = await page.locator('#qr-text-start').boundingBox();
   const greeting = await page.locator('#qr-template').boundingBox();
   expect(start!.y).toBeLessThan(greeting!.y);
-  await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
+  await expect(page.locator('#qr-status')).toHaveText('Ready to scan a badge.');
   await expect(page.getByRole('button', { name: 'Scan', exact: true })).toBeEnabled();
   await page.keyboard.press('End');
   await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();

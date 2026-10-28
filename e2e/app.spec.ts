@@ -246,7 +246,7 @@ test('keepBlack keeps cap black when idle while displaying approach, sound and s
   await expect(page.locator('#sound-status')).toContainText('Previous content restored', { timeout: 15_000 });
 
   await page.click('nav [data-tab=scan]');
-  await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
+  await expect(page.locator('#qr-status')).toHaveText('Ready to scan a badge.');
   await page.locator('#view-scan summary').click();
   await page.fill('#qr-raw', 'Ada');
   await page.click('#qr-submit');

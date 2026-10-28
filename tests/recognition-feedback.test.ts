@@ -10,6 +10,7 @@ import type { DeviceController } from '../src/controller/deviceController';
 import { solid } from '../src/render/matrix';
 import { ensureFont } from '../src/render/text';
 import { SPIKE_PROFILE } from '../src/transport/types';
+import { saveKv } from '../src/storage/db';
 
 vi.mock('../src/feedback', () => ({ vibrateFeedback: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../src/storage/db', () => ({
@@ -142,6 +143,85 @@ it('plays and vibrates once after deferred frame rendering when the cap remains 
   expect(vibrateFeedback).toHaveBeenCalledOnce();
 });
 
+it.each(['ocr', 'manual'] as const)('shows editable visitor data for a recognized %s scan without changing playback or persisting edits', async (source) => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  const form = document.getElementById('qr-data') as HTMLFormElement;
+  expect(form.hidden).toBe(true);
+  expect(form.querySelector('thead')).toBeNull();
+  expect(document.getElementById('qr-save-help')).toBeNull();
+  expect(form.querySelector('hr')).not.toBeNull();
+  expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(0);
+  await ui['greet']('Rob Bos\nSoftware Engineer\nXebia\n@octocat', target, source);
+  expect(form.hidden).toBe(false);
+  const inputs = [...form.querySelectorAll('input')];
+  const selects = [...form.querySelectorAll('select')];
+  expect(inputs.map((input) => input.value)).toEqual(['Rob', 'Bos', '@octocat', 'Software Engineer', 'Xebia']);
+  expect(selects.map((select) => select.value)).toEqual(['firstname', 'lastname', 'github', 'role', 'company']);
+  for (const select of selects) {
+    expect([...select.options].map((option) => option.text)).toEqual([
+      'First name', 'Last name', 'GitHub Handle', 'Role', 'Company',
+    ]);
+  }
+  inputs[0]!.value = 'Ada';
+  inputs[0]!.dispatchEvent(new Event('input'));
+  selects[1]!.value = 'company';
+  selects[1]!.dispatchEvent(new Event('change'));
+  inputs[2]!.value = 'updated';
+  inputs[2]!.dispatchEvent(new Event('input'));
+  expect(inputs[2]!.value).toBe('@updated');
+  inputs[2]!.value = '';
+  inputs[2]!.dispatchEvent(new Event('input'));
+  expect(inputs[2]!.value).toBe('');
+  selects[4]!.value = 'github';
+  selects[4]!.dispatchEvent(new Event('change'));
+  expect(inputs[4]!.value).toBe('@Xebia');
+  const submit = new Event('submit', { cancelable: true });
+  form.dispatchEvent(submit);
+  expect(submit.defaultPrevented).toBe(true);
+  expect(inputs[0]!.value).toBe('Ada');
+  expect(selects[1]!.value).toBe('company');
+  expect(playback).toHaveBeenCalledOnce();
+  expect(saveKv).toHaveBeenCalledExactlyOnceWith('qrGreeting', {
+    template: 'Hi {name}!', repetitions: 3, speed: 3,
+  });
+  const status = document.getElementById('qr-status')!;
+  expect(status.textContent).not.toBe('Ready to scan a badge.');
+  document.getElementById('qr-data-clear')!.click();
+  expect(form.hidden).toBe(true);
+  expect(form.querySelectorAll('input, select')).toHaveLength(0);
+  expect(status.textContent).toBe('Ready to scan a badge.');
+  expect(status.classList.contains('bad')).toBe(false);
+  expect(saveKv).toHaveBeenCalledOnce();
+  expect(playback).toHaveBeenCalledOnce();
+});
+
+it.each(['ocr', 'manual'] as const)('preserves multiword first and last names in ordered %s badge fields', async (source) => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  await ui['greet']('Anne Marie\nvan der Meer\n@badge-user\nSRE\nACME R&D 24/7', target, source);
+  expect([...document.querySelectorAll<HTMLInputElement>('#qr-data input')].map((input) => input.value))
+    .toEqual(['Anne Marie', 'van der Meer', '@badge-user', 'SRE', 'ACME R&D 24/7']);
+  expect(playback).toHaveBeenCalledOnce();
+});
+
+it('replaces previous visitor data, leaves optional fields empty and removes stale fields on invalid scans', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  await ui['greet']('{"name":"Rob van der Bos","company":"<img src=x onerror=alert(1)>"}', target, 'manual');
+  expect((document.querySelectorAll('#qr-data input')[1] as HTMLInputElement).value).toBe('van der Bos');
+  expect((document.querySelectorAll('#qr-data input')[4] as HTMLInputElement).value).toBe('<img src=x onerror=alert(1)>');
+  expect(document.querySelector('#qr-data img')).toBeNull();
+  await ui['greet']('Ada', target, 'manual');
+  expect([...document.querySelectorAll<HTMLInputElement>('#qr-data input')].map((input) => input.value))
+    .toEqual(['Ada', '', '', '', '']);
+  expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(5);
+  await ui['greet']('{"email":"private@example.org"}', target, 'manual');
+  expect(document.getElementById('qr-data')!.hidden).toBe(true);
+  expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(0);
+  expect(document.getElementById('qr-status')!.textContent).toContain('No usable name');
+});
+
 it.each(['ocr', 'manual'] as const)('vibrates once when a recognized %s scan greeting starts playing, before completion', async (source) => {
   const ui = new GreetingUi(context);
   await ui.init();
@@ -155,6 +235,34 @@ it.each(['ocr', 'manual'] as const)('vibrates once when a recognized %s scan gre
   finish('completed');
   await greeting;
   expect(vibrateFeedback).toHaveBeenCalledOnce();
+});
+
+it('uses one status box for readiness, camera progress, errors and recovery', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  const status = document.getElementById('qr-status')!;
+  expect(status.classList.contains('scan-status')).toBe(true);
+  expect(status.textContent).toBe('Ready to scan a badge.');
+  expect(document.querySelector('#qr-ready, #qr-error')).toBeNull();
+  ui['scanning'] = true;
+  ui['status']('Recognizing text (50%)...');
+  ui.updateStatus();
+  expect(status.textContent).toBe('Recognizing text (50%)...');
+  ui['error']('Text recognition failed.');
+  ui['status']('Adjust the badge position or lighting, then capture again.');
+  ui.updateStatus();
+  expect(status.textContent).toBe('Text recognition failed. Adjust the badge position or lighting, then capture again.');
+  expect(status.getAttribute('role')).toBe('alert');
+  expect(status.getAttribute('aria-live')).toBe('assertive');
+  expect(status.classList.contains('bad')).toBe(true);
+  ui['error']('');
+  ui.stopCamera();
+  expect(status.textContent).toBe('Camera stopped.');
+  expect(status.getAttribute('role')).toBe('status');
+  expect(status.classList.contains('bad')).toBe(false);
+  Object.assign(target, { state: 'Disconnected' });
+  ui.updateStatus();
+  expect(status.textContent).toBe('Connect your primary cap before scanning.');
 });
 
 it.each([
@@ -184,6 +292,10 @@ it.each(['completed', 'cancelled'])('enables Scan and clears unknown content aft
   await ui['greet']('Rob', target, 'ocr');
   expect(playback).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(Object), expect.any(Number), { clearIfUnknown: true });
   expect(vibrateFeedback).toHaveBeenCalledOnce();
+  expect(document.getElementById('qr-status')!.textContent)
+    .toBe(`${result === 'cancelled' ? 'Greeting ended early.' : 'Greeting finished.'} Display cleared to black.`);
+  ui.updateStatus();
+  ui.stopCamera();
   expect(document.getElementById('qr-status')!.textContent)
     .toBe(`${result === 'cancelled' ? 'Greeting ended early.' : 'Greeting finished.'} Display cleared to black.`);
   expect(scan.disabled).toBe(false);

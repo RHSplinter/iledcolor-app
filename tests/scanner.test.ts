@@ -86,11 +86,71 @@ describe('QR names and greeting settings', () => {
     expect(extractName('Zoë\nSoftware Engineer\nXebia').name).toBe('Zoë');
     expect(extractName('Rob\nBos\nXebia')).toMatchObject({ name: 'Rob Bos', company: 'Xebia' });
   });
+  it.each([
+    '@FokkoVeegens', 'GitHub: FokkoVeegens', 'https://github.com/FokkoVeegens',
+    'LinkedIn: FokkoVeegens', 'https://linkedin.com/in/FokkoVeegens',
+    'fokko@example.org', '+31 20 123 4567',
+  ])('does not use a contact line as part of a stacked badge name: %s', (contact) => {
+    expect(extractName(`Fokko\nVeegens\n${contact}\nDevOps Consultant\nXebia`)).toMatchObject({
+      name: 'Fokko Veegens', title: 'DevOps Consultant', company: 'Xebia',
+    });
+  });
+  it('keeps printed handles out of names and companies even without a role', () => {
+    expect(extractName('Fokko\nVeegens\n@FokkoVeegens\nXebia')).toEqual({
+      name: 'Fokko Veegens', github: 'FokkoVeegens', company: 'Xebia',
+    });
+    expect(extractName('Fokko\nVeegens\n@FokkoVeegens\nDevOps Consultant\nXebia')).toEqual({
+      name: 'Fokko Veegens', lastname: 'Veegens', github: 'FokkoVeegens', title: 'DevOps Consultant', company: 'Xebia',
+    });
+  });
+  it.each([
+    ['Anne Marie', 'van der Meer', 'SRE', 'ACME R&D 24/7'],
+    ['Li', 'Ng', 'QA', 'XY'],
+    ['ALEXANDER', 'SMITH-JONES', 'Customer Success Representative', 'International Business Machines Corporation'],
+  ])('uses the fixed badge order without guessing from field lengths: %s %s', (first, last, title, company) => {
+    expect(extractName(`${first}\n${last}\n@badge-user\n${title}\n${company}\nQR artifact`)).toEqual({
+      name: `${first} ${last}`, lastname: last, github: 'badge-user', title, company,
+    });
+  });
   it('substitutes captured fields literally and leaves missing fields empty', () => {
     expect(greetingText('Hello {firstname} from {company}!', extractName('{"name":"Rob","company":"Xebia"}')))
       .toBe('Hello Rob from Xebia!');
     expect(greetingText('Hi {name} {lastname} {company}!', { name: 'Rob' })).toBe('Hi Rob  !');
     expect(greetingText('Hi {name}, {name}!', '$&')).toBe('Hi $&, $&!');
+  });
+  it.each([
+    'Rob Bos',
+    '{"firstName":"Rob","lastName":"Bos"}',
+    'BEGIN:VCARD\nN:Bos;Rob;;;\nEND:VCARD',
+    'MECARD:N:Bos,Rob;;',
+    'Rob\nBos\n@octocat\nEngineer\nXebia',
+  ])('uses only the first name when requested: %s', (raw) => {
+    const parsed = extractName(raw);
+    expect(greetingText('Hi {firstname}!', parsed)).toBe('Hi Rob!');
+    expect(greetingText('Hi {name}!', parsed)).toBe('Hi Rob Bos!');
+    expect(greetingText('{firstname} {lastname}', parsed)).toBe('Rob Bos');
+  });
+  it('preserves multiword names when the badge identifies the last name', () => {
+    const parsed = extractName('Anne Marie\nvan der Meer\n@octocat\nSRE\nXebia');
+    expect(greetingText('Hi {firstname}! {lastname}', parsed)).toBe('Hi Anne Marie! van der Meer');
+  });
+  it('supports the advertised role and GitHub handle placeholders and legacy aliases', () => {
+    const parsed = extractName('Rob\nBos\n@octocat\nEngineer\nXebia');
+    expect(greetingText('Hi {firstname}, {role} at {company} ({githubhandle})!', parsed))
+      .toBe('Hi Rob, Engineer at Xebia (octocat)!');
+    expect(greetingText('{role}/{title} {githubhandle}/{github}', parsed))
+      .toBe('Engineer/Engineer octocat/octocat');
+    expect(greetingText('Hi {firstname}!{lastname}{role}{githubhandle}', 'Rob')).toBe('Hi Rob!');
+    expect(greetingText('{firstname} {firstname}', '$& Bos')).toBe('$& $&');
+  });
+  it.each([
+    ['Li Ng', 'Li Ng'],
+    ['Anne Marie van der Meer', 'Anne Marie van der Meer'],
+    ['Fokko Veegens', 'Fokko Veegens'],
+  ])('keeps a merged name row before a badge handle: %s', (row, name) => {
+    expect(extractName(`${row}\n@badge-user\nSRE\nACME R&D 24/7`)).toEqual({
+      name, github: 'badge-user', title: 'SRE', company: 'ACME R&D 24/7',
+    });
   });
   it('ignores obsolete regex settings without resetting greeting preferences', () => {
     const settings = { template: 'Welcome {name}!', repetitions: 17, speed: 8 };

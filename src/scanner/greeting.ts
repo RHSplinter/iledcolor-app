@@ -166,12 +166,26 @@ function parseFreeText(text: string): Partial<ExtractedName> {
   const linkedin = findLinkedinHandle(text);
   if (github) fields.github = github;
   if (linkedin) fields.linkedin = linkedin;
-  const lines = text.split(/\r?\n/).map((line) => line.trim().split(/\s+/)
+  const badgeRows = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const handleIndex = badgeRows.findIndex((line) => !!findGithubHandle(line));
+  const nameRows = badgeRows.slice(0, handleIndex);
+  const role = badgeRows[handleIndex + 1];
+  const company = badgeRows[handleIndex + 2];
+  if ((handleIndex === 1 || handleIndex === 2) && role && company &&
+      nameRows.every((name) => /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u.test(name))) {
+    return {
+      ...fields, name: nameRows.join(' '),
+      ...(handleIndex === 2 ? { lastname: nameRows[1] } : {}),
+      title: role, company,
+    };
+  }
+  const lines = text.split(/\r?\n/).map((line) => line.trim())
+    .filter((line) => !/^(?:@|git\s?hub\b|linked\s?in\b|\/?in\/)/i.test(line) &&
+      ![email, url, phone].some((contact) => contact && line.includes(contact)))
+    .map((line) => line.split(/\s+/)
     .map((token) => token.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '')).filter(Boolean).join(' '))
     .filter((line) => line && line.length <= 40 && line.split(/\s+/).length <= 6 &&
       /\p{L}/u.test(line) && !/\d/.test(line) && !BADGE_NOISE.test(line) &&
-      !/^(?:@|git\s?hub\b|linked\s?in\b)/i.test(line) &&
-      ![email, url, phone].some((contact) => contact && line.includes(contact)) &&
       line.replace(/\s/g, '').length > 0);
   const usableLines = lines.filter((line) => {
     const letters = line.match(/\p{L}/gu)?.length ?? 0;
@@ -259,10 +273,23 @@ export function extractName(raw: string): ExtractedName {
   };
 }
 
+export function greetingNameFields(extracted: ExtractedName): { firstname: string; lastname: string } {
+  const [first = '', ...last] = extracted.name.split(/\s+/);
+  return {
+    firstname: extracted.lastname && extracted.name.endsWith(` ${extracted.lastname}`)
+      ? extracted.name.slice(0, -extracted.lastname.length - 1) : first,
+    lastname: extracted.lastname ?? last.join(' '),
+  };
+}
+
 export function greetingText(template: string, extracted: ExtractedName | string): string {
-  const fields: ExtractedName = typeof extracted === 'string' ? { name: extracted } : extracted;
-  const text = template.replace(/\{(name|firstname|lastname|company|title|email|phone|url|github|linkedin|notes)\}/g, (_, field: keyof ExtractedName | 'firstname') =>
-    field === 'firstname' ? fields.name : fields[field] ?? '');
+  const captured: ExtractedName = typeof extracted === 'string' ? { name: extracted } : extracted;
+  const fields = {
+    ...captured, ...greetingNameFields(captured),
+    role: captured.title, githubhandle: captured.github,
+  };
+  const text = template.replace(/\{(name|firstname|lastname|role|company|githubhandle|title|email|phone|url|github|linkedin|notes)\}/g,
+    (_, field: keyof typeof fields) => fields[field] ?? '');
   if (text.length > 300) throw new Error('The completed greeting is too long (maximum 300 characters).');
   return text;
 }
