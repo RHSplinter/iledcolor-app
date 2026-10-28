@@ -29,6 +29,25 @@ This is the Xebia Led hat used/introduced at GitHub Universe 2026.
 
 This app has a "Scan" tab that allows users to scan the conference badge text and use that to create an issue in GitHub. Follow these steps to make it work:
 
+To scan without connecting a cap, choose **Scan without hat** next to **Connect**
+on the start screen. This opens just the scanner, without navigation tabs or
+greeting controls. Camera capture, on-device OCR, visitor editing, public GitHub
+email lookup and saving a reviewed GitHub issue work without Bluetooth.
+**Assign to (your GitHub username)** is available here and uses the same saved
+value as Settings. In connected mode it appears only in Settings, not on the
+Scan tab. Your username stays on this device and is excluded from backups. No
+greeting is rendered or sent to a hat. **Return home** at the bottom stops the
+camera and returns to the connection screen, where you can connect normally.
+Reloading also returns to the start screen.
+
+Scan-only mode is temporary running state, not a saved preference or backup
+category. It does not change saved greeting, issue or logging settings. Scan
+settings backups continue to include the greeting, issue destination and logging
+preference (which can enable logging of personal data), but not scanned visitor
+data, scan logs, device connections or the current mode.
+
+For scanning with hat greetings and configuring scan settings:
+
 1. Connect your cap to your phone.
 2. Go to the settings tab.
 3. Scroll down to the "Save scans as GitHub issues" section and fill your GitHub username in "Assign to (your GitHub username)".

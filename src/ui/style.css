@@ -174,3 +174,5 @@ fieldset.tier legend { padding:0 6px; font-weight:600; }
   .switch input, .switch input::after { transition:none; }
 }
 body.disconnected { padding-bottom:env(safe-area-inset-bottom); }
+body.scan-only { padding-bottom:calc(88px + env(safe-area-inset-bottom)); }
+#scan-only-actions { position:fixed; bottom:0; left:0; right:0; z-index:2; padding:12px max(12px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); background:var(--bg); border-top:1px solid #333; text-align:center; }

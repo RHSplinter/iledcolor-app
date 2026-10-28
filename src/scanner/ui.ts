@@ -34,6 +34,7 @@ export class GreetingUi {
   private scanning = false;
   private recognizing = false;
   private processing = false;
+  private sendingGreeting = true;
   private playing?: DeviceController;
   private scanId = 0;
   private loggingEnabled = false;
@@ -82,7 +83,8 @@ export class GreetingUi {
             <span id="qr-issue-note-text"></span></p>
         </form>
       </div>
-      <div class="card">
+      <div class="card" id="qr-scan-assignee" hidden></div>
+      <div class="card" id="qr-greeting-settings">
         <h2>Greeting settings</h2>
         <label for="qr-template">Greeting</label>
         <input id="qr-template" type="text" maxlength="200" aria-describedby="qr-template-help" />
@@ -103,11 +105,15 @@ export class GreetingUi {
         <input id="qr-issue-label" type="text" maxlength="100" autocapitalize="off" autocomplete="off" aria-describedby="qr-issue-label-help" />
         <p id="qr-issue-label-help" class="small">Optional; separate several labels with commas. GitHub only applies labels that exist in the repository
         when you have triage access.</p>
-        <label for="qr-issue-assignee">Assign to (your GitHub username)</label>
-        <input id="qr-issue-assignee" type="text" maxlength="40" autocapitalize="off" autocomplete="off" spellcheck="false" aria-describedby="qr-issue-assignee-help" />
-        <p id="qr-issue-assignee-help" class="small">Optional. Without a token the app cannot detect who is signed in to GitHub, so enter your
-        username to pre-fill the assignee. Stored only on this device and never included in backups.</p>
-        <p id="qr-issue-error" class="bad" role="alert"></p>
+        <div id="qr-settings-assignee">
+          <div id="qr-assignee-field">
+            <label for="qr-issue-assignee">Assign to (your GitHub username)</label>
+            <input id="qr-issue-assignee" type="text" maxlength="40" autocapitalize="off" autocomplete="off" spellcheck="false" aria-describedby="qr-issue-assignee-help" />
+            <p id="qr-issue-assignee-help" class="small">Optional. Without a token the app cannot detect who is signed in to GitHub, so enter your
+            username to pre-fill the assignee. Stored only on this device and never included in backups.</p>
+            <p id="qr-issue-error" class="bad" role="alert"></p>
+          </div>
+        </div>
       </div>
       <div class="card">
         <h2>Scan log &amp; privacy</h2>
@@ -179,6 +185,14 @@ export class GreetingUi {
   }
 
   private message(e: unknown) { return e instanceof Error ? e.message : String(e); }
+
+  setSendingGreeting(enabled: boolean) {
+    this.sendingGreeting = enabled;
+    $('qr-greeting-settings').hidden = !enabled;
+    $(enabled ? 'qr-settings-assignee' : 'qr-scan-assignee').append($('qr-assignee-field'));
+    $('qr-scan-assignee').hidden = enabled;
+    this.updateStatus();
+  }
 
   private clearScanData() {
     this.lookupId++;
@@ -463,13 +477,15 @@ export class GreetingUi {
   updateStatus() {
     if (!document.getElementById('qr-text-start')) return;
     const ctl = this.ctx.controller();
-    const unavailable = ctl.state !== 'Ready' || ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
-    const readiness = this.scanning ? 'Starting camera. Allow camera access when prompted.' : ctl.state !== 'Ready' ? 'Connect your primary cap before scanning.'
-      : ctl.temporaryActive || this.processing ? 'Wait for the current greeting to finish, or end it above.'
+    const needsCap = this.sendingGreeting && (ctl.state !== 'Ready' || ctl.temporaryActive);
+    const unavailable = needsCap || this.processing || this.sharingLog || this.savingLogging;
+    const readiness = this.scanning ? 'Starting camera. Allow camera access when prompted.' : this.sendingGreeting && ctl.state !== 'Ready' ? 'Connect your primary cap before scanning.'
+      : this.processing && !this.sendingGreeting ? 'Processing scanned badge.'
+      : needsCap || this.processing ? 'Wait for the current greeting to finish, or end it above.'
       : this.sharingLog || this.savingLogging ? 'Wait for the scan log operation to finish.' : 'Ready to scan a badge.';
     const status = $('qr-status');
     status.textContent = this.errorMessage ? [this.errorMessage, this.statusMessage].filter(Boolean).join(' ')
-      : (ctl.state !== 'Ready' && !this.processing && !this.scanning) || this.sharingLog || this.savingLogging
+      : (needsCap && !this.processing && !this.scanning) || this.sharingLog || this.savingLogging
         ? readiness : this.statusMessage || readiness;
     status.classList.toggle('bad', !!this.errorMessage);
     status.setAttribute('role', this.errorMessage ? 'alert' : 'status');
@@ -507,8 +523,10 @@ export class GreetingUi {
     this.error('');
     this.status('Starting camera. Allow camera access when prompted.');
     try {
-      const settings = this.readSettings();
-      await saveKv('qrGreeting', settings);
+      if (this.sendingGreeting) {
+        const settings = this.readSettings();
+        await saveKv('qrGreeting', settings);
+      }
       if (attempt !== this.scanId) return;
       this.error('');
       const video = $<HTMLVideoElement>('qr-video');
@@ -574,10 +592,11 @@ export class GreetingUi {
 
   private async greet(raw: string, target: DeviceController, source: 'ocr' | 'manual', scanId = new Date().toISOString()) {
     if (this.processing) return;
+    const sendingGreeting = this.sendingGreeting;
     this.processing = true;
     this.clearScanData();
     this.error('');
-    this.status('Preparing greeting…');
+    this.status(sendingGreeting ? 'Preparing greeting…' : 'Processing scanned badge…');
     try {
       if (this.loggingEnabled) {
         let loggedFields: ExtractedName | undefined;
@@ -595,6 +614,11 @@ export class GreetingUi {
       const extracted = extractName(raw);
       this.showScanData(extracted, raw, new Date(scanId));
       if (source === 'ocr') void this.lookupGithub(raw, scanId);
+      if (!sendingGreeting) {
+        this.status('Badge scanned. Review the visitor data below.');
+        void vibrateFeedback();
+        return;
+      }
       const settings = this.readSettings();
       await saveKv('qrGreeting', settings);
       const text = greetingText(settings.template, extracted);
@@ -621,7 +645,7 @@ export class GreetingUi {
       this.status(`${result === 'cancelled' ? 'Greeting ended early.' : 'Greeting finished.'} ${restoreMessage}`);
     } catch (e) {
       this.status('');
-      this.error(`Greeting failed: ${this.message(e)}`);
+      this.error(`${sendingGreeting ? 'Greeting' : 'Scan'} failed: ${this.message(e)}`);
     } finally {
       this.processing = false;
       this.playing = undefined;

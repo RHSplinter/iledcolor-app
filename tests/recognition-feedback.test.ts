@@ -218,6 +218,56 @@ it.each(['ocr', 'manual'] as const)('shows editable visitor data for a recognize
   expect(playback).toHaveBeenCalledOnce();
 });
 
+it('scans without a cap or valid greeting settings, without rendering, playback or preference writes', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  const backup = ui.exportSettings();
+  Object.assign(target, { state: 'Disconnected' });
+  ui.setSendingGreeting(false);
+  expect(document.getElementById('qr-greeting-settings')!.hidden).toBe(true);
+  expect(document.getElementById('qr-text-start')).toHaveProperty('disabled', false);
+  expect(document.getElementById('qr-status')!.textContent).toBe('Ready to scan a badge.');
+  expect(ui.exportSettings()).toEqual(backup);
+  (document.getElementById('qr-template') as HTMLInputElement).value = '';
+  vi.mocked(fetchPublicProfile).mockResolvedValue({ login: 'octocat', email: 'public@example.org' });
+  await ui['greet']('Rob Bos\n@octocat', target, 'ocr');
+  await vi.waitFor(() => expect((document.getElementById('qr-data-email') as HTMLInputElement).value).toBe('public@example.org'));
+  expect(document.getElementById('qr-data')!.hidden).toBe(false);
+  expect(document.getElementById('qr-status')!.textContent).toBe('Badge scanned. Review the visitor data below.');
+  expect(playback).not.toHaveBeenCalled();
+  expect(ensureFont).not.toHaveBeenCalled();
+  expect(saveKv).not.toHaveBeenCalled();
+  expect(vibrateFeedback).toHaveBeenCalledOnce();
+});
+
+it('reports invalid scan-only input as a scan error without attempting a greeting', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  ui.setSendingGreeting(false);
+  await ui['greet']('{"email":"private@example.org"}', target, 'ocr');
+  expect(document.getElementById('qr-status')!.textContent).toContain('Scan failed:');
+  expect(document.getElementById('qr-status')!.getAttribute('role')).toBe('alert');
+  expect(document.getElementById('qr-data')!.hidden).toBe(true);
+  expect(playback).not.toHaveBeenCalled();
+});
+
+it('restores normal greeting gating and saved preferences when leaving scan-only mode', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  const backup = ui.exportSettings();
+  ui.setSendingGreeting(false);
+  Object.assign(target, { state: 'Disconnected' });
+  ui.setSendingGreeting(true);
+  expect(document.getElementById('qr-greeting-settings')!.hidden).toBe(false);
+  expect(document.getElementById('qr-text-start')).toHaveProperty('disabled', true);
+  expect(ui.exportSettings()).toEqual(backup);
+  Object.assign(target, { state: 'Ready' });
+  ui.updateStatus();
+  await ui['greet']('Rob Bos', target, 'manual');
+  expect(playback).toHaveBeenCalledOnce();
+  expect(saveKv).toHaveBeenCalledWith('qrGreeting', backup.qrGreeting);
+});
+
 it.each(['ocr', 'manual'] as const)('preserves multiword first and last names in ordered %s badge fields', async (source) => {
   const ui = new GreetingUi(context);
   await ui.init();
@@ -370,13 +420,14 @@ it('flags an invalid email on blur and disables saving until it is corrected', a
   expect((document.getElementById('qr-data-email') as HTMLInputElement).hasAttribute('aria-invalid')).toBe(false);
 });
 
-it('Save opens a pre-filled GitHub issue for the reviewed data and explains the sign-in requirement', async () => {
+it.each([false, true])('Save opens a pre-filled GitHub issue with the same assignee (scan-only: %s)', async (scanOnly) => {
   vi.mocked(loadKv).mockImplementation(async (key) => key === 'qrIssueAssignee' ? 'booth-staff' : undefined);
   const tab = { opener: {} };
   const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
   try {
     const ui = new GreetingUi(context);
     await ui.init();
+    ui.setSendingGreeting(!scanOnly);
     expect(document.getElementById('qr-issue-note-text')!.textContent)
       .toContain('signed in to GitHub with access to the xebia organization');
     const scanId = new Date(2026, 9, 28, 14, 7).toISOString();
@@ -430,9 +481,48 @@ it('reports a blocked GitHub tab and refuses to save an invalid email', async ()
   } finally { open.mockRestore(); }
 });
 
-it('persists valid issue settings, rejects invalid ones and applies imports immediately', async () => {
+it('moves the same assignee control and its errors between Settings and scan-only without preference writes', async () => {
   const ui = new GreetingUi(context);
   await ui.init();
+  const input = document.getElementById('qr-issue-assignee') as HTMLInputElement;
+  expect(input.closest('#settings-scan')).not.toBeNull();
+  ui.setSendingGreeting(false);
+  expect(input.closest('#view-scan')).not.toBeNull();
+  expect(document.querySelectorAll('#qr-issue-assignee')).toHaveLength(1);
+  expect(document.getElementById('qr-issue-error')!.closest('#view-scan')).not.toBeNull();
+  input.value = '@octocat';
+  await ui['persistAssignee']();
+  expect(input.value).toBe('octocat');
+  vi.mocked(saveKv).mockClear();
+  ui.setSendingGreeting(true);
+  expect(document.getElementById('qr-issue-assignee')).toBe(input);
+  expect(input.closest('#settings-scan')).not.toBeNull();
+  expect(document.querySelector('#view-scan #qr-issue-assignee')).toBeNull();
+  expect(input.value).toBe('octocat');
+  expect(saveKv).not.toHaveBeenCalled();
+  expect(JSON.stringify(ui.exportSettings())).not.toContain('octocat');
+});
+
+it('shows assignee storage failures in scan-only mode and keeps the previous saved assignee', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  ui.setSendingGreeting(false);
+  const input = document.getElementById('qr-issue-assignee') as HTMLInputElement;
+  input.value = 'booth-staff';
+  await ui['persistAssignee']();
+  vi.mocked(saveKv).mockRejectedValueOnce(new Error('Storage full'));
+  input.value = 'octocat';
+  await ui['persistAssignee']();
+  expect(ui['issueAssignee']).toBe('booth-staff');
+  const error = document.getElementById('qr-issue-error')!;
+  expect(error.closest('#view-scan')).not.toBeNull();
+  expect(error.textContent).toContain('Issue assignee was not saved: Storage full');
+});
+
+it.each([false, true])('persists valid issue settings, rejects invalid ones and applies imports immediately (scan-only: %s)', async (scanOnly) => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  ui.setSendingGreeting(!scanOnly);
   const repo = document.getElementById('qr-issue-repo') as HTMLInputElement;
   const label = document.getElementById('qr-issue-label') as HTMLInputElement;
   const assignee = document.getElementById('qr-issue-assignee') as HTMLInputElement;
