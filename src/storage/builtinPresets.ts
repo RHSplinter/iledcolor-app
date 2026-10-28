@@ -8,6 +8,7 @@ import nijanCat from '../assets/presets/nijan-cat.gif?inline';
 import star from '../assets/presets/star.gif?inline';
 import octocatAnimation from '../assets/presets/octocat-ani.gif?inline';
 import copilotHeadAnimation from '../assets/presets/copilot-head-animation.gif?inline';
+import questionMark from '../assets/presets/question-mark.gif?inline';
 import type { ContentPreset } from './presets';
 
 /** Bundled separately from personal presets so imports never remove the defaults. */
@@ -56,6 +57,10 @@ export function builtinPresets(): ContentPreset[] {
     {
       id: 'builtin-copilot-head-animation', name: 'GitHub Copilot head (animated)', updatedAt: 0,
       content: { kind: 'image', dataUrl: copilotHeadAnimation, fit: 'contain', bg: '#000000' },
+    },
+    {
+      id: 'builtin-question-mark', name: 'Pulsating question mark', updatedAt: 0,
+      content: { kind: 'image', dataUrl: questionMark, fit: 'contain', bg: '#000000' },
     },
     {
       id: 'builtin-header', name: '<header>', updatedAt: 0,
