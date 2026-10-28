@@ -19,6 +19,7 @@ const features = {
   qrGreeting: { template: 'Hi {firstname}! {lastname}, {role}, {company}, {githubhandle}', repetitions: 17, speed: 8 },
   qrScanLogging: true,
   qrGithubLookup: true,
+  qrIssue: { repoUrl: 'https://github.com/octo-org/leads', label: 'Universe' },
   github: { handle: 'octocat', prefix: 'Saved {handle}: ', postfix: '\u{1f389}' },
 };
 const approach = { ...DEFAULT_APPROACH, mode: 'hub' as const, beacon: false, countNearbyCaps: false, enterDbm: -62, settleMs: 4500 };
@@ -83,8 +84,9 @@ describe('selected backup categories', () => {
       expect(data).not.toHaveProperty('qrProfiles');
       expect(data.qrGreeting).toEqual(selection.scan ? features.qrGreeting : undefined);
       expect(data.qrScanLogging).toEqual(selection.scan ? true : undefined);
+      expect(data.qrIssue).toEqual(selection.scan ? features.qrIssue : undefined);
       expect(data.qrGithubLookup).toBeUndefined();
-      for (const excluded of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'qr-scan-log', 'qr-raw']) {
+      for (const excluded of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'qr-scan-log', 'qr-raw', 'qrIssueAssignee']) {
         expect(json).not.toContain(excluded);
       }
       const merged = mergeSharedPresets([localCreation, localGroup], data);
@@ -115,6 +117,7 @@ describe('selected backup categories', () => {
     expect(data.settings).toBeUndefined();
     expect(data.qrGreeting).toBeUndefined();
     expect(data.qrScanLogging).toBeUndefined();
+    expect(data.qrIssue).toBeUndefined();
     expect(data.qrGithubLookup).toBeUndefined();
   });
 
@@ -251,6 +254,14 @@ describe('selected backup categories', () => {
       { ...file, qrGreeting: { ...features.qrGreeting, speed: 11 } },
       { ...file, qrScanLogging: 'true' },
       { ...file, qrGithubLookup: 'true' },
+      { ...file, qrIssue: null },
+      { ...file, qrIssue: { ...features.qrIssue, repoUrl: 'https://gitlab.com/octo-org/leads' } },
+      { ...file, qrIssue: { ...features.qrIssue, repoUrl: 'javascript:alert(1)' } },
+      { ...file, qrIssue: { ...features.qrIssue, repoUrl: 'https://github.com/octo-org' } },
+      { ...file, qrIssue: { ...features.qrIssue, label: 3 } },
+      { ...file, qrIssue: { ...features.qrIssue, label: 'x'.repeat(101) } },
+      { ...file, qrIssue: { repoUrl: features.qrIssue.repoUrl } },
+      { app: file.app, version: 2, creations: [], qrIssue: features.qrIssue },
       { ...file, settings: { ...features.settings, brightness: -1 } },
       { ...file, createContent: { kind: 'solid', color: 'red' } },
       { ...file, approach: { ...file.approach, mode: 'unknown' } },
@@ -327,8 +338,10 @@ describe('saving an imported backup', () => {
     expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
     expect(await loadKv('qrScanLogging')).toBe(true);
     expect(await loadKv('qrGithubLookup')).toBe(true);
+    expect(await loadKv('qrIssue')).toEqual(features.qrIssue);
     await restoreBackup([localCreation], undefined, undefined, { qrScanLogging: false });
     expect(await loadKv('qrScanLogging')).toBe(false);
+    expect(await loadKv('qrIssue')).toEqual(features.qrIssue);
     expect(await loadKv('qrGithubLookup')).toBe(true);
     expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
     expect(await loadKv('createContent')).toEqual(features.createContent);
@@ -340,13 +353,14 @@ describe('saving an imported backup', () => {
     await restoreBackup([creation], features.settings, approach, features);
     const original = IDBObjectStore.prototype.put;
     const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
-      if (key === 'qrGithubLookup') throw new DOMException('Scanner write failed', 'DataCloneError');
+      if (key === 'qrIssue') throw new DOMException('Scanner write failed', 'DataCloneError');
       return original.call(this, value, key);
     });
     try {
       await expect(restoreBackup([localCreation], DEFAULT_SETTINGS, DEFAULT_APPROACH, {
         createContent: creation.content,
         qrGreeting: DEFAULT_GREETING, qrScanLogging: false, qrGithubLookup: false,
+        qrIssue: { repoUrl: 'https://github.com/other/repo', label: '' },
       })).rejects.toThrow(/Scanner write failed/);
     } finally { put.mockRestore(); }
     expect(await listPresets()).toEqual([creation]);
@@ -355,6 +369,8 @@ describe('saving an imported backup', () => {
     expect(await loadKv('createContent')).toEqual(features.createContent);
     expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
     expect(await loadKv('qrScanLogging')).toBe(true);
+    expect(await loadKv('qrGithubLookup')).toBe(true);
+    expect(await loadKv('qrIssue')).toEqual(features.qrIssue);
   });
 
   it('saves presets and optional settings together, retaining omitted settings', async () => {

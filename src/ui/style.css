@@ -66,6 +66,8 @@ button:not(:disabled):active { filter:brightness(.85); }
 .scan-data-table input[aria-invalid=true] { border-color:var(--bad); box-shadow:0 0 0 1px var(--bad); }
 .scan-data-actions { align-items:stretch; }
 .scan-data-actions > button { flex:1; }
+.scan-issue-note { display:flex; gap:var(--space-2); align-items:flex-start; margin:var(--space-3) 0 0; padding:var(--space-2) var(--space-3); border-left:3px solid var(--warn); border-radius:0 4px 4px 0; background:#ffb02014; color:#ddd; line-height:1.4; }
+.scan-issue-icon { flex:none; display:inline-grid; place-items:center; width:20px; height:20px; border-radius:50%; background:var(--warn); color:#111; font-weight:700; font-size:13px; }
 summary { min-height:44px; padding:10px 0; cursor:pointer; font-weight:600; }
 details.card > summary { font-size:16px; }
 details.card[open] > summary { margin-bottom:var(--space-3); }

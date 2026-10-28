@@ -1,4 +1,5 @@
 import { findGithubHandle, findLinkedinHandle } from './githubLookup';
+import type { IssueSettings } from './issue';
 
 export interface GreetingSettings {
   template: string;
@@ -22,6 +23,8 @@ export interface ExtractedName {
 export interface ScannerBackup {
   qrGreeting?: GreetingSettings;
   qrScanLogging?: boolean;
+  /** Target repository and label for the scan-tab Save button. */
+  qrIssue?: IssueSettings;
   /** Legacy backup field; public email lookup is now always enabled. */
   qrGithubLookup?: boolean;
 }

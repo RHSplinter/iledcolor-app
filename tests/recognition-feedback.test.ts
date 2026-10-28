@@ -191,8 +191,12 @@ it.each(['ocr', 'manual'] as const)('shows editable visitor data for a recognize
   selects[4]!.dispatchEvent(new Event('change'));
   expect(inputs[4]!.value).toBe('@Xebia');
   const submit = new Event('submit', { cancelable: true });
+  const open = vi.spyOn(window, 'open').mockReturnValue({ opener: null } as unknown as Window);
   form.dispatchEvent(submit);
   expect(submit.defaultPrevented).toBe(true);
+  expect(open).toHaveBeenCalledOnce();
+  expect(String(open.mock.calls[0]![0])).toContain('/issues/new?');
+  open.mockRestore();
   expect(inputs[0]!.value).toBe('Ada');
   expect(selects[1]!.value).toBe('company');
   expect(playback).toHaveBeenCalledOnce();
@@ -344,6 +348,100 @@ it('flags an invalid email on blur and disables saving until it is corrected', a
   await ui['greet']('Grace', target, 'manual');
   expect(save.disabled).toBe(false);
   expect((document.getElementById('qr-data-email') as HTMLInputElement).hasAttribute('aria-invalid')).toBe(false);
+});
+
+it('Save opens a pre-filled GitHub issue for the reviewed data and explains the sign-in requirement', async () => {
+  vi.mocked(loadKv).mockImplementation(async (key) => key === 'qrIssueAssignee' ? 'booth-staff' : undefined);
+  const tab = { opener: {} };
+  const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+  try {
+    const ui = new GreetingUi(context);
+    await ui.init();
+    expect(document.getElementById('qr-issue-note-text')!.textContent)
+      .toContain('signed in to GitHub with access to the xebia organization');
+    const scanId = new Date(2026, 9, 28, 14, 7).toISOString();
+    await ui['greet']('{"name":"Ada Lovelace","company":"Analytical | Engines"}', target, 'ocr', scanId);
+    const role = document.querySelectorAll<HTMLInputElement>('#qr-data input')[3]!;
+    role.value = 'Countess';
+    (document.getElementById('qr-data-email') as HTMLInputElement).value = 'ada@example.org';
+    document.getElementById('qr-data-save')!.click();
+    expect(open).toHaveBeenCalledOnce();
+    const call = open.mock.calls[0] ?? [];
+    const href = call[0];
+    const target_ = call[1];
+    expect(target_).toBe('_blank');
+    const url = new URL(String(href));
+    expect(url.origin + url.pathname).toBe('https://github.com/xebia/badge-scanner/issues/new');
+    expect(url.searchParams.get('title')).toBe('Badge scan: Ada Lovelace');
+    expect(url.searchParams.get('labels')).toBe('GitHubUniverse');
+    expect(url.searchParams.get('assignees')).toBe('booth-staff');
+    const body = url.searchParams.get('body')!;
+    expect(body).toMatch(/^## Badge details\n/);
+    expect(body).toContain('| Role | Countess |');
+    expect(body).toContain('| Company | Analytical \\| Engines |');
+    expect(body).toContain('| Email address | ada@example.org |');
+    expect(body).toContain('\n## Notes\n');
+    expect(body).toMatch(/\n---\n\nScanned via OCR on: 28-Oct-2026 14:07$/);
+    expect(tab.opener).toBeNull();
+    expect(document.getElementById('qr-status')!.textContent).toContain('Opened a pre-filled GitHub issue');
+    expect(ui.exportSettings()).toEqual(expect.objectContaining({
+      qrIssue: { repoUrl: 'https://github.com/xebia/badge-scanner', label: 'GitHubUniverse' },
+    }));
+    expect(JSON.stringify(ui.exportSettings())).not.toContain('booth-staff');
+  } finally { open.mockRestore(); vi.mocked(loadKv).mockResolvedValue(undefined); }
+});
+
+it('reports a blocked GitHub tab and refuses to save an invalid email', async () => {
+  const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  try {
+    const ui = new GreetingUi(context);
+    await ui.init();
+    await ui['greet']('Ada', target, 'manual');
+    const email = document.getElementById('qr-data-email') as HTMLInputElement;
+    email.value = 'bad@';
+    document.getElementById('qr-data')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    expect(open).not.toHaveBeenCalled();
+    expect(email.getAttribute('aria-invalid')).toBe('true');
+    email.value = '';
+    email.dispatchEvent(new Event('input'));
+    document.getElementById('qr-data-save')!.click();
+    expect(open).toHaveBeenCalledOnce();
+    expect(document.getElementById('qr-status')!.textContent).toContain('blocked the new GitHub tab');
+  } finally { open.mockRestore(); }
+});
+
+it('persists valid issue settings, rejects invalid ones and applies imports immediately', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  const repo = document.getElementById('qr-issue-repo') as HTMLInputElement;
+  const label = document.getElementById('qr-issue-label') as HTMLInputElement;
+  const assignee = document.getElementById('qr-issue-assignee') as HTMLInputElement;
+  expect(repo.value).toBe('https://github.com/xebia/badge-scanner');
+  expect(label.value).toBe('GitHubUniverse');
+  repo.value = 'https://github.com/octo-org/leads/';
+  label.value = 'Leads';
+  repo.dispatchEvent(new Event('change'));
+  await vi.waitFor(() => expect(saveKv).toHaveBeenCalledWith('qrIssue', { repoUrl: 'https://github.com/octo-org/leads', label: 'Leads' }));
+  expect(repo.value).toBe('https://github.com/octo-org/leads');
+  expect(document.getElementById('qr-issue-note-text')!.textContent).toContain('octo-org organization');
+  vi.mocked(saveKv).mockClear();
+  repo.value = 'https://example.com/a/b';
+  repo.dispatchEvent(new Event('change'));
+  await vi.waitFor(() => expect(document.getElementById('qr-issue-error')!.textContent).toContain('not saved'));
+  expect(saveKv).not.toHaveBeenCalledWith('qrIssue', expect.anything());
+  expect(ui.exportSettings().qrIssue).toEqual({ repoUrl: 'https://github.com/octo-org/leads', label: 'Leads' });
+  assignee.value = 'not valid';
+  assignee.dispatchEvent(new Event('change'));
+  await vi.waitFor(() => expect(document.getElementById('qr-issue-error')!.textContent).toContain('assignee was not saved'));
+  assignee.value = '@octocat';
+  assignee.dispatchEvent(new Event('change'));
+  await vi.waitFor(() => expect(saveKv).toHaveBeenCalledWith('qrIssueAssignee', 'octocat'));
+  expect(() => ui.prepareImport({ qrIssue: { repoUrl: 'nope', label: '' } })).toThrow();
+  ui.applyImportedSettings(ui.prepareImport({ qrIssue: { repoUrl: 'https://github.com/imported/repo', label: '' } }));
+  expect(repo.value).toBe('https://github.com/imported/repo');
+  expect(label.value).toBe('');
+  expect(assignee.value).toBe('octocat');
+  expect(document.getElementById('qr-issue-error')!.textContent).toBe('');
 });
 
 it.each(['ocr', 'manual'] as const)('vibrates once when a recognized %s scan greeting starts playing, before completion', async (source) => {

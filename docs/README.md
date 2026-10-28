@@ -275,7 +275,8 @@ choosing a file, current content and sequence steps including a paused sequence 
 plus the current GitHub handle, prefix/postfix text and independent scroll speed),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
 **Scan settings** (proximity thresholds, timing, current greeting,
-repetitions, speed and scan-logging preference; greeting templates retain all
+repetitions, speed, scan-logging preference, and the GitHub issue repository URL and
+label used by **Save**; the personal **Assign to** username is not shared; greeting templates retain all
 placeholders, including `{firstname}`, `{role}` and `{githubhandle}`), **Display & transport settings**
 (LED text font, keep-cap-black-when-idle preference, dimensions, brightness, rotation,
 mirroring and Bluetooth write settings; older backups without a font or keep-black
@@ -378,9 +379,22 @@ Completion stays visible until another scan or status change.
 After a successful extraction, a divider separates the status bar from the
 **Scanned visitor data** table. Its headerless rows have editable values and type
 selectors for First name, Last name, GitHub Handle, Role and Company.
-**Save** is a placeholder for a later step; **Clear** removes and hides the review
-fields and divider. Review edits remain temporary and do not change the greeting
-or scan log.
+**Save** opens a pre-filled new issue on GitHub in a new tab (no token is used, so
+you must already be signed in to GitHub with access to the repository's organization;
+a notice below the button names that organization). The issue is titled
+`Badge scan: {firstname} {lastname}`, gets the configured label, and its body has a
+**Badge details** table with the non-empty reviewed fields (including email and phone),
+an empty **Notes** section for you to fill in, a horizontal rule, and
+`Scanned via OCR on: dd-MMM-yyyy HH:mm` (scan time, local). GitHub handles are linked
+rather than @-mentioned, so visitors are not notified. Nothing is posted until you choose
+**Create** on GitHub. Configure the target in **Settings → Save scans as GitHub issues**:
+the repository URL (default `https://github.com/xebia/badge-scanner`), the label
+(default `GitHubUniverse`; GitHub applies only existing labels and only for users with
+triage access) and an optional **Assign to** username. GitHub's new-issue link cannot
+detect the signed-in user, so enter your own username to pre-fill the assignee; it stays
+on this device and is not included in backups.
+**Clear** removes and hides the review fields and divider. Review edits remain temporary
+and do not change the greeting or scan log.
 
 Scanning is available immediately after connecting a cap. If no content has been
 sent during this connection, the display is cleared to black after the greeting:

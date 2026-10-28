@@ -106,7 +106,7 @@ export async function restoreBackup(presets: Preset[], settings?: Settings, appr
             }
           };
         }
-        for (const key of ['createContent', 'createSequence', 'qrGreeting', 'qrScanLogging', 'qrGithubLookup'] as const) {
+        for (const key of ['createContent', 'createSequence', 'qrGreeting', 'qrScanLogging', 'qrGithubLookup', 'qrIssue'] as const) {
           if (features[key] !== undefined) t.objectStore('kv').put(features[key], key);
         }
       } catch (e) {

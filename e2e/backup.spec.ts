@@ -40,6 +40,13 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.click('nav [data-tab=settings]');
   await page.check('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toHaveText('Scan logging enabled.');
+  await page.fill('#qr-issue-repo', 'https://github.com/octo-org/leads/');
+  await page.locator('#qr-issue-repo').dispatchEvent('change');
+  await page.fill('#qr-issue-label', 'Universe,Leads');
+  await page.locator('#qr-issue-label').dispatchEvent('change');
+  await page.fill('#qr-issue-assignee', 'booth-staff');
+  await page.locator('#qr-issue-assignee').dispatchEvent('change');
+  await expect(page.locator('#qr-issue-repo')).toHaveValue('https://github.com/octo-org/leads');
   await page.click('nav [data-tab=sound]');
   await page.selectOption('#sound-language', 'de-DE');
   await page.uncheck('#sound-noises');
@@ -64,6 +71,8 @@ test('all categories restore settings from every tab immediately and after reloa
   expect(backup.qrGreeting).toEqual({ template: 'Current {name}!', repetitions: 17, speed: 8 });
   expect(backup).not.toHaveProperty('qrProfiles');
   expect(backup.qrScanLogging).toBe(true);
+  expect(backup.qrIssue).toEqual({ repoUrl: 'https://github.com/octo-org/leads', label: 'Universe,Leads' });
+  expect(JSON.stringify(backup)).not.toContain('booth-staff');
   expect(backup.settings).toMatchObject({ textFont: 'tiny5', keepBlack: true, brightness: 2, chunkSize: 128, interWriteDelayMs: 8, transform: { rotation: 90, mirrorH: true } });
   expect(backup.sound).toMatchObject({ language: 'de-DE', sounds: false, allowBrowserSpeech: false, reactions: { greeting: { text: 'SERVUS 👋' } } });
   for (const key of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'soundVoice']) expect(backup).not.toHaveProperty(key);
@@ -89,6 +98,10 @@ test('all categories restore settings from every tab immediately and after reloa
   await page.click('nav [data-tab=settings]');
   await page.uncheck('#qr-log-enabled');
   await expect(page.locator('#qr-log-status')).toContainText('Scan logging disabled.');
+  await page.fill('#qr-issue-repo', 'https://github.com/other/repo');
+  await page.locator('#qr-issue-repo').dispatchEvent('change');
+  await page.fill('#qr-issue-label', 'Changed');
+  await page.locator('#qr-issue-label').dispatchEvent('change');
   await page.click('nav [data-tab=sound]');
   await page.selectOption('#sound-language', 'en-US');
   await page.check('#sound-noises');
@@ -120,8 +133,13 @@ test('all categories restore settings from every tab immediately and after reloa
     await expect(page.locator('#qr-template')).toHaveValue('Current {name}!');
     await expect(page.locator('#qr-repetitions')).toHaveValue('17');
     await expect(page.locator('#qr-speed')).toHaveValue('8');
+    await expect(page.locator('#qr-issue-note-text')).toContainText('octo-org/leads');
+    await expect(page.locator('#qr-issue-note-text')).toContainText('octo-org organization');
     await page.click('nav [data-tab=settings]');
     await expect(page.locator('#qr-log-enabled')).toBeChecked();
+    await expect(page.locator('#qr-issue-repo')).toHaveValue('https://github.com/octo-org/leads');
+    await expect(page.locator('#qr-issue-label')).toHaveValue('Universe,Leads');
+    await expect(page.locator('#qr-issue-assignee')).toHaveValue('booth-staff');
     await page.click('nav [data-tab=sound]');
     await expect(page.locator('#sound-language')).toHaveValue('de-DE');
     await expect(page.locator('#sound-noises')).not.toBeChecked();

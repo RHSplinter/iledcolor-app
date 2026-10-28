@@ -47,7 +47,7 @@ test('scanner has no saved badge profile controls', async ({ page }) => {
   await expect(page.locator('#qr-github-enabled')).toHaveCount(0);
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('#view-settings > :last-child')).toHaveAttribute('id', 'settings-scan');
-  await expect(page.locator('#settings-scan h2')).toHaveText('Scan log & privacy');
+  await expect(page.locator('#settings-scan h2')).toHaveText(['Save scans as GitHub issues', 'Scan log & privacy']);
   await expect(page.locator('#view-scan')).not.toContainText('Name regex');
   await expect(page.locator('#view-scan')).not.toContainText('Enter scan data manually');
   await expect(page.locator('#qr-raw, #qr-submit')).toHaveCount(0);
@@ -189,6 +189,28 @@ test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup acco
   await expect(page.locator('#qr-status')).toContainText('Display cleared to black.', { timeout: 30000 });
   await expect(page.locator('#qr-status')).toHaveAttribute('role', 'status');
   await expect(scan).toBeEnabled();
+  const note = page.locator('#qr-issue-note');
+  await expect(note).toBeVisible();
+  await expect(note).toContainText('signed in to GitHub with access to the xebia organization');
+  expect((await note.boundingBox())!.y).toBeGreaterThan((await save.boundingBox())!.y);
+  await page.evaluate(() => {
+    const opened: unknown[][] = [];
+    (window as unknown as { opened: unknown[][] }).opened = opened;
+    window.open = (...args: unknown[]) => { opened.push(args); return {} as Window; };
+  });
+  await save.click();
+  const [href, target] = await page.evaluate(() => (window as unknown as { opened: string[][] }).opened[0]!);
+  expect(target).toBe('_blank');
+  const issueUrl = new URL(href!);
+  expect(issueUrl.origin + issueUrl.pathname).toBe('https://github.com/xebia/badge-scanner/issues/new');
+  expect(issueUrl.searchParams.get('title')).toBe(stacked ? 'Badge scan: Fokko Veegens' : 'Badge scan: Rob Bos');
+  expect(issueUrl.searchParams.get('labels')).toBe('GitHubUniverse');
+  const body = issueUrl.searchParams.get('body')!;
+  expect(body).toContain('## Badge details');
+  expect(body).toContain('| Email address | manual@example.org |');
+  expect(body).toContain(stacked ? '| GitHub Handle | [@FokkoVeegens](https://github.com/FokkoVeegens) |' : '| Company | Xebia |');
+  expect(body).toMatch(/\n---\n\nScanned via OCR on: \d{2}-[A-Z][a-z]{2}-\d{4} \d{2}:\d{2}$/);
+  await expect(page.locator('#qr-status')).toContainText('Opened a pre-filled GitHub issue');
   await page.click('#qr-data-clear');
   await expect(page.locator('#qr-github-result')).toBeHidden();
   await expect(page.locator('#qr-github-result')).toBeEmpty();

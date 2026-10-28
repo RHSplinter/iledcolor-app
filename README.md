@@ -27,28 +27,6 @@ This is the Xebia Led hat used/introduced at GitHub Universe 2026.
 
 ## More docs
 
-### Scanning and backups
-
-Scanned visitor fields include an editable **Email address** and **Phone number**,
-each with a fixed field type.
-Recognized GitHub handles are automatically sent to the public GitHub API to find
-a public email. If none is available (or the lookup fails), the email stays empty
-for manual entry. A lookup never overwrites a manually edited email. The email is
-validated when you leave the field: an invalid address is outlined in red and
-**Save** stays disabled until it is corrected or cleared. The phone number is
-filled from scanned data when present and is never looked up online.
-
-**Scan log & privacy** is at the bottom of **Settings**. Logging is off by default;
-enabling it saves personal scan data, including any public email, locally.
-
-Settings backups are selectable across tabs. **Scan settings** includes proximity
-thresholds, timing, current greeting, repetitions, speed, and the logging preference,
-but never scan-log contents or scanned visitor data. Excluded categories and fields
-absent from older backups are preserved. Version-1 and older version-2 backups
-remain importable; their former GitHub lookup toggle no longer affects automatic
-lookup and is omitted from new exports. Phone identity, cap connections/device IDs,
-OS permissions, running state, and QR payloads are not exported.
-
 Go to:
 
 * [README.md](docs/README.md)

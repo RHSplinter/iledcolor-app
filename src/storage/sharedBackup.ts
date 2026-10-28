@@ -3,6 +3,7 @@ import { validateGitHubSettings, type GitHubSettings } from '../github/contribut
 import { DEFAULT_TEXT_FONT } from '../render/fonts';
 import { validatePreferences as validateSoundPreferences, type SoundPreferences } from '../sound/dictionary';
 import { validateGreeting, type ScannerBackup } from '../scanner/greeting';
+import { validateIssueSettings } from '../scanner/issue';
 import {
   DEFAULT_SETTINGS, MAX_IMPORT_BYTES, MAX_PRESETS, isGroupPreset, parseImport, validateContent, validateCustomDrafts, validateGroups, validateSequenceSteps, validateSettings,
   type Content, type ContentPreset, type CustomDrafts, type GroupContent, type GroupPreset, type Preset, type SequenceStep, type Settings,
@@ -44,6 +45,7 @@ export function exportSelectedJson(presets: Preset[], approach: ApproachSettings
     } } : {}),
     ...(selection.scan && features.qrGreeting ? { qrGreeting: validateGreeting(features.qrGreeting) } : {}),
     ...(selection.scan && features.qrScanLogging !== undefined ? { qrScanLogging: validateLogging(features.qrScanLogging) } : {}),
+    ...(selection.scan && features.qrIssue ? { qrIssue: validateIssueSettings(features.qrIssue) } : {}),
     ...(selection.settings && features.settings ? {
       settings: validateSettings({ ...features.settings, textFont: features.settings.textFont ?? DEFAULT_TEXT_FONT }),
     } : {}),
@@ -112,7 +114,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
   if (raw.version === 1) return { version: 1, ...parseImport(text) };
   if (raw.version !== 2) throw new Error(`Unsupported export version ${String(raw.version)}.`);
   if (!('creations' in raw) && !('approach' in raw) && !('scan' in raw) && !('settings' in raw) && !('sound' in raw)) throw new Error('No shared categories in this file.');
-  if (['qrProfiles', 'qrGreeting', 'qrScanLogging', 'qrGithubLookup'].some((key) => key in raw) && !('scan' in raw))
+  if (['qrProfiles', 'qrGreeting', 'qrScanLogging', 'qrGithubLookup', 'qrIssue'].some((key) => key in raw) && !('scan' in raw))
     throw new Error('Scan preferences must be included with scan settings.');
   if ('createContent' in raw && !('creations' in raw)) throw new Error('Custom content must be included with creations.');
   if ('customDrafts' in raw && !('creations' in raw)) throw new Error('Custom editor drafts must be included with creations.');
@@ -141,6 +143,7 @@ export function parseSharedBackup(text: string): ImportedBackup {
     ...('qrGreeting' in raw ? { qrGreeting: validateGreeting(raw.qrGreeting) } : {}),
     ...('qrScanLogging' in raw ? { qrScanLogging: validateLogging(raw.qrScanLogging) } : {}),
     ...('qrGithubLookup' in raw ? { qrGithubLookup: validateGithubLookup(raw.qrGithubLookup) } : {}),
+    ...('qrIssue' in raw ? { qrIssue: validateIssueSettings(raw.qrIssue) } : {}),
     ...('createContent' in raw ? { createContent: validateContent(raw.createContent) } : {}),
     ...('customDrafts' in raw ? { customDrafts: validateCustomDrafts(raw.customDrafts) } : {}),
     ...('github' in raw ? { github: validateGitHubSettings(raw.github) } : {}),

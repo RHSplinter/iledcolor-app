@@ -14,6 +14,10 @@ import {
   DEFAULT_GREETING, extractName, greetingDuration, greetingNameFields, greetingText, isValidEmail, validateGreeting,
   type ExtractedName, type GreetingSettings, type ScannerBackup,
 } from './greeting';
+import {
+  DEFAULT_ISSUE, isValidAssignee, issueBody, issueTitle, newIssueUrl, parseRepoUrl, validateIssueSettings,
+  type IssueField, type IssueSettings,
+} from './issue';
 
 interface ScannerContext {
   controller(): DeviceController;
@@ -38,6 +42,10 @@ export class GreetingUi {
   private sharingLog = false;
   private statusMessage = '';
   private errorMessage = '';
+  private issueSettings: IssueSettings = DEFAULT_ISSUE;
+  private issueAssignee = '';
+  private scanFields?: () => IssueField[];
+  private scannedAt = new Date();
 
   constructor(private ctx: ScannerContext) {}
 
@@ -70,6 +78,8 @@ export class GreetingUi {
             <button id="qr-data-save" type="submit" class="primary">Save</button>
             <button id="qr-data-clear" type="button">Clear</button>
           </div>
+          <p id="qr-issue-note" class="small scan-issue-note"><span class="scan-issue-icon" aria-hidden="true">!</span>
+            <span id="qr-issue-note-text"></span></p>
         </form>
       </div>
       <div class="card">
@@ -84,6 +94,22 @@ export class GreetingUi {
       </div>`;
     $('settings-scan').innerHTML = `
       <div class="card">
+        <h2>Save scans as GitHub issues</h2>
+        <p class="small">Save on the Scan tab opens a pre-filled new issue in this repository in a new browser tab.
+        No GitHub token is used: you review the issue and choose Create while signed in to GitHub.</p>
+        <label for="qr-issue-repo">Repository URL</label>
+        <input id="qr-issue-repo" type="text" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" maxlength="200" />
+        <label for="qr-issue-label">Issue label</label>
+        <input id="qr-issue-label" type="text" maxlength="100" autocapitalize="off" autocomplete="off" aria-describedby="qr-issue-label-help" />
+        <p id="qr-issue-label-help" class="small">Optional; separate several labels with commas. GitHub only applies labels that exist in the repository
+        when you have triage access.</p>
+        <label for="qr-issue-assignee">Assign to (your GitHub username)</label>
+        <input id="qr-issue-assignee" type="text" maxlength="40" autocapitalize="off" autocomplete="off" spellcheck="false" aria-describedby="qr-issue-assignee-help" />
+        <p id="qr-issue-assignee-help" class="small">Optional. Without a token the app cannot detect who is signed in to GitHub, so enter your
+        username to pre-fill the assignee. Stored only on this device and never included in backups.</p>
+        <p id="qr-issue-error" class="bad" role="alert"></p>
+      </div>
+      <div class="card">
         <h2>Scan log &amp; privacy</h2>
         <label><input id="qr-log-enabled" type="checkbox" /> Save all scanned data to a local file</label>
         <p class="small">Off by default. When enabled, logs complete camera and OCR scan data (including failed greetings),
@@ -96,6 +122,7 @@ export class GreetingUi {
         <p class="small">Scan data and OCR are processed locally and are only saved when logging is enabled. Only the greeting is sent to your cap over Bluetooth
         (plus recognized GitHub handles to api.github.com to find public email addresses).
         Public emails are shown in the scan fields and included in the log when logging is enabled.
+        Save puts the reviewed visitor fields in the URL of a new GitHub issue tab; nothing is posted until you choose Create on GitHub.
         Camera access requires permission. The English text-recognition model is bundled for offline use.
         Keep the app open until the previous content is restored.</p>
         <p class="small">Inspired by <a href="https://github.com/xebia/badge-scanner" target="_blank" rel="noopener noreferrer">Rob Bos / Xebia's badge-scanner</a>.
@@ -113,6 +140,19 @@ export class GreetingUi {
       this.loggingEnabled = enabled === true;
     } catch (e) { $('qr-log-error').textContent = `Could not restore scan logging preference: ${this.message(e)}`; }
     $<HTMLInputElement>('qr-log-enabled').checked = this.loggingEnabled;
+    try {
+      const saved = await loadKv('qrIssue');
+      if (saved !== undefined) this.issueSettings = validateIssueSettings(saved);
+    } catch (e) { $('qr-issue-error').textContent = `Could not restore GitHub issue settings: ${this.message(e)}`; }
+    try {
+      const assignee = await loadKv('qrIssueAssignee');
+      if (assignee !== undefined && (typeof assignee !== 'string' || !isValidAssignee(assignee))) throw new Error('Invalid assignee.');
+      this.issueAssignee = assignee ?? '';
+    } catch (e) { $('qr-issue-error').textContent = `Could not restore issue assignee: ${this.message(e)}`; }
+    this.showIssueSettings();
+    $('qr-issue-repo').onchange = () => { void this.persistIssue(); };
+    $('qr-issue-label').onchange = () => { void this.persistIssue(); };
+    $('qr-issue-assignee').onchange = () => { void this.persistAssignee(); };
     $<HTMLInputElement>('qr-template').value = settings.template;
     $<HTMLInputElement>('qr-repetitions').value = String(settings.repetitions);
     $<HTMLInputElement>('qr-speed').value = String(settings.speed);
@@ -125,7 +165,7 @@ export class GreetingUi {
     $('qr-log-enabled').onchange = () => { void this.setLogging(); };
     $('qr-log-share').onclick = () => { void this.shareLog(); };
     $('qr-cancel').onclick = () => this.playing?.cancelUpload();
-    $('qr-data').onsubmit = (event) => event.preventDefault();
+    $('qr-data').onsubmit = (event) => { event.preventDefault(); this.openIssue(); };
     $('qr-data-clear').onclick = () => {
       this.clearScanData();
       this.statusMessage = '';
@@ -146,9 +186,81 @@ export class GreetingUi {
     $('qr-github-result').hidden = true;
     $('qr-data-rows').replaceChildren();
     $('qr-data').hidden = true;
+    this.scanFields = undefined;
   }
 
-  private showScanData(extracted: ExtractedName, raw: string) {
+  private showIssueSettings() {
+    $<HTMLInputElement>('qr-issue-repo').value = this.issueSettings.repoUrl;
+    $<HTMLInputElement>('qr-issue-label').value = this.issueSettings.label;
+    $<HTMLInputElement>('qr-issue-assignee').value = this.issueAssignee;
+    this.showIssueNote();
+  }
+
+  private showIssueNote() {
+    const { owner, repo } = parseRepoUrl(this.issueSettings.repoUrl);
+    $('qr-issue-note-text').textContent = `Save opens a new tab with a pre-filled issue in ${owner}/${repo}. `
+      + `Before pressing Save, make sure you are signed in to GitHub with access to the ${owner} organization.`;
+  }
+
+  private readIssueSettings(): IssueSettings {
+    return validateIssueSettings({
+      repoUrl: $<HTMLInputElement>('qr-issue-repo').value,
+      label: $<HTMLInputElement>('qr-issue-label').value,
+    });
+  }
+
+  private async persistIssue() {
+    const repoInput = $<HTMLInputElement>('qr-issue-repo');
+    const typed = repoInput.value;
+    try {
+      const settings = this.readIssueSettings();
+      await saveKv('qrIssue', settings);
+      this.issueSettings = settings;
+      $('qr-issue-error').textContent = '';
+      // Normalize only if the user has not kept typing while the save was pending.
+      if (repoInput.value === typed) repoInput.value = settings.repoUrl;
+      this.showIssueNote();
+    } catch (e) { $('qr-issue-error').textContent = `GitHub issue settings were not saved: ${this.message(e)}`; }
+  }
+
+  private async persistAssignee() {
+    const input = $<HTMLInputElement>('qr-issue-assignee');
+    const assignee = input.value.trim().replace(/^@/, '');
+    try {
+      if (!isValidAssignee(assignee)) throw new Error('Enter a valid GitHub username or leave it empty.');
+      await saveKv('qrIssueAssignee', assignee);
+      this.issueAssignee = assignee;
+      input.value = assignee;
+      $('qr-issue-error').textContent = '';
+    } catch (e) { $('qr-issue-error').textContent = `Issue assignee was not saved: ${this.message(e)}`; }
+  }
+
+  private openIssue() {
+    const save = $<HTMLButtonElement>('qr-data-save');
+    if (!this.scanFields || save.disabled) return;
+    const email = $<HTMLInputElement>('qr-data-email');
+    if (!isValidEmail(email.value)) {
+      email.setAttribute('aria-invalid', 'true');
+      save.disabled = true;
+      email.focus();
+      return;
+    }
+    const fields = this.scanFields();
+    const field = (type: string) => fields.find((f) => f.type === type)?.value ?? '';
+    const url = newIssueUrl(this.issueSettings, issueTitle(field('firstname'), field('lastname')),
+      issueBody(fields, this.scannedAt), this.issueAssignee);
+    // Not opened with "noopener": that always returns null, hiding a blocked pop-up.
+    const tab = window.open(url, '_blank');
+    if (!tab) {
+      this.error('The browser blocked the new GitHub tab. Allow pop-ups for this app, then press Save again.');
+      return;
+    }
+    try { tab.opener = null; } catch { /* cross-origin windows may refuse; GitHub isolates itself anyway */ }
+    this.error('');
+    this.status('Opened a pre-filled GitHub issue in a new tab. Review it there and choose Create.');
+  }
+
+  private showScanData(extracted: ExtractedName, raw: string, scannedAt = new Date()) {
     const { firstname, lastname } = greetingNameFields(extracted);
     const fields = [
       { type: 'firstname', label: 'First name', value: firstname },
@@ -207,6 +319,15 @@ export class GreetingUi {
     // Once flagged, re-check while typing so the error clears as soon as the address is fixed.
     email.addEventListener('input', () => { if (email.hasAttribute('aria-invalid')) validateEmail(); });
     save.disabled = false;
+    this.scannedAt = scannedAt;
+    this.scanFields = () => [
+      ...rows.map((row) => {
+        const select = row.querySelector('select')!;
+        return { label: select.selectedOptions[0]?.text ?? '', value: row.querySelector('input')!.value, type: select.value };
+      }),
+      { label: 'Email address', value: email.value },
+      { label: 'Phone number', value: phone.value },
+    ];
     $('qr-data-rows').replaceChildren(...rows, emailRow, phoneRow);
     $('qr-data').hidden = false;
   }
@@ -302,7 +423,7 @@ export class GreetingUi {
   }
 
   exportSettings(): ScannerBackup {
-    return { qrGreeting: this.readSettings(), qrScanLogging: this.loggingEnabled };
+    return { qrGreeting: this.readSettings(), qrScanLogging: this.loggingEnabled, qrIssue: this.issueSettings };
   }
 
   prepareImport(value: ScannerBackup): ScannerBackup {
@@ -310,10 +431,16 @@ export class GreetingUi {
       ...(value.qrGreeting !== undefined ? { qrGreeting: validateGreeting(value.qrGreeting) } : {}),
       ...(value.qrScanLogging !== undefined ? { qrScanLogging: value.qrScanLogging } : {}),
       ...(value.qrGithubLookup !== undefined ? { qrGithubLookup: value.qrGithubLookup } : {}),
+      ...(value.qrIssue !== undefined ? { qrIssue: validateIssueSettings(value.qrIssue) } : {}),
     };
   }
 
   applyImportedSettings(value: ScannerBackup) {
+    if (value.qrIssue) {
+      this.issueSettings = value.qrIssue;
+      $('qr-issue-error').textContent = '';
+      this.showIssueSettings();
+    }
     if (value.qrGreeting) {
       const settings = value.qrGreeting;
       $<HTMLInputElement>('qr-template').value = settings.template;
@@ -460,7 +587,7 @@ export class GreetingUi {
         } catch (e) { $('qr-log-error').textContent = `Scan was NOT saved: ${this.message(e)}`; }
       }
       const extracted = extractName(raw);
-      this.showScanData(extracted, raw);
+      this.showScanData(extracted, raw, new Date(scanId));
       if (source === 'ocr') void this.lookupGithub(raw, scanId);
       const settings = this.readSettings();
       await saveKv('qrGreeting', settings);
