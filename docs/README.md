@@ -39,8 +39,8 @@ tab navigation and responsive controls on Android, iOS and web.
   Every spanning **Marquee** choice is marked **unstable**:
   physical cap ordering and playback synchronization are not guaranteed. Individual greetings remain available.
 - **Scan:** the scan/stop/end-greeting actions, camera and status come first, followed by
-  greeting settings, manual entry, and scan-log/privacy controls.
-  A recognized badge greeting (OCR or manual entry) vibrates once immediately when the greeting
+  greeting settings and scan-log/privacy controls.
+  A recognized badge greeting vibrates once immediately when the greeting
   starts on the primary cap; stopping the camera or a failure does not vibrate.
 - **Sound:** opt-in applause/whistle detection, wearer voice sampling, English/German
   phrase reactions, pocket-pause settings, dictionary and editable animation text.
@@ -89,8 +89,8 @@ See [the UI change record](docs/ui-improvements.md) for the expert review and im
 Besides the PWA, the project builds **Android** and **iOS** apps (Capacitor, `android/` and `ios/`) with the shared UI plus **Approach mode**: when caps come close, they show greetings for each other or one marquee spanning all caps, configurable for 1, 2, up to 4, up to 8, and more than 8 caps. While approach mode runs, presets can also be shared with a nearby phone; the receiver must accept the preset before it is transferred. See [docs/approaching-mode.md](docs/approaching-mode.md) for the detection design and [docs/INSTALL.md](docs/INSTALL.md) for building the APK.
 
 Web Bluetooth requires a supported browser (for example Chrome on Android or desktop);
-Safari on iOS does not support it. Editing, presets, manual scan-data entry and
-backup/import work offline but require a connected cap, so they are not available in a
+Safari on iOS does not support it. Editing, presets and backup/import work offline but
+require a connected cap, so they are not available in a
 browser without Bluetooth. Camera scanning requires HTTPS
 and permission. Imported native group presets are retained and can be exported again,
 but cannot be loaded in the browser. Nearby BLE sharing is native-only; JSON file
@@ -386,9 +386,9 @@ background.
 
 Scanner configuration stays in local storage. Scanned data is not persisted unless
 **Save all scanned data to a local file** is enabled (off by default). While enabled,
-camera scans, OCR captures, and submitted manual entries are logged before extraction,
-including scans whose greeting fails. The local `qr-scan-log.jsonl` file contains one
-JSON object per line with a UTC timestamp, source (`camera`/`ocr`/`manual`), the complete
+camera/OCR scans are logged before extraction, including scans whose greeting fails.
+The local `qr-scan-log.jsonl` file contains one JSON object per line with a UTC timestamp,
+source (`camera`/`ocr`; older logs may also contain `manual` entries), the complete
 unmodified payload, and extracted fields when available. Logs may contain personal
 data; obtain appropriate consent and share only with trusted recipients. The app does
 not upload scans; logs are excluded from preset backups. **Share scan log** opens the

@@ -81,17 +81,11 @@ export class GreetingUi {
         <input id="qr-repetitions" type="number" min="1" max="65536" step="1" />
         <label for="qr-speed">Scroll speed</label>
         <input id="qr-speed" type="range" min="1" max="10" step="1" />
-        <details>
-          <summary>Enter scan data manually</summary>
-          <label for="qr-raw">Scan data (not saved)</label>
-          <textarea id="qr-raw" rows="3" maxlength="4096"></textarea>
-          <button id="qr-submit">Greet from scan data</button>
-        </details>
       </div>
       <div class="card">
         <h2>Scan log &amp; privacy</h2>
         <label><input id="qr-log-enabled" type="checkbox" /> Save all scanned data to a local file</label>
-        <p class="small">Off by default. When enabled, logs complete camera, OCR and manual scan data (including failed greetings),
+        <p class="small">Off by default. When enabled, logs complete camera and OCR scan data (including failed greetings),
         timestamps and extracted fields in qr-scan-log.jsonl. This may include personal data.
         Turning logging off keeps the existing file. Logs are separate from preset backups.
         Share only with trusted recipients.</p>
@@ -138,7 +132,6 @@ export class GreetingUi {
     $('qr-text-start').onclick = () => { void this.scanText(); };
     $('qr-capture').onclick = () => { void this.captureText(); };
     $('qr-stop').onclick = () => this.stopCamera();
-    $('qr-submit').onclick = () => { void this.greet($<HTMLTextAreaElement>('qr-raw').value, this.ctx.controller(), 'manual'); };
     $('qr-log-enabled').onchange = () => { void this.setLogging(); };
     $('qr-log-share').onclick = () => { void this.shareLog(); };
     $('qr-github-enabled').onchange = () => { void this.setGithubLookup(); };
@@ -343,7 +336,6 @@ export class GreetingUi {
     status.setAttribute('role', this.errorMessage ? 'alert' : 'status');
     status.setAttribute('aria-live', this.errorMessage ? 'assertive' : 'polite');
     $<HTMLButtonElement>('qr-text-start').disabled = unavailable || this.scanning;
-    $<HTMLButtonElement>('qr-submit').disabled = unavailable || this.scanning;
     const video = $<HTMLVideoElement>('qr-video');
     const videoReady = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0;
     $<HTMLButtonElement>('qr-capture').disabled = !this.scanning || this.recognizing || !videoReady;
@@ -354,7 +346,7 @@ export class GreetingUi {
     $('qr-cancel').hidden = !this.playing;
     $<HTMLInputElement>('qr-log-enabled').disabled = this.processing || this.scanning || this.savingLogging || this.sharingLog;
     $<HTMLButtonElement>('qr-log-share').disabled = this.processing || this.scanning || this.sharingLog;
-    for (const id of ['qr-template', 'qr-repetitions', 'qr-speed', 'qr-raw']) {
+    for (const id of ['qr-template', 'qr-repetitions', 'qr-speed']) {
       $<HTMLInputElement>(id).disabled = this.processing || this.scanning;
     }
   }
@@ -388,7 +380,7 @@ export class GreetingUi {
     } catch (e) {
       if (attempt !== this.scanId) return;
       this.stopCamera();
-      this.error(`Could not start scanner: ${this.message(e)}. Retry or enter scan data manually.`);
+      this.error(`Could not start scanner: ${this.message(e)}. Retry or check camera permissions.`);
     }
   }
 
@@ -488,7 +480,6 @@ export class GreetingUi {
       void vibrateFeedback();
       const result = await target.playTemporary(gif, frames[0]!, duration, { clearIfUnknown: true });
       this.status(`${result === 'cancelled' ? 'Greeting ended early.' : 'Greeting finished.'} ${restoreMessage}`);
-      $<HTMLTextAreaElement>('qr-raw').value = '';
     } catch (e) {
       this.status('');
       this.error(`Greeting failed: ${this.message(e)}`);
