@@ -121,6 +121,7 @@ for (const platform of ['ios', 'android']) {
     }, platform);
     await page.goto('/');
     await connectHat(page);
+    await page.waitForTimeout(3500);
     await expect(page.locator('#banner')).toContainText('LED Hat 999.0.0 is available', { timeout: 10000 });
     await page.click('#btn-app-update-later');
     await expect(page.locator('#banner')).toBeHidden();

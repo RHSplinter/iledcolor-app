@@ -8,15 +8,16 @@ const smokeTests = '**/web-navigation.spec.ts';
 export default defineConfig({
   testDir: 'e2e',
   testMatch: remoteURL ? smokeTests : undefined,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: process.env.CI ? 2 : 4,
   reporter: [['list'], ['html', { open: 'never' }]],
   webServer: remoteURL ? undefined : {
     command: 'npm run build && npx vite preview --port 4173 --strictPort',
     url: baseURL, reuseExistingServer: !process.env.CI, timeout: 120_000,
   },
-  use: { baseURL, serviceWorkers: 'allow', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  use: { baseURL, serviceWorkers: 'allow', trace: 'on-first-retry', screenshot: 'only-on-failure' },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'firefox', testMatch: smokeTests, use: { ...devices['Desktop Firefox'] } },
