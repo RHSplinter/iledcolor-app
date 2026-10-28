@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Plugin } from 'vite';
 
 const require = createRequire(import.meta.url);
@@ -9,6 +10,8 @@ const scannerAssets = new Map([
   ['ocr/worker.min.js', require.resolve('tesseract.js/dist/worker.min.js')],
   ['ocr/tesseract-core-lstm.wasm.js', require.resolve('tesseract.js-core/tesseract-core-lstm.wasm.js')],
   ['ocr/lang/eng.traineddata.gz', require.resolve('@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz')],
+  ['qr/zxing_reader.wasm', require.resolve('zxing-wasm/reader/zxing_reader.wasm')],
+  ['licenses/zxing-wasm-MIT.txt', fileURLToPath(new URL('../../LICENSE', pathToFileURL(require.resolve('zxing-wasm/reader/zxing_reader.wasm'))))],
   ['licenses/tesseract-js-APACHE-2.0.txt', require.resolve('tesseract.js/LICENSE.md')],
   ['licenses/tesseract-core-APACHE-2.0.txt', require.resolve('tesseract.js-core/LICENSE')],
 ]);
@@ -20,7 +23,7 @@ const scannerOcrAssets: Plugin = {
       const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
       const entry = [...scannerAssets].find(([name]) => pathname.endsWith(`/${name}`));
       if (!entry) { next(); return; }
-      response.setHeader('Content-Type', entry[0].endsWith('.gz') ? 'application/gzip' : entry[0].endsWith('.js') ? 'application/javascript' : 'text/plain; charset=utf-8');
+      response.setHeader('Content-Type', entry[0].endsWith('.wasm') ? 'application/wasm' : entry[0].endsWith('.gz') ? 'application/gzip' : entry[0].endsWith('.js') ? 'application/javascript' : 'text/plain; charset=utf-8');
       response.end(readFileSync(entry[1]));
     });
   },
@@ -46,7 +49,7 @@ export default defineConfig({
       registerType: 'prompt', // never reload mid-transfer; the UI offers the update when idle
       includeAssets: ['icon.svg', 'licenses/*.txt'],
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff,woff2,webmanifest,txt,gz}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff,woff2,webmanifest,txt,gz,wasm}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: 'index.html',
       },

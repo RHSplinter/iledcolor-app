@@ -583,7 +583,7 @@ export class GreetingUi {
         const qrFrame = document.createElement('canvas');
         qrFrame.width = video.videoWidth;
         qrFrame.height = video.videoHeight;
-        const frameContext = qrFrame.getContext('2d');
+        const frameContext = qrFrame.getContext('2d', { willReadFrequently: true });
         if (frameContext) {
           frameContext.drawImage(video, 0, 0, qrFrame.width, qrFrame.height);
           frame = qrFrame;

@@ -344,11 +344,16 @@ local values, including handle-only backups from earlier versions.
 
 ## Badge scanning and greetings
 
-The **Scan** tab has a blue **Scan** button that captures printed badge text for
-on-device English OCR. QR/barcode camera scanning is no longer available.
+The **Scan** tab has a blue **Scan** button. **Capture text** first looks for a GitHub
+Universe badge QR code in the full camera frame and uses it when valid; otherwise it
+falls back to on-device English OCR of the centered region. QR decoding uses the
+browser's native `BarcodeDetector` where it exists (Android, macOS and ChromeOS
+Chromium) and a bundled ZXing WebAssembly reader everywhere else, including iOS,
+Windows and Firefox, or when the native detector misses a code. The camera requests
+1920×1080 so the dense badge QR stays readable without filling the frame.
 Scanning works in the Android/iOS apps and in an
-HTTPS browser with camera permission. Scanner assets, including the OCR engine and
-English model, are bundled and cached for offline use (about 7 MB). Scan data is not
+HTTPS browser with camera permission. Scanner assets, including the QR reader, OCR engine and
+English model, are bundled and cached for offline use (about 8 MB). Scan data is not
 sent to a server. Only the primary cap connected to the scanning phone is interrupted;
 other connected caps continue unchanged. The camera stops after an OCR
 capture, on Stop, on changing tabs, or when the app is hidden.
@@ -421,8 +426,8 @@ native share sheet or shares/downloads the file in supported browsers.
 
 Credits: inspired by **Rob Bos / Xebia's [badge-scanner](https://github.com/xebia/badge-scanner)**.
 No code was copied from that repository, which had no declared license when inspected.
-The scanner bundles ZXing Browser (MIT), ZXing JS (Apache-2.0), and Tesseract.js
-(Apache-2.0) with its English model. Credits and licenses are shipped in
+The scanner bundles zxing-wasm (MIT) and Tesseract.js (Apache-2.0) with its
+English model. Credits and licenses are shipped in
 `public/licenses/` and linked in the Scan tab. Assets are bundled locally and cached
 for offline use; no native scanner plugin or Android minimum-SDK increase is required.
 

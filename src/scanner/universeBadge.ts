@@ -61,20 +61,74 @@ export function decodeUniverseBadge(qrText: string): UniverseBadge | undefined {
   }
 }
 
-export async function detectUniverseBadge(image: ImageBitmapSource): Promise<UniverseBadge | undefined> {
+type QrFrame = HTMLCanvasElement;
+type ZxingReader = typeof import('zxing-wasm/reader');
+
+let zxingReader: Promise<ZxingReader> | undefined;
+
+function loadZxingReader(): Promise<ZxingReader> {
+  zxingReader ??= import('zxing-wasm/reader').then((reader) => {
+    // Serve the bundled reader from the app so QR fallback works offline and never hits a CDN.
+    reader.prepareZXingModule({
+      overrides: {
+        locateFile: (path: string, prefix: string) => path.endsWith('.wasm')
+          ? new URL(`qr/${path}`, new URL(import.meta.env.BASE_URL, globalThis.location.href)).href
+          : prefix + path,
+      },
+    });
+    return reader;
+  });
+  return zxingReader;
+}
+
+/** Native Shape Detection API: available on Android, macOS and ChromeOS Chromium, not Windows or iOS. */
+async function readNativeQrCodes(frame: QrFrame): Promise<string[] | undefined> {
   const Detector = (globalThis as typeof globalThis & { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
-  if (!Detector) {
-    console.info('QR detection is unavailable; falling back to OCR.');
+  if (!Detector) return undefined;
+  try {
+    return (await new Detector({ formats: ['qr_code'] }).detect(frame)).map((result) => result.rawValue);
+  } catch {
     return undefined;
   }
+}
+
+async function readWasmQrCodes(frame: QrFrame): Promise<string[] | undefined> {
   try {
-    const results = await new Detector({ formats: ['qr_code'] }).detect(image);
-    for (const result of results) {
-      const badge = decodeUniverseBadge(result.rawValue);
-      if (badge) return badge;
-    }
+    const context = frame.getContext('2d', { willReadFrequently: true });
+    if (!context || !frame.width || !frame.height) return undefined;
+    const image = context.getImageData(0, 0, frame.width, frame.height);
+    const reader = await loadZxingReader();
+    const results = await reader.readBarcodes(image, {
+      formats: ['QRCode'],
+      tryHarder: true,
+      tryInvert: true,
+      maxNumberOfSymbols: 4,
+    });
+    return results.filter((result) => result.isValid).map((result) => result.text);
   } catch {
-    console.info('QR detection failed; falling back to OCR.');
+    zxingReader = undefined;
+    return undefined;
+  }
+}
+
+function firstBadge(values: string[] | undefined): UniverseBadge | undefined {
+  for (const value of values ?? []) {
+    const badge = decodeUniverseBadge(value);
+    if (badge) return badge;
+  }
+  return undefined;
+}
+
+export async function detectUniverseBadge(frame: QrFrame): Promise<UniverseBadge | undefined> {
+  const native = await readNativeQrCodes(frame);
+  const nativeBadge = firstBadge(native);
+  if (nativeBadge) return nativeBadge;
+  // The native detector is missing on Windows and iOS and can miss small codes elsewhere, so always try ZXing too.
+  const wasm = await readWasmQrCodes(frame);
+  const wasmBadge = firstBadge(wasm);
+  if (wasmBadge) return wasmBadge;
+  if (!native && !wasm) {
+    console.info('QR detection is unavailable; falling back to OCR.');
     return undefined;
   }
   console.info('No valid Universe badge QR found; falling back to OCR.');
@@ -82,7 +136,7 @@ export async function detectUniverseBadge(image: ImageBitmapSource): Promise<Uni
 }
 
 export async function detectBadgeOrOcr<T>(
-  image: ImageBitmapSource,
+  image: QrFrame,
   recognize: () => Promise<T>,
 ): Promise<{ source: 'qr'; badge: UniverseBadge } | { source: 'ocr'; raw: T }> {
   const badge = await detectUniverseBadge(image);
