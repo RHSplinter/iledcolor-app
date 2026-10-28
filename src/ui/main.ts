@@ -33,6 +33,7 @@ import { UpdateUi } from '../update/ui';
 import { contributionFrames, GitHubUi, todayUtc } from '../github/ui';
 import { fetchContributions } from '../github/contributions';
 import { initPresetSave, presetSaveInlineMarkup, presetSaveNoteMarkup } from './presetSave';
+import { sequenceStepLabel } from './sequenceLabel';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -53,6 +54,7 @@ let brightnessTimer: ReturnType<typeof setTimeout> | undefined;
 let presetSendingBanner = false;
 let displayNote = '';
 let imageDataUrl = '';
+let imageName = '';
 let renderSeq = 0;
 let savedCreateContent: Content | undefined;
 let savedCustomDrafts: Partial<CustomDrafts> = {};
@@ -490,7 +492,10 @@ function renderCreate() {
     const f = (ev.target as HTMLInputElement).files?.[0];
     if (!f) return;
     $('#c-err').textContent = '';
-    try { imageDataUrl = f.type === 'image/gif' ? await gifDataUrl(f) : await shrinkForStorage(f); }
+    try {
+      imageDataUrl = f.type === 'image/gif' ? await gifDataUrl(f) : await shrinkForStorage(f);
+      imageName = f.name;
+    }
     catch (e) { moveContentOutput('image'); $('#c-err').textContent = (e as Error).message; return; }
     activeKind = 'image';
     persistCustomDrafts();
@@ -531,15 +536,13 @@ function renderCreate() {
 
 // ---------- Sequence editor ---------------------------------------------------------
 
-const stepLabel = (c: SingleContent) => c.kind === 'text' ? `Text "${c.text}"` : c.kind === 'solid' ? `Solid ${c.color}` : c.kind === 'github' ? `GitHub ${c.handle}` : 'Image';
-
 function renderSequence() {
   const list = document.getElementById('c-seq-list');
   if (!list) return;
   const last = sequence.length - 1;
   list.innerHTML = sequence.map((s, i) => `
     <li data-index="${i}">
-      <span class="seq-label">${i + 1}. ${esc(stepLabel(s.content))}</span>
+      <span class="seq-label">${i + 1}. ${esc(sequenceStepLabel(s.content))}</span>
       <label class="seq-seconds">Seconds <input type="number" data-act="sec" min="1" max="${MAX_STEP_SECONDS}" value="${s.seconds}" aria-label="Seconds for step ${i + 1}" /></label>
       <button data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Move step ${i + 1} up">↑</button>
       <button data-act="down" ${i === last ? 'disabled' : ''} aria-label="Move step ${i + 1} down">↓</button>
@@ -613,7 +616,7 @@ function customDrafts(): CustomDrafts {
       speed: Number($<HTMLInputElement>('#c-speed').value), font: isTextFont(font) ? font : null },
     solid: { kind: 'solid', color: $<HTMLInputElement>('#c-solid').value },
     image: { kind: 'image', dataUrl: imageDataUrl, fit: $<HTMLSelectElement>('#c-fit').value as Fit,
-      bg: $<HTMLInputElement>('#c-image-bg').value },
+      bg: $<HTMLInputElement>('#c-image-bg').value, ...(imageName ? { name: imageName } : {}) },
   };
 }
 
@@ -637,6 +640,7 @@ function applyCustomDrafts(drafts: Partial<CustomDrafts>) {
   if (drafts.solid) $<HTMLInputElement>('#c-solid').value = drafts.solid.color;
   if (drafts.image) {
     imageDataUrl = drafts.image.dataUrl;
+    imageName = drafts.image.name ?? '';
     $<HTMLInputElement>('#c-image-bg').value = drafts.image.bg;
     $<HTMLSelectElement>('#c-fit').value = drafts.image.fit;
     $<HTMLInputElement>('#c-file').value = '';

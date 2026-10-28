@@ -8,7 +8,7 @@ import { validateGitHubGraph, validateGitHubSettings, type GitHubGraph, type Git
 export type SingleContent =
   | { kind: 'solid'; color: string }
   | { kind: 'text'; text: string; fg: string; bg: string; speed?: number; font?: TextFont | null }
-  | { kind: 'image'; dataUrl: string; fit: Fit; bg: string }
+  | { kind: 'image'; dataUrl: string; fit: Fit; bg: string; name?: string }
   /** Without a stored graph (`asOf` and `days`), the graph is fetched when the content is shown. */
   | ({ kind: 'github' } & GitHubSettings & Partial<GitHubGraph>);
 export interface CustomDrafts {
@@ -119,7 +119,8 @@ function validateSingleContent(c: unknown, imageDraft = false): SingleContent {
     if (typeof c.dataUrl !== 'string' || (!(imageDraft && c.dataUrl === '') && !/^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(c.dataUrl))
       || c.dataUrl.length > 1_500_000) throw new Error('invalid image data');
     if (c.fit !== 'contain' && c.fit !== 'cover' && c.fit !== 'stretch') throw new Error('invalid fit');
-    return { kind: 'image', dataUrl: c.dataUrl, fit: c.fit, bg: color(c.bg, 'bg') };
+    if (c.name !== undefined && (typeof c.name !== 'string' || c.name.length > 255)) throw new Error('invalid image name');
+    return { kind: 'image', dataUrl: c.dataUrl, fit: c.fit, bg: color(c.bg, 'bg'), ...(c.name === undefined ? {} : { name: c.name }) };
   }
   throw new Error('unknown content kind');
 }
