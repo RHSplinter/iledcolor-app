@@ -111,7 +111,7 @@ export async function openBackup(page: Page) {
   await expect(page.locator('#btn-export')).toBeVisible();
 }
 
-/** Connects through the Custom tab and waits until the hat is ready. */
+/** Connects through the visible connection control and waits until the hat is ready. */
 export async function connectHat(page: Page, selectedTab: 'custom' | 'presets' = 'custom') {
   const native = await page.evaluate(() => location.hash === '#mock' || Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.()));
   if (await page.locator('#status').textContent().then((text) => text?.includes('Ready'))) {
@@ -122,9 +122,12 @@ export async function connectHat(page: Page, selectedTab: 'custom' | 'presets' =
     await page.locator('#tab-custom').click();
     await page.click('#btn-connect');
   } else {
-    await page.locator('#tab-custom').click();
-    const ownerReady = page.waitForEvent('popup');
-    await page.click('#btn-connect');
+    // The Connect hat tab also opens the owner. Use just the page link, and
+    // start listening before clicking so a fast popup cannot be missed.
+    const existingOwner = page.context().pages().find((candidate) =>
+      candidate !== page && new URL(candidate.url()).searchParams.has('hatConnection'));
+    const ownerReady = existingOwner ? Promise.resolve(existingOwner) : page.waitForEvent('popup');
+    await page.getByRole('link', { name: 'Connect hat', exact: true }).click();
     const owner = await ownerReady;
     await owner.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
   }

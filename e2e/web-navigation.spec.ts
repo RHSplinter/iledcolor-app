@@ -19,9 +19,13 @@ test.describe('web navigation @smoke', () => {
     await expect(page.locator('#custom-text')).toBeHidden();
   });
 
-  test('pairing selects Presets, refresh reattaches, and Disconnect returns to Connect hat', async ({ page }) => {
+  test('pairing selects Presets, refresh reattaches, and reconnect reuses the connection tab', async ({ page, context }) => {
     await page.goto('./?controller=1');
+    // Start after navigation is initialized: clicking the Connect hat tab now
+    // opens the owner itself, so the helper must not wait for a second popup.
+    await expect(page.getByRole('tab', { name: 'Connect hat', exact: true })).toHaveAttribute('aria-selected', 'true');
     await connectHat(page, 'presets');
+    expect(context.pages()).toHaveLength(2);
     await expect(page.getByRole('tab', { name: 'Presets', exact: true })).toHaveAttribute('aria-selected', 'true');
     for (const name of ['Presets', 'Sound', 'Settings'])
       await expect(page.getByRole('tab', { name, exact: true })).toBeEnabled();
@@ -34,6 +38,9 @@ test.describe('web navigation @smoke', () => {
     await expect(page.locator('#qr-start')).toBeEnabled();
     for (const name of ['Presets', 'Sound', 'Settings'])
       await expect(page.locator(`[data-tab=${name.toLowerCase()}]`)).toBeHidden();
+    await connectHat(page, 'presets');
+    await expect(page.getByRole('tab', { name: 'Presets', exact: true })).toHaveAttribute('aria-selected', 'true');
+    expect(context.pages()).toHaveLength(2);
   });
 
   for (const width of [1280, 390]) {

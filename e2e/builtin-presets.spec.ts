@@ -73,9 +73,10 @@ test('animated Copilot head uses a retro palette, preserves proportions and loop
   expect(metrics.retracesTurn).toBe(true);
 });
 
-test('built-ins send directly, stay separate from backups and remain available offline', async ({ page, context }) => {
+test('built-ins send directly, stay separate from backups and remain available offline', async ({ page, context, baseURL }) => {
   const external: string[] = [];
-  page.on('request', (r) => { if (!r.url().startsWith('http://localhost:4173')) external.push(r.url()); });
+  const appOrigin = new URL(baseURL!).origin;
+  page.on('request', (r) => { if (new URL(r.url()).origin !== appOrigin) external.push(r.url()); });
   await page.goto('/#mock');
   await connectHat(page);
   await waitForServiceWorker(page);

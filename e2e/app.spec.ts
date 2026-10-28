@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { openBackup, openCustomSection, connectHat, waitForServiceWorker } from './hat';
 
-test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page, context }) => {
+test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page, context, baseURL }) => {
   const external: string[] = [];
-  page.on('request', (r) => { if (!r.url().startsWith('http://localhost:4173')) external.push(r.url()); });
+  const appOrigin = new URL(baseURL!).origin;
+  page.on('request', (r) => { if (new URL(r.url()).origin !== appOrigin) external.push(r.url()); });
 
   await page.goto('/#mock');
   await connectHat(page);
