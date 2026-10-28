@@ -43,7 +43,7 @@ test('scanner has no saved badge profile controls', async ({ page }) => {
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-template')).toBeVisible();
   await expect(page.locator('#qr-profile, #qr-note, #qr-profile-save, #qr-profile-delete, #qr-pattern, #qr-pattern-help')).toHaveCount(0);
-  await expect(page.locator('#view-scan > .card')).toHaveCount(2);
+  await expect(page.locator('#view-scan > .card:visible')).toHaveCount(2);
   await expect(page.locator('#qr-github-enabled')).toHaveCount(0);
   await page.click('nav [data-tab=settings]');
   await expect(page.locator('#view-settings > :last-child')).toHaveAttribute('id', 'settings-scan');
@@ -75,8 +75,78 @@ test('scan logging is opt-in, persists, and can be disabled', async ({ page }) =
 
 });
 
-for (const layout of ['single-line name', 'stacked name with handle', 'tightly stacked name with handle', 'public email', 'no public email']) {
+test('scan-only navigation stops the camera, returns home and preserves greetings and the shared assignee across reload', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      value: async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        const stream = canvas.captureStream(10);
+        Object.assign(window, { scanStream: stream });
+        return stream;
+      },
+    });
+  });
+  await page.goto('/#mock');
+  await connectHat(page);
+  await page.getByRole('tab', { name: 'Settings', exact: true }).click();
+  await page.fill('#qr-issue-assignee', 'booth-staff');
+  await page.locator('#qr-issue-assignee').blur();
+  await page.getByRole('tab', { name: 'Scan', exact: true }).click();
+  await expect(page.locator('#qr-issue-assignee')).toBeHidden();
+  await expect(page.locator('#view-scan #qr-issue-assignee')).toHaveCount(0);
+  await page.fill('#qr-template', 'Welcome {firstname}!');
+  await page.locator('#qr-template').blur();
+  await page.reload();
+  await page.getByRole('button', { name: 'Scan without hat', exact: true }).click();
+  await expect(page.locator('#view-scan')).toBeVisible();
+  await expect(page.locator('#tab-bar')).toBeHidden();
+  await expect(page.locator('header')).toBeHidden();
+  await expect(page.locator('#qr-greeting-settings')).toBeHidden();
+  await expect(page.locator('#qr-template')).toHaveValue('Welcome {firstname}!');
+  await expect(page.locator('#view-scan #qr-issue-assignee')).toBeVisible();
+  const scanBox = (await page.locator('#qr-text-start').boundingBox())!;
+  const statusBox = (await page.locator('#qr-status').boundingBox())!;
+  const assigneeBox = (await page.locator('#qr-issue-assignee').boundingBox())!;
+  expect(scanBox.y).toBeLessThan(statusBox.y);
+  expect(statusBox.y).toBeLessThan(assigneeBox.y);
+  const scannerCard = (await page.locator('#view-scan > .card').first().boundingBox())!;
+  const assigneeCard = (await page.locator('#view-scan > #qr-scan-assignee.card').boundingBox())!;
+  expect(assigneeCard.y - scannerCard.y - scannerCard.height).toBeGreaterThanOrEqual(24);
+  await expect(page.locator('#qr-issue-assignee')).toHaveValue('booth-staff');
+  await page.fill('#qr-issue-assignee', '@octocat');
+  await page.locator('#qr-issue-assignee').blur();
+  await expect(page.locator('#qr-issue-assignee')).toHaveValue('octocat');
+  await page.click('#qr-text-start');
+  await expect(page.locator('#qr-video-wrap')).toBeVisible();
+  await page.waitForFunction(() => !!(window as unknown as { scanStream?: MediaStream }).scanStream);
+  await page.getByRole('button', { name: 'Return home', exact: true }).click();
+  expect(await page.evaluate(() => (window as unknown as { scanStream: MediaStream }).scanStream.getTracks().every((track) => track.readyState === 'ended'))).toBe(true);
+  await expect(page.locator('#connection-card')).toBeVisible();
+  await expect(page.locator('#view-scan')).toBeHidden();
+  await expect(page.locator('#tab-bar')).toBeHidden();
+  await expect(page.locator('#btn-scan-only')).toBeFocused();
+  await connectHat(page);
+  await page.getByRole('tab', { name: 'Scan', exact: true }).click();
+  await expect(page.locator('#qr-greeting-settings')).toBeVisible();
+  await expect(page.locator('#qr-template')).toHaveValue('Welcome {firstname}!');
+  await expect(page.locator('#qr-text-start')).toBeEnabled();
+  await expect(page.locator('#view-scan #qr-issue-assignee')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Settings', exact: true }).click();
+  await expect(page.locator('#settings-scan #qr-issue-assignee')).toBeVisible();
+  await expect(page.locator('#qr-issue-assignee')).toHaveValue('octocat');
+  await page.reload();
+  await page.click('#btn-scan-only');
+  await expect(page.locator('#view-scan #qr-issue-assignee')).toHaveValue('octocat');
+  await page.reload();
+  await expect(page.locator('#connection-card')).toBeVisible();
+  await expect(page.locator('#scan-only-actions')).toBeHidden();
+});
+
+for (const layout of ['single-line name', 'stacked name with handle', 'tightly stacked name with handle', 'public email', 'no public email', 'scan without hat']) {
 test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup accompanies OCR' : 'offline OCR greets a newly connected cap'} (${layout})`, async ({ page, context }) => {
+  const scanOnly = layout === 'scan without hat';
   const stacked = layout !== 'single-line name';
   const tight = layout === 'tightly stacked name with handle';
   const publicEmail = layout === 'public email';
@@ -124,7 +194,7 @@ test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup acco
       },
     });
   }, { stacked, tight });
-  await page.goto('/#mock');
+  await page.goto(scanOnly ? '/' : '/#mock');
   await waitForServiceWorker(page);
   await context.setOffline(!onlineLookup);
   await page.reload();
@@ -133,9 +203,18 @@ test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup acco
   await expect(page.locator('#qr-start')).toHaveCount(0);
   await expect(scan).toHaveText('Scan');
   await expect(scan).toHaveCSS('background-color', 'rgb(77, 163, 255)');
-  await page.click('#btn-connect');
-  await expect(page.locator('#status')).toContainText('Ready');
-  await page.click('nav [data-tab=scan]');
+  if (scanOnly) {
+    await page.click('#btn-scan-only');
+    await page.fill('#qr-issue-assignee', 'booth-staff');
+    await page.locator('#qr-issue-assignee').blur();
+    await expect(page.locator('#tab-bar')).toBeHidden();
+    await expect(page.locator('#qr-greeting-settings')).toBeHidden();
+    await expect(page.locator('#status-label')).not.toContainText('Ready');
+  } else {
+    await page.click('#btn-connect');
+    await expect(page.locator('#status')).toContainText('Ready');
+    await page.click('nav [data-tab=scan]');
+  }
   await expect(page.locator('#qr-github-result')).toBeHidden();
   await expect(scan).toBeEnabled();
   await scan.click();
@@ -145,7 +224,7 @@ test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup acco
     return !!video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0;
   });
   await page.click('#qr-capture');
-  await expect(page.locator('#qr-status')).toContainText(stacked ? 'Hi Fokko Veegens!' : 'Hi Rob Bos!', { timeout: 60000 });
+  await expect(page.locator('#qr-status')).toContainText(scanOnly ? 'Badge scanned.' : stacked ? 'Hi Fokko Veegens!' : 'Hi Rob Bos!', { timeout: 60000 });
   const expected = stacked
     ? ['Fokko', 'Veegens', '@FokkoVeegens', 'DevOps Consultant', 'Xebia']
     : ['Rob', 'Bos', '', 'Software Engineer', 'Xebia'];
@@ -191,7 +270,7 @@ test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup acco
   await expect(email).not.toHaveAttribute('aria-invalid');
   await expect(save).toBeEnabled();
   await expect(email).toHaveValue('manual@example.org');
-  await expect(page.locator('#qr-status')).toContainText('Display cleared to black.', { timeout: 30000 });
+  await expect(page.locator('#qr-status')).toContainText(scanOnly ? 'Badge scanned.' : 'Display cleared to black.', { timeout: 30000 });
   await expect(page.locator('#qr-status')).toHaveAttribute('role', 'status');
   await expect(scan).toBeEnabled();
   const note = page.locator('#qr-issue-note');
@@ -210,6 +289,7 @@ test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup acco
   expect(issueUrl.origin + issueUrl.pathname).toBe('https://github.com/xebia/badge-scanner/issues/new');
   expect(issueUrl.searchParams.get('title')).toBe(stacked ? 'Badge scan: Fokko Veegens' : 'Badge scan: Rob Bos');
   expect(issueUrl.searchParams.get('labels')).toBe('GitHubUniverse');
+  if (scanOnly) expect(issueUrl.searchParams.get('assignees')).toBe('booth-staff');
   const body = issueUrl.searchParams.get('body')!;
   expect(body).toContain('## Badge details');
   expect(body).toContain('| Email address | manual@example.org |');

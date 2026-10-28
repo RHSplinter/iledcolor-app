@@ -62,6 +62,7 @@ let sendingContent = false;
 let sequence: SequenceStep[] = [];
 let sequenceOn = false;
 let scanner: GreetingUi | undefined;
+let scanOnly = false;
 let sound: SoundUi | undefined;
 let github: GitHubUi | undefined;
 
@@ -159,23 +160,31 @@ function updateButtons() {
   if (label) label.textContent = s === 'Error' || controller.error ? 'Reconnect' : 'Connect';
 }
 
-/** Until a hat is connected only the connection controls are shown; everything else needs a hat. */
+/** Scanning can run standalone; the remaining tabs require a connected hat. */
 let wasConnected = false;
 function applyConnectionGate() {
   const s = controller.state;
   const connected = s === 'Ready' || s === 'Uploading';
   const justConnected = connected && !wasConnected;
   wasConnected = connected;
+  if (connected && scanOnly) {
+    scanOnly = false;
+    scanner?.setSendingGreeting(true);
+  }
   document.body.classList.toggle('disconnected', !connected);
+  document.body.classList.toggle('scan-only', scanOnly);
   for (const id of ['content-editor', 'github-section', 'tab-bar', 'tab-scan', 'tab-sound', 'tab-settings']) {
     const el = document.getElementById(id);
-    if (el) el.hidden = !connected;
+    if (el) el.hidden = id === 'tab-scan' ? !connected && !scanOnly : !connected;
   }
+  $('#scan-only-actions').hidden = !scanOnly;
+  $('header').hidden = scanOnly;
   const connectionCard = document.getElementById('connection-card');
-  if (connectionCard) connectionCard.hidden = connected;
+  if (connectionCard) connectionCard.hidden = connected || scanOnly;
   const approachTab = document.getElementById('tab-approach');
   if (approachTab) approachTab.hidden = !connected || !approachAvailable;
-  if (!connected && showTab && $('#view-custom').hidden) showTab('custom');
+  if (scanOnly) showTab?.('scan');
+  else if (!connected && showTab && $('#view-custom').hidden) showTab('custom');
   if (justConnected && showTab) showTab('presets');
 }
 
@@ -197,6 +206,7 @@ function renderCustom() {
       ${useMock ? '<p class="warn">Mock mode: no real hat is used.</p>' : ''}
       <div class="row">
         <button id="btn-connect" class="primary">Connect</button>
+        <button id="btn-scan-only" disabled>Scan without hat</button>
         <button id="btn-install" hidden>Install app</button>
       </div>
       <p id="conn-msg" class="small"></p>
@@ -205,6 +215,19 @@ function renderCustom() {
     </div>
     <div id="content-editor"></div>`;
   $('#btn-connect').onclick = onConnect;
+  $('#btn-scan-only').onclick = () => {
+    scanOnly = true;
+    scanner?.setSendingGreeting(false);
+    applyConnectionGate();
+    $('#qr-text-start').focus();
+  };
+  $('#btn-scan-home').onclick = () => {
+    scanner?.stopCamera();
+    scanOnly = false;
+    scanner?.setSendingGreeting(true);
+    applyConnectionGate();
+    $('#btn-scan-only').focus();
+  };
   renderStatus();
 }
 
@@ -1243,7 +1266,9 @@ async function main() {
   setupAppUpdates();
   void requestPersistence();
   scanner = new GreetingUi({ controller: () => controller, logicalDims, physical, marqueeDelay });
-  const scannerReady = scanner.init();
+  const scannerReady = scanner.init().then(() => {
+    $<HTMLButtonElement>('#btn-scan-only').disabled = false;
+  });
   sound = new SoundUi({ controller: () => controller, logicalDims, physical });
   github = new GitHubUi({ root: $('#github-section'), controller: () => controller, logicalDims, physical, savePreset: saveNamedPreset,
     initialSpeed: Number($<HTMLInputElement>('#c-speed').value) || DEFAULT_SPEED });
