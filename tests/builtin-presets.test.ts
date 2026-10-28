@@ -21,10 +21,10 @@ describe('built-in presets', () => {
       .toBe('72c7443855bd7fafabf7b386094c08fb3fafceaf4fe82d3f3360cc2edf0aad36');
   });
 
-  it('provides twelve valid, independent presets without changing settings', () => {
+  it('provides thirteen valid, independent presets without changing settings', () => {
     const presets = builtinPresets();
-    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', 'Rainbow', 'Nijan cat', 'Star', 'Octocat animation', '<header>', 'LGTM 👍']);
-    expect(new Set(presets.map((p) => p.id)).size).toBe(12);
+    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', 'Rainbow', 'Nijan cat', 'Star', 'Octocat animation', 'GitHub Copilot head (animated)', '<header>', 'LGTM 👍']);
+    expect(new Set(presets.map((p) => p.id)).size).toBe(13);
     for (const p of presets) expect(validateContent(p.content)).toEqual(p.content);
     expect(parseImport(exportJson(DEFAULT_SETTINGS, presets)).presets).toEqual(presets);
     const first = presets[0]!;
