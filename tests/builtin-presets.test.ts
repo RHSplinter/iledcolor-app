@@ -8,6 +8,7 @@ import { DEFAULT_APPROACH } from '../src/approach/tiers';
 import { DEFAULT_SETTINGS, exportJson, parseImport, validateContent } from '../src/storage/presets';
 import { exportSelectedJson, mergeSharedPresets, parseSharedBackup } from '../src/storage/sharedBackup';
 import { listPresets, loadKv, restoreBackup } from '../src/storage/db';
+import { parseGif } from '../src/render/gifParse';
 
 describe('built-in presets', () => {
   it('uses the exact 32×16 Xebia logo supplied with the issue', () => {
@@ -21,10 +22,10 @@ describe('built-in presets', () => {
       .toBe('72c7443855bd7fafabf7b386094c08fb3fafceaf4fe82d3f3360cc2edf0aad36');
   });
 
-  it('provides thirteen valid, independent presets without changing settings', () => {
+  it('provides fourteen valid, independent presets without changing settings', () => {
     const presets = builtinPresets();
-    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', 'Rainbow', 'Nijan cat', 'Star', 'Octocat animation', 'GitHub Copilot head (animated)', '<header>', 'LGTM 👍']);
-    expect(new Set(presets.map((p) => p.id)).size).toBe(13);
+    expect(presets.map((p) => p.name)).toEqual(['Xebia 💜 GitHub', 'Xebia logo', 'GitHub Copilot logo', 'GitHub Copilot head', 'GitHub Copilot head (blinking)', 'Party Popper', 'Rainbow', 'Nijan cat', 'Star', 'Octocat animation', 'GitHub Copilot head (animated)', 'Pulsating question mark', '<header>', 'LGTM 👍']);
+    expect(new Set(presets.map((p) => p.id)).size).toBe(14);
     for (const p of presets) expect(validateContent(p.content)).toEqual(p.content);
     expect(parseImport(exportJson(DEFAULT_SETTINGS, presets)).presets).toEqual(presets);
     const first = presets[0]!;
@@ -39,6 +40,31 @@ describe('built-in presets', () => {
     const gif = Buffer.from(preset.content.dataUrl.split(',')[1]!, 'base64');
     expect(gif.toString('ascii', 0, 6)).toBe('GIF89a');
     expect(gif.toString('ascii')).toContain('NETSCAPE2.0');
+  });
+
+  it('bundles a thick, pulsating question mark as a looping GIF', () => {
+    const preset = builtinPresets().find((p) => p.id === 'builtin-question-mark')!;
+    if (preset.content.kind !== 'image') throw new Error('Expected image content');
+    const gif = Buffer.from(preset.content.dataUrl.split(',')[1]!, 'base64');
+    expect(gif.toString('ascii', 0, 6)).toBe('GIF89a');
+    expect(gif.toString('ascii')).toContain('NETSCAPE2.0');
+    const redPixelCounts: number[] = [];
+    const peakRedValues: number[] = [];
+    expect(parseGif(gif, { maxFrames: 150 }, (rgba, _delay, width, height) => {
+      expect([width, height]).toEqual([32, 16]);
+      let redCount = 0;
+      let peakRed = 0;
+      for (let i = 0; i < rgba.length; i += 4) {
+        if (rgba[i]! > rgba[i + 1]! && rgba[i]! > rgba[i + 2]!) {
+          redCount++;
+          peakRed = Math.max(peakRed, rgba[i]!);
+        }
+      }
+      redPixelCounts.push(redCount);
+      peakRedValues.push(peakRed);
+    })).toBe(12);
+    expect(Math.min(...redPixelCounts)).toBeGreaterThan(80);
+    expect(new Set(peakRedValues).size).toBeGreaterThan(4);
   });
 
   it.each([
