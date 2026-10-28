@@ -169,7 +169,22 @@ test(`Scan is blue and ${layout.includes('email') ? 'automatic email lookup acco
     await expect(page.locator('#qr-github-result')).toHaveText('@FokkoVeegens has no public email.');
     await expect(page.locator('#qr-github-result')).toHaveCSS('border-left-width', '3px');
   }
+  const phone = page.getByRole('textbox', { name: 'Phone number', exact: true });
+  await expect(phone).toHaveValue('');
+  await expect(phone).toHaveAttribute('type', 'tel');
+  for (const property of ['background-color', 'border-radius', 'padding', 'width', 'height']) {
+    await expect(phone).toHaveCSS(property, await firstInput.evaluate((input, key) => getComputedStyle(input).getPropertyValue(key), property));
+  }
+  const save = page.locator('#qr-data-save');
+  await email.fill('not-an-email');
+  await expect(save).toBeEnabled();
+  await phone.focus();
+  await expect(email).toHaveAttribute('aria-invalid', 'true');
+  await expect(email).toHaveCSS('border-top-color', 'rgb(255, 90, 90)');
+  await expect(save).toBeDisabled();
   await email.fill('manual@example.org');
+  await expect(email).not.toHaveAttribute('aria-invalid');
+  await expect(save).toBeEnabled();
   await expect(email).toHaveValue('manual@example.org');
   await expect(page.locator('#qr-status')).toContainText('Display cleared to black.', { timeout: 30000 });
   await expect(page.locator('#qr-status')).toHaveAttribute('role', 'status');

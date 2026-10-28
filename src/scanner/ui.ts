@@ -11,7 +11,7 @@ import { appendScanLog, shareScanLog } from './log';
 import { BadgeTextRecognizer } from './ocr';
 import { differingGithubHandles, fetchPublicProfile, findGithubHandle, findGithubHandles } from './githubLookup';
 import {
-  DEFAULT_GREETING, extractName, greetingDuration, greetingNameFields, greetingText, validateGreeting,
+  DEFAULT_GREETING, extractName, greetingDuration, greetingNameFields, greetingText, isValidEmail, validateGreeting,
   type ExtractedName, type GreetingSettings, type ScannerBackup,
 } from './greeting';
 
@@ -179,17 +179,35 @@ export class GreetingUi {
       typeCell.append(select);
       return row;
     });
-    const emailRow = document.createElement('tr');
-    const email = document.createElement('input');
-    email.id = 'qr-data-email';
-    email.type = 'email';
-    email.setAttribute('aria-label', 'Email address');
-    emailRow.insertCell().append(email);
-    const emailLabel = document.createElement('label');
-    emailLabel.htmlFor = email.id;
-    emailLabel.textContent = 'Email address';
-    emailRow.insertCell().append(emailLabel);
-    $('qr-data-rows').replaceChildren(...rows, emailRow);
+    const labelledRow = (id: string, type: string, label: string, value = '') => {
+      const row = document.createElement('tr');
+      const input = document.createElement('input');
+      input.id = id;
+      input.type = type;
+      input.value = value;
+      input.setAttribute('aria-label', label);
+      row.insertCell().append(input);
+      const labelElement = document.createElement('label');
+      labelElement.htmlFor = input.id;
+      labelElement.textContent = label;
+      row.insertCell().append(labelElement);
+      return { row, input };
+    };
+    const { row: emailRow, input: email } = labelledRow('qr-data-email', 'email', 'Email address');
+    const { row: phoneRow, input: phone } = labelledRow('qr-data-phone', 'tel', 'Phone number', extracted.phone ?? '');
+    phone.autocomplete = 'off';
+    const save = $<HTMLButtonElement>('qr-data-save');
+    const validateEmail = () => {
+      const valid = isValidEmail(email.value);
+      if (valid) email.removeAttribute('aria-invalid');
+      else email.setAttribute('aria-invalid', 'true');
+      save.disabled = !valid;
+    };
+    email.addEventListener('blur', validateEmail);
+    // Once flagged, re-check while typing so the error clears as soon as the address is fixed.
+    email.addEventListener('input', () => { if (email.hasAttribute('aria-invalid')) validateEmail(); });
+    save.disabled = false;
+    $('qr-data-rows').replaceChildren(...rows, emailRow, phoneRow);
     $('qr-data').hidden = false;
   }
 

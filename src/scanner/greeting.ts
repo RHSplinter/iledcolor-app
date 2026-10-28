@@ -48,6 +48,12 @@ export function validateGreeting(value: unknown): GreetingSettings {
   return { template: v.template, repetitions: v.repetitions, speed: v.speed };
 }
 
+/** Empty is allowed (the field is optional); otherwise requires local@domain.tld without spaces. */
+export function isValidEmail(value: string): boolean {
+  const email = value.trim();
+  return !email || (email.length <= 254 && /^[^\s@<>,;]+@[^\s@<>,;.]+(?:\.[^\s@<>,;.]+)*\.[a-z]{2,}$/i.test(email));
+}
+
 function cleanField(value: string | undefined, field: string, required = false): string | undefined {
   const cleaned = value?.replace(/\\[nN]/g, ' ').replace(/\\([,;:\\\\])/g, '$1').trim().replace(/\s+/g, ' ');
   if (!cleaned) {

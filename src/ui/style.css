@@ -23,7 +23,7 @@ h1 { margin:var(--space-4) 0; font-size:24px; line-height:1.25; }
 .card p { overflow-wrap:anywhere; }
 label { display:block; margin:var(--space-3) 0 var(--space-1); font-size:14px; color:#bbb; }
 input, select, textarea, button { font:inherit; color:inherit; }
-input[type=text], input[type=email], input[type=number], select, textarea { width:100%; min-width:0; min-height:44px; padding:10px; border-radius:8px; border:1px solid var(--border); background:#111; }
+input[type=text], input[type=email], input[type=tel], input[type=number], select, textarea { width:100%; min-width:0; min-height:44px; padding:10px; border-radius:8px; border:1px solid var(--border); background:#111; }
 select {
   -webkit-appearance:none; appearance:none; padding-right:40px; text-overflow:ellipsis;
   background:#111 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bbb' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center / 16px 16px;
@@ -63,6 +63,7 @@ button:not(:disabled):active { filter:brightness(.85); }
 .scan-data-table caption { text-align:left; font-weight:600; }
 .scan-data-table td:first-child { padding-right:8px; }
 .scan-data-table td > label { margin:0; padding:10px; border:1px solid transparent; font:inherit; color:inherit; }
+.scan-data-table input[aria-invalid=true] { border-color:var(--bad); box-shadow:0 0 0 1px var(--bad); }
 .scan-data-actions { align-items:stretch; }
 .scan-data-actions > button { flex:1; }
 summary { min-height:44px; padding:10px 0; cursor:pointer; font-weight:600; }

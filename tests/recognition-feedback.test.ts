@@ -163,10 +163,14 @@ it.each(['ocr', 'manual'] as const)('shows editable visitor data for a recognize
   expect(form.hidden).toBe(false);
   const inputs = [...form.querySelectorAll('input')];
   const selects = [...form.querySelectorAll('select')];
-  expect(inputs.map((input) => input.value)).toEqual(['Rob', 'Bos', '@octocat', 'Software Engineer', 'Xebia', '']);
+  expect(inputs.map((input) => input.value)).toEqual(['Rob', 'Bos', '@octocat', 'Software Engineer', 'Xebia', '', '']);
   expect(inputs[5]!.type).toBe('email');
   expect(inputs[5]!.getAttribute('aria-label')).toBe('Email address');
   expect(inputs[5]!.closest('tr')!.querySelector('select')).toBeNull();
+  expect(inputs[6]!.type).toBe('tel');
+  expect(inputs[6]!.getAttribute('aria-label')).toBe('Phone number');
+  expect(document.querySelector('label[for=qr-data-phone]')!.textContent).toBe('Phone number');
+  expect(inputs[6]!.closest('tr')!.querySelector('select')).toBeNull();
   expect(selects.map((select) => select.value)).toEqual(['firstname', 'lastname', 'github', 'role', 'company']);
   for (const select of selects) {
     expect([...select.options].map((option) => option.text)).toEqual([
@@ -211,7 +215,7 @@ it.each(['ocr', 'manual'] as const)('preserves multiword first and last names in
   await ui.init();
   await ui['greet']('Anne Marie\nvan der Meer\n@badge-user\nSRE\nACME R&D 24/7', target, source);
   expect([...document.querySelectorAll<HTMLInputElement>('#qr-data input')].map((input) => input.value))
-    .toEqual(['Anne Marie', 'van der Meer', '@badge-user', 'SRE', 'ACME R&D 24/7', '']);
+    .toEqual(['Anne Marie', 'van der Meer', '@badge-user', 'SRE', 'ACME R&D 24/7', '', '']);
   expect(playback).toHaveBeenCalledOnce();
 });
 
@@ -224,8 +228,8 @@ it('replaces previous visitor data, leaves optional fields empty and removes sta
   expect(document.querySelector('#qr-data img')).toBeNull();
   await ui['greet']('Ada', target, 'manual');
   expect([...document.querySelectorAll<HTMLInputElement>('#qr-data input')].map((input) => input.value))
-    .toEqual(['Ada', '', '', '', '', '']);
-  expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(6);
+    .toEqual(['Ada', '', '', '', '', '', '']);
+  expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(7);
   await ui['greet']('{"email":"private@example.org"}', target, 'manual');
   expect(document.getElementById('qr-data')!.hidden).toBe(true);
   expect(document.querySelectorAll('#qr-data-rows tr')).toHaveLength(0);
@@ -291,6 +295,55 @@ it.each(['edit', 'clear', 'rescan'] as const)('does not overwrite visitor data a
     expect(document.getElementById('qr-data')!.hidden).toBe(true);
     expect(document.getElementById('qr-github-result')!.hidden).toBe(true);
   }
+});
+
+it('shows a scanned phone number without looking it up', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  await ui['greet']('{"name":"Ada Lovelace","phone":"+31 6 1234 5678"}', target, 'manual');
+  const phone = document.getElementById('qr-data-phone') as HTMLInputElement;
+  expect(phone.value).toBe('+31 6 1234 5678');
+  expect(phone.disabled).toBe(false);
+  expect(fetchPublicProfile).not.toHaveBeenCalled();
+  phone.value = '+1 555 0100';
+  phone.dispatchEvent(new Event('input'));
+  phone.dispatchEvent(new Event('blur'));
+  expect(phone.hasAttribute('aria-invalid')).toBe(false);
+  expect((document.getElementById('qr-data-save') as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('flags an invalid email on blur and disables saving until it is corrected', async () => {
+  const ui = new GreetingUi(context);
+  await ui.init();
+  await ui['greet']('Ada', target, 'manual');
+  const email = document.getElementById('qr-data-email') as HTMLInputElement;
+  const save = document.getElementById('qr-data-save') as HTMLButtonElement;
+  email.value = 'not-an-email';
+  email.dispatchEvent(new Event('input'));
+  expect(email.hasAttribute('aria-invalid')).toBe(false);
+  expect(save.disabled).toBe(false);
+  email.dispatchEvent(new Event('blur'));
+  expect(email.getAttribute('aria-invalid')).toBe('true');
+  expect(save.disabled).toBe(true);
+  email.value = 'ada@example';
+  email.dispatchEvent(new Event('input'));
+  expect(save.disabled).toBe(true);
+  email.value = 'ada@example.org';
+  email.dispatchEvent(new Event('input'));
+  expect(email.hasAttribute('aria-invalid')).toBe(false);
+  expect(save.disabled).toBe(false);
+  email.value = 'bad@';
+  email.dispatchEvent(new Event('blur'));
+  expect(save.disabled).toBe(true);
+  email.value = '';
+  email.dispatchEvent(new Event('blur'));
+  expect(email.hasAttribute('aria-invalid')).toBe(false);
+  expect(save.disabled).toBe(false);
+  email.value = 'bad@';
+  email.dispatchEvent(new Event('blur'));
+  await ui['greet']('Grace', target, 'manual');
+  expect(save.disabled).toBe(false);
+  expect((document.getElementById('qr-data-email') as HTMLInputElement).hasAttribute('aria-invalid')).toBe(false);
 });
 
 it.each(['ocr', 'manual'] as const)('vibrates once when a recognized %s scan greeting starts playing, before completion', async (source) => {
