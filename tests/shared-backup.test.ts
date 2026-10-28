@@ -19,6 +19,7 @@ const features = {
   createContent: { kind: 'text' as const, text: 'Current draft', fg: '#123456', bg: '#654321', speed: 9 },
   qrGreeting: { pattern: 'name=(.+)', template: 'Welcome {name}!', repetitions: 17, speed: 8 },
   qrScanLogging: true,
+  qrGithubLookup: true,
   github: { handle: 'octocat', prefix: 'Saved {handle}: ', postfix: '\u{1f389}' },
 };
 const approach = { ...DEFAULT_APPROACH, mode: 'hub' as const, beacon: false, countNearbyCaps: false, enterDbm: -62, settleMs: 4500 };
@@ -83,6 +84,7 @@ describe('selected backup categories', () => {
       expect(data.qrProfiles).toEqual(selection.scan ? profiles : undefined);
       expect(data.qrGreeting).toEqual(selection.scan ? features.qrGreeting : undefined);
       expect(data.qrScanLogging).toEqual(selection.scan ? true : undefined);
+      expect(data.qrGithubLookup).toEqual(selection.scan ? true : undefined);
       for (const excluded of ['phoneId', 'userName', 'approachCaps', 'approachEnabled', 'qr-scan-log', 'qr-raw']) {
         expect(json).not.toContain(excluded);
       }
@@ -114,6 +116,7 @@ describe('selected backup categories', () => {
     expect(data.settings).toBeUndefined();
     expect(data.qrGreeting).toBeUndefined();
     expect(data.qrScanLogging).toBeUndefined();
+    expect(data.qrGithubLookup).toBeUndefined();
     expect(data.qrProfiles).toBeUndefined();
   });
 
@@ -234,6 +237,7 @@ describe('selected backup categories', () => {
       { ...file, qrGreeting: { ...features.qrGreeting, repetitions: 0 } },
       { ...file, qrGreeting: { ...features.qrGreeting, speed: 11 } },
       { ...file, qrScanLogging: 'true' },
+      { ...file, qrGithubLookup: 'true' },
       { ...file, settings: { ...features.settings, brightness: -1 } },
       { ...file, createContent: { kind: 'solid', color: 'red' } },
       { ...file, approach: { ...file.approach, mode: 'unknown' } },
@@ -242,6 +246,7 @@ describe('selected backup categories', () => {
       { ...file, approach: { ...file.approach, mode: 'p2p', beacon: false } },
       { app: file.app, version: 2, creations: [], qrGreeting: features.qrGreeting },
       { app: file.app, version: 2, creations: [], qrScanLogging: false },
+      { app: file.app, version: 2, creations: [], qrGithubLookup: false },
       { app: file.app, version: 2, scan: file.scan, createContent: features.createContent },
     ];
     for (const raw of invalid) expect(() => parseSharedBackup(JSON.stringify(raw))).toThrow();
@@ -309,8 +314,10 @@ describe('saving an imported backup', () => {
     expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
     expect(await loadKv('qrGreetingProfiles')).toEqual(profiles);
     expect(await loadKv('qrScanLogging')).toBe(true);
+    expect(await loadKv('qrGithubLookup')).toBe(true);
     await restoreBackup([localCreation], undefined, undefined, { qrScanLogging: false });
     expect(await loadKv('qrScanLogging')).toBe(false);
+    expect(await loadKv('qrGithubLookup')).toBe(true);
     expect(await loadKv('qrGreeting')).toEqual(features.qrGreeting);
     expect(await loadKv('qrGreetingProfiles')).toEqual(profiles);
     expect(await loadKv('createContent')).toEqual(features.createContent);
@@ -322,13 +329,13 @@ describe('saving an imported backup', () => {
     await restoreBackup([creation], features.settings, approach, { ...features, qrProfiles: profiles });
     const original = IDBObjectStore.prototype.put;
     const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
-      if (key === 'qrScanLogging') throw new DOMException('Scanner write failed', 'DataCloneError');
+      if (key === 'qrGithubLookup') throw new DOMException('Scanner write failed', 'DataCloneError');
       return original.call(this, value, key);
     });
     try {
       await expect(restoreBackup([localCreation], DEFAULT_SETTINGS, DEFAULT_APPROACH, {
         createContent: creation.content, qrProfiles: { selectedId: null, profiles: [] },
-        qrGreeting: DEFAULT_GREETING, qrScanLogging: false,
+        qrGreeting: DEFAULT_GREETING, qrScanLogging: false, qrGithubLookup: false,
       })).rejects.toThrow(/Scanner write failed/);
     } finally { put.mockRestore(); }
     expect(await listPresets()).toEqual([creation]);

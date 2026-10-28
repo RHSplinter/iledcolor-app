@@ -10,6 +10,7 @@ import { QrCamera } from './camera';
 import { extractNameSafely } from './extract';
 import { appendScanLog, shareScanLog } from './log';
 import { BadgeTextRecognizer } from './ocr';
+import { differingGithubHandles, fetchPublicProfile, findGithubHandles } from './githubLookup';
 import {
   DEFAULT_GREETING, greetingDuration, greetingText, validateGreeting, validateGreetingProfiles,
   type ExtractedName, type GreetingProfile, type GreetingProfileState, type GreetingSettings, type ScannerBackup,
@@ -36,6 +37,8 @@ export class GreetingUi {
   private profiles: GreetingProfile[] = [];
   private selectedProfileId: string | null = null;
   private loggingEnabled = false;
+  private githubLookupEnabled = false;
+  private lookupId = 0;
   private savingLogging = false;
   private sharingLog = false;
 
@@ -87,7 +90,7 @@ export class GreetingUi {
         <h2>Greeting settings</h2>
         <label for="qr-template">Greeting</label>
         <input id="qr-template" type="text" maxlength="200" aria-describedby="qr-template-help" />
-        <p id="qr-template-help" class="small">Use {name} or {firstname}, {lastname}, {company}, {title}, {email}, {phone}, {url} or {notes} for captured fields.</p>
+        <p id="qr-template-help" class="small">Use {name} or {firstname}, {lastname}, {company}, {title}, {email}, {phone}, {url}, {github}, {linkedin} or {notes} for captured fields.</p>
         <label for="qr-repetitions">Repetitions</label>
         <input id="qr-repetitions" type="number" min="1" max="65536" step="1" />
         <label for="qr-speed">Scroll speed</label>
@@ -109,7 +112,14 @@ export class GreetingUi {
         <button id="qr-log-share">Share scan log</button>
         <p id="qr-log-status" role="status" aria-live="polite"></p>
         <p id="qr-log-error" class="bad" role="alert"></p>
-        <p class="small">Scan data and OCR are processed locally and are only saved when logging is enabled. Only the greeting is sent to your cap over Bluetooth.
+        <label><input id="qr-github-enabled" type="checkbox" /> Look up public GitHub email for badges with an @handle</label>
+        <p class="small">Off by default. When enabled, a handle recognized from printed badge text (OCR) is sent to api.github.com
+        to check whether that user has a public email. Nothing else is sent.                 The result is shown on screen, and when scan logging is on it is also saved in the scan log.
+                The badge screen's contacts panel can show a different GitHub handle from the one printed on the paper badge; both are looked up.</p>
+                With logging on, each scan saves the name, company, title, handles and any public email for later processing.</p>
+        <p id="qr-github-result" role="status" aria-live="polite"></p>
+        <p class="small">Scan data and OCR are processed locally and are only saved when logging is enabled. Only the greeting is sent to your cap over Bluetooth
+        (plus the handle to GitHub if the lookup above is enabled).
         Camera access requires permission. The English text-recognition model is bundled for offline use.
         Keep the app open until the previous content is restored.</p>
         <p class="small">Inspired by <a href="https://github.com/xebia/badge-scanner" target="_blank" rel="noopener noreferrer">Rob Bos / Xebia's badge-scanner</a>.
@@ -140,6 +150,12 @@ export class GreetingUi {
       this.loggingEnabled = enabled === true;
     } catch (e) { $('qr-log-error').textContent = `Could not restore scan logging preference: ${this.message(e)}`; }
     $<HTMLInputElement>('qr-log-enabled').checked = this.loggingEnabled;
+    try {
+      const lookup = await loadKv('qrGithubLookup');
+      if (lookup !== undefined && typeof lookup !== 'boolean') throw new Error('Invalid GitHub lookup preference.');
+      this.githubLookupEnabled = lookup === true;
+    } catch (e) { $('qr-log-error').textContent = `Could not restore GitHub lookup preference: ${this.message(e)}`; }
+    $<HTMLInputElement>('qr-github-enabled').checked = this.githubLookupEnabled;
     this.renderProfiles();
     $<HTMLSelectElement>('qr-profile').value = this.selectedProfileId ?? '';
     const selectedProfile = this.profiles.find((profile) => profile.id === this.selectedProfileId);
@@ -161,6 +177,7 @@ export class GreetingUi {
     $('qr-submit').onclick = () => { void this.greet($<HTMLTextAreaElement>('qr-raw').value, this.ctx.controller(), 'manual'); };
     $('qr-log-enabled').onchange = () => { void this.setLogging(); };
     $('qr-log-share').onclick = () => { void this.shareLog(); };
+    $('qr-github-enabled').onchange = () => { void this.setGithubLookup(); };
     $('qr-cancel').onclick = () => this.playing?.cancelUpload();
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.stopCamera(); });
     window.addEventListener('pagehide', () => this.stopCamera());
@@ -181,6 +198,59 @@ export class GreetingUi {
       input.checked = this.loggingEnabled;
       $('qr-log-error').textContent = `Could not save logging preference: ${this.message(e)}`;
     } finally { this.savingLogging = false; this.updateStatus(); }
+  }
+
+  private async setGithubLookup() {
+    const input = $<HTMLInputElement>('qr-github-enabled');
+    this.savingLogging = true;
+    this.updateStatus();
+    try {
+      await saveKv('qrGithubLookup', input.checked);
+      this.githubLookupEnabled = input.checked;
+      if (!input.checked) { this.lookupId++; $('qr-github-result').textContent = ''; }
+      $('qr-log-error').textContent = '';
+    } catch (e) {
+      input.checked = this.githubLookupEnabled;
+      $('qr-log-error').textContent = `Could not save GitHub lookup preference: ${this.message(e)}`;
+    } finally { this.savingLogging = false; this.updateStatus(); }
+  }
+
+  private async lookupGithub(raw: string, scanId: string) {
+    const result = $('qr-github-result');
+    const id = ++this.lookupId;
+    result.textContent = '';
+    if (!this.githubLookupEnabled) return;
+    const { printed, configured } = findGithubHandles(raw);
+    const handles = [...new Map([printed, configured].flatMap((h) => h ? [[h.toLowerCase(), h] as const] : [])).values()];
+    if (!handles.length) return;
+    result.textContent = `Checking GitHub for ${handles.map((h) => `@${h}`).join(' and ')}…`;
+    try {
+      const results = await Promise.all(handles.map(async (handle) => ({
+        handle, origin: handle === printed ? 'printed' as const : 'configured' as const,
+        profile: await fetchPublicProfile(handle, AbortSignal.timeout(8000)),
+      })));
+      if (id !== this.lookupId) return;
+      result.textContent = results.map(({ handle, origin, profile }) => {
+        const label = results.length > 1 ? (origin === 'printed' ? 'printed ' : 'badge screen ') : '';
+        return !profile ? `${label}@${handle} was not found on GitHub. Check the OCR text.`
+          : profile.email ? `${label}@${profile.login} public email: ${profile.email}`
+          : `${label}@${profile.login} has no public email.`;
+      }).join(' ');
+      if (this.loggingEnabled) {
+        const selected = this.profiles.find((item) => item.id === this.selectedProfileId);
+        try {
+          await appendScanLog({
+            timestamp: new Date().toISOString(), scanId, source: 'ocr', raw,
+            profile: selected ? { id: selected.id, note: selected.note } : null,
+            githubLookup: results.map(({ handle, origin, profile }) => ({
+              handle, origin, found: !!profile, ...(profile ? { login: profile.login, email: profile.email } : {}),
+            })),
+          });
+        } catch (e) { $('qr-log-error').textContent = `GitHub lookup results were NOT saved: ${this.message(e)}`; }
+      }
+    } catch (e) {
+      if (id === this.lookupId) result.textContent = `GitHub lookup failed: ${this.message(e)}`;
+    }
   }
 
   private async shareLog() {
@@ -222,7 +292,7 @@ export class GreetingUi {
   }
 
   exportSettings(): ScannerBackup {
-    return { qrGreeting: this.readSettings(), qrScanLogging: this.loggingEnabled };
+    return { qrGreeting: this.readSettings(), qrScanLogging: this.loggingEnabled, qrGithubLookup: this.githubLookupEnabled };
   }
 
   /** Prepare legacy profile-only imports before committing any backup data. */
@@ -239,6 +309,7 @@ export class GreetingUi {
       ...(state ? { qrProfiles: state } : {}),
       ...(settings ? { qrGreeting: settings } : {}),
       ...(value.qrScanLogging !== undefined ? { qrScanLogging: value.qrScanLogging } : {}),
+      ...(value.qrGithubLookup !== undefined ? { qrGithubLookup: value.qrGithubLookup } : {}),
     };
   }
 
@@ -262,6 +333,11 @@ export class GreetingUi {
       this.loggingEnabled = value.qrScanLogging;
       $<HTMLInputElement>('qr-log-enabled').checked = this.loggingEnabled;
       $('qr-log-status').textContent = this.loggingEnabled ? 'Scan logging enabled by imported settings.' : 'Scan logging disabled. Existing log kept.';
+    }
+    if (value.qrGithubLookup !== undefined) {
+      this.githubLookupEnabled = value.qrGithubLookup;
+      $<HTMLInputElement>('qr-github-enabled').checked = this.githubLookupEnabled;
+      if (!this.githubLookupEnabled) { this.lookupId++; $('qr-github-result').textContent = ''; }
     }
   }
 
@@ -431,7 +507,9 @@ export class GreetingUi {
       });
       if (attempt !== this.scanId) return;
       this.stopCamera();
-      void this.greet(raw, target, 'ocr');
+      const scanId = new Date().toISOString();
+      void this.lookupGithub(raw, scanId);
+      void this.greet(raw, target, 'ocr', scanId);
     } catch (e) {
       if (attempt === this.scanId) {
         this.error(`Text recognition failed: ${this.message(e)}`);
@@ -443,7 +521,7 @@ export class GreetingUi {
     }
   }
 
-  private async greet(raw: string, target: DeviceController, source: 'camera' | 'ocr' | 'manual') {
+  private async greet(raw: string, target: DeviceController, source: 'camera' | 'ocr' | 'manual', scanId = new Date().toISOString()) {
     if (this.processing) return;
     this.processing = true;
     this.error('');
@@ -451,9 +529,13 @@ export class GreetingUi {
     try {
       if (this.loggingEnabled) {
         const profile = this.profiles.find((item) => item.id === this.selectedProfileId);
+        let loggedFields: ExtractedName | undefined;
+        try { loggedFields = await extractNameSafely(raw, this.readSettings().pattern); } catch { /* raw text is still logged */ }
         try {
           await appendScanLog({
-            timestamp: new Date().toISOString(), source, raw,
+            timestamp: scanId, scanId, source, raw,
+            ...(loggedFields ? { extracted: loggedFields } : {}),
+            ...(source === 'ocr' ? (() => { const githubHandles = differingGithubHandles(raw); return githubHandles ? { githubHandles } : {}; })() : {}),
             profile: profile ? { id: profile.id, note: profile.note } : null,
           });
           $('qr-log-error').textContent = '';

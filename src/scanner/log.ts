@@ -1,13 +1,22 @@
 import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import type { ExtractedName } from './greeting';
 
 const LOG_FILE = 'qr-scan-log.jsonl';
 
 export interface ScanLogEntry {
   timestamp: string;
+  /** Links the entries (scan and GitHub lookup) written for one scan. */
+  scanId?: string;
   source: 'camera' | 'ocr' | 'manual';
   raw: string;
+  /** Best-effort structured fields (name, company, title, email, GitHub/LinkedIn handles, ...) for later processing. */
+  extracted?: ExtractedName;
+  /** Set when the paper badge and the badge screen show different GitHub handles. */
+  githubHandles?: { printed: string; configured: string };
+  /** Results of the opt-in GitHub profile lookup; email is null unless the user made it public. */
+  githubLookup?: { handle: string; origin: 'printed' | 'configured'; found: boolean; login?: string; email?: string | null }[];
   profile: { id: string; note: string } | null;
 }
 
