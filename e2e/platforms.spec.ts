@@ -5,11 +5,11 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await installFakeHat(page);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/?controller=1');
   await connectHat(page, 'presets');
   await waitForServiceWorker(page);
   await expect(page.getByRole('tab')).toHaveCount(5);
-  await expect(page.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Scan', 'Sound', 'Settings']);
+  await expect(page.getByRole('tab')).toHaveText(['Presets', 'Custom', 'Sound', 'Settings', 'Scan']);
   await expect(page.locator('#tab-approach')).toBeHidden();
   await expect(page.locator('#view-presets')).toBeVisible();
   await expect(page.locator('#view-presets')).not.toContainText('Backup');
@@ -24,12 +24,13 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await expect(page.locator('#c-save-note')).toContainText('Saved');
   await page.getByRole('tab', { name: 'Custom' }).focus();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('tab', { name: 'Scan' })).toBeFocused();
-  await expect(page.locator('#qr-start')).toBeVisible();
-  await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Sound' })).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'Settings' })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Scan' })).toBeFocused();
+  await expect(page.locator('#qr-start')).toBeVisible();
+  await page.getByRole('tab', { name: 'Settings' }).click();
   await expect(page.locator('#brightness')).toBeVisible();
   await expect(page.locator('#view-settings')).toContainText('require the Android or iOS app');
   await expect(page.locator('#view-settings')).toContainText('Backup');
@@ -42,7 +43,10 @@ test('web navigation skips native-only Approach and retains presets, content, sc
   await expect(page.locator('#c-str')).toHaveValue('Web greeting');
   await context.setOffline(true);
   await page.reload();
-  await connectHat(page, 'presets');
+  // Refresh restores the live owner asynchronously; do not race it by trying
+  // to pair again while the disconnected controls are being replaced.
+  await expect(page.locator('#status')).toContainText('Ready');
+  await expect(page.locator('#view-presets')).toBeVisible();
   await expect(page.getByRole('tab')).toHaveCount(5);
   await expect(page.locator('#c-str')).toHaveValue('Web greeting');
   expect(errors).toEqual([]);
@@ -56,7 +60,7 @@ test('web preserves native group presets for backup without opening unsupported 
   await page.fill('#ap-preset-name', 'Native group');
   await page.click('#ap-preset-save');
   await expect(page.locator('#ap-preset-msg')).toContainText('Saved');
-  await page.goto('/');
+  await page.goto('/?controller=1');
   await connectHat(page);
   await expect(page.locator('#custom-text > summary')).toBeVisible();
   await page.getByRole('tab', { name: 'Settings' }).click();
@@ -81,7 +85,7 @@ for (const platform of ['ios', 'android']) {
         ? { webkit: { messageHandlers: { bridge: {} } } }
         : { androidBridge: {} });
     }, platform);
-    await page.goto('/');
+    await page.goto('/?controller=1');
     await connectHat(page, 'presets');
     await expect(page.getByRole('tab')).toHaveCount(6);
     await page.getByRole('tab', { name: 'Custom' }).click();
@@ -119,7 +123,7 @@ for (const platform of ['ios', 'android']) {
     await page.addInitScript((name) => {
       Object.assign(window, name === 'ios' ? { webkit: { messageHandlers: { bridge: {} } } } : { androidBridge: {} });
     }, platform);
-    await page.goto('/');
+    await page.goto('/?controller=1');
     await connectHat(page);
     await expect(page.locator('#banner')).toContainText('LED Hat 999.0.0 is available', { timeout: 10000 });
     await page.click('#btn-app-update-later');
@@ -147,7 +151,7 @@ test('web app does not query GitHub Releases', async ({ page }) => {
   await installFakeHat(page);
   let calls = 0;
   await page.route('https://api.github.com/**', (route) => { calls++; return route.fulfill({ json: [] }); });
-  await page.goto('/');
+  await page.goto('/?controller=1');
   await connectHat(page);
   await page.getByRole('tab', { name: 'Settings' }).click();
   await expect(page.locator('#app-update')).toContainText('The web app updates itself');

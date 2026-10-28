@@ -18,7 +18,9 @@ import { composeSequence } from '../render/sequence';
 import { exportSelectedJson, mergeSharedPresets, parseSharedBackup, type ShareSelection } from '../storage/sharedBackup';
 import { MockTransport } from '../transport/mock';
 import { SPIKE_PROFILE, type TransportProfile } from '../transport/types';
-import { bluetoothSupport, connectWebBluetooth } from '../transport/webBluetooth';
+import { forgetWebHat, saveWebHat } from '../transport/webBluetoothMemory';
+import { connectionTabClient } from '../transport/connectionTab';
+import { bluetoothSupport } from '../transport/webBluetooth';
 import { chooseNativeCap, connectNativeCap, readCapRssi, startNativeScan, stopNativeScan } from '../transport/nativeBle';
 import { isNativeApp, platformName } from '../platform';
 import { applyGroupContent, applyImportedApproachSettings, getApproachSettings, approachRunning, connectAsPrimary, createContentChanged, disconnectPrimary, initApproach, keepBlackChanged, renderApproach, sharePeers, shareIdentity, textFontChanged, type PrimaryCap } from '../approach/ui';
@@ -26,7 +28,9 @@ import { listenForShares, withShareLink } from '../approach/contentExchange';
 import { sendPreset, ShareState, type ShareKind, type ShareReceiver } from '../approach/presetShare';
 import { shareTextFile } from './shareFile';
 import { initTabs } from './tabs';
+import { setupInstallPrompt } from './install';
 import { initConnectionStatus } from './connectionStatus';
+import { openHatTab, CONNECTION_TAB } from './browserTabs';
 import { GreetingUi } from '../scanner/ui';
 import { SoundUi } from '../sound/ui';
 import { UpdateUi } from '../update/ui';
@@ -89,8 +93,17 @@ function newController() {
 const sharedCap = () => native || useMock;
 const updateConnectionStatus = initConnectionStatus($('#connection-status'), () => {
   if (sharedCap()) disconnectPrimary();
-  else controller.disconnect();
+  else {
+    forgetLastHat(); controller.disconnect();
+    openHatTab(new URL('?hatConnection=1#connect', location.href).href, CONNECTION_TAB);
+  }
 });
+
+// Browser permission and the active GATT link are separate from our saved hat identity.
+function forgetLastHat() { forgetWebHat(); restoreNote = ''; }
+let restoreNote = '';
+let restoringWebConnection = false;
+let wasHatConnected = false;
 const watched = new WeakSet<DeviceController>();
 function onPrimaryChange(p: PrimaryCap | null) {
   scanner?.stopCamera();
@@ -118,10 +131,10 @@ function renderStatus() {
   const connected = s === 'Ready' || s === 'Uploading';
   updateConnectionStatus(connected);
   const p = controller.progress;
-  $('#status-label').textContent = s === 'Uploading' && p ? `Uploading ${p.sent}/${p.total}` : s === 'Ready' && deviceName ? `Ready: ${deviceName}` : s;
+  $('#status-label').textContent = s === 'Uploading' && p ? `Uploading ${p.sent}/${p.total}` : s === 'Ready' && deviceName ? `Ready: ${deviceName}` : restoringWebConnection && s === 'Selecting' ? `Reconnecting to ${deviceName || 'your hat'}...` : s;
   const err = controller.error;
   const msg = $('#conn-msg', document);
-  if (msg) msg.textContent = err ?? '';
+  if (msg) msg.textContent = [restoreNote, err].filter(Boolean).join(' ');
   const prog = document.querySelector<HTMLProgressElement>('#progress');
   if (prog && p) { prog.max = p.total; prog.value = p.sent; }
   updateButtons();
@@ -156,27 +169,48 @@ function updateButtons() {
   const prog = document.getElementById('progress');
   if (prog) prog.hidden = s !== 'Uploading';
   const label = document.getElementById('btn-connect');
-  if (label) label.textContent = s === 'Error' || controller.error ? 'Reconnect' : 'Connect';
+  if (label) {
+    label.textContent = restoringWebConnection ? 'Reconnecting...' : 'Connect hat';
+    label.setAttribute('aria-disabled', String(busy || ready));
+    label.tabIndex = busy || ready ? -1 : 0;
+  }
 }
 
-/** Until a hat is connected only the connection controls are shown; everything else needs a hat. */
-let wasConnected = false;
+/** Hat commands need a connection; navigation and badge scanning remain available. */
 function applyConnectionGate() {
   const s = controller.state;
   const connected = s === 'Ready' || s === 'Uploading';
-  const justConnected = connected && !wasConnected;
-  wasConnected = connected;
+  const justConnected = connected && !wasHatConnected;
   document.body.classList.toggle('disconnected', !connected);
-  for (const id of ['content-editor', 'github-section', 'tab-bar', 'tab-scan', 'tab-sound', 'tab-settings']) {
+  for (const id of ['content-editor', 'github-section']) {
     const el = document.getElementById(id);
     if (el) el.hidden = !connected;
+  }
+  for (const id of ['tab-bar', 'tab-sound', 'tab-scan', 'tab-settings']) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = id === 'tab-bar' && !showTab;
+  }
+  for (const id of ['tab-presets', 'tab-sound', 'tab-settings']) {
+    const tab = document.getElementById(id) as HTMLButtonElement | null;
+    if (tab) {
+      tab.hidden = !connected;
+      tab.disabled = !connected;
+    }
+  }
+  const customTab = document.getElementById('tab-custom');
+  if (customTab) {
+    customTab.querySelector('span')!.textContent = connected ? 'Custom' : 'Connect hat';
+    customTab.querySelector('path')!.setAttribute('d', connected
+      ? 'm15 3 6 6-12 12H3v-6L15 3zm-3 3 6 6M3 15l6 6'
+      : 'm7 7 10 10-5 4V3l5 4L7 17');
   }
   const connectionCard = document.getElementById('connection-card');
   if (connectionCard) connectionCard.hidden = connected;
   const approachTab = document.getElementById('tab-approach');
   if (approachTab) approachTab.hidden = !connected || !approachAvailable;
-  if (!connected && showTab && $('#view-custom').hidden) showTab('custom');
-  if (justConnected && showTab) showTab('presets');
+  if (wasHatConnected && !connected) showTab?.('custom');
+  wasHatConnected = connected;
+  if (justConnected) showTab?.('presets');
 }
 
 function banner(html: string | null) {
@@ -196,15 +230,24 @@ function renderCustom() {
       ${sup.ok || useMock ? '' : `<p class="bad">${esc(sup.ok ? '' : sup.reason)}</p>`}
       ${useMock ? '<p class="warn">Mock mode: no real hat is used.</p>' : ''}
       <div class="row">
-        <button id="btn-connect" class="primary">Connect</button>
+        ${sharedCap() ? '<button id="btn-connect" class="primary">Connect hat</button>' : '<a id="btn-connect" class="action-link primary" href="?hatConnection=1#connect" target="iledcolor-led-hat-connection" rel="opener">Connect hat</a>'}
         <button id="btn-install" hidden>Install app</button>
       </div>
       <p id="conn-msg" class="small"></p>
-      <p class="small">Close other controller apps first. ${native ? `${platformName() === 'ios' ? 'iOS' : 'Android'} will ask for Bluetooth permission the first time you connect.` : 'Choose your hat in the browser Bluetooth picker. Connecting requires Web Bluetooth; editing and presets are available after connecting.'}</p>
-      <p class="small" id="install-help" hidden>To install: use your browser's Install app or Add to Home Screen option.</p>
+      <p class="small">Close other controller apps first. ${native ? `${platformName() === 'ios' ? 'iOS' : 'Android'} will ask for Bluetooth permission the first time you connect.` : 'Connect hat opens the LED Hat Connection tab. Choose your hat there; this controller opens Presets once connected. Badge scanning works without a hat.'}</p>
+      <p class="small" id="install-help" hidden>Install app works on desktop and mobile. If no prompt opens here, use the browser menu to choose Install app (or Add to Home Screen on a phone).</p>
     </div>
     <div id="content-editor"></div>`;
-  $('#btn-connect').onclick = onConnect;
+  if (sharedCap()) $('#btn-connect').onclick = onConnect;
+  else $('#btn-connect').onclick = (event) => {
+    const link = $('#btn-connect') as HTMLAnchorElement;
+    if (link.getAttribute('aria-disabled') === 'true') { event.preventDefault(); return; }
+    restoreNote = 'Opening LED Hat Connection. Choose Connect LED hat in that tab to pair your hat.';
+    const message = document.getElementById('conn-msg');
+    if (message) message.textContent = restoreNote;
+    // Let Chrome activate the named tab through the user's link click. Scripted
+    // focus can be ignored, and rerendering here can replace the clicked link.
+  };
   renderStatus();
 }
 
@@ -339,18 +382,37 @@ async function onConnect() {
     } catch (e) {
       if ((e as Error).name !== 'SelectionCancelledError') { const m = document.getElementById('conn-msg'); if (m) m.textContent = (e as Error).message; }
     }
+    if (controller.state === 'Ready') showTab?.('presets');
     renderStatus();
     return;
   }
-  newController();
-  deviceName = '';
-  await controller.connect(async () => {
-    const sup = bluetoothSupport();
-    if (!sup.ok) throw new Error(sup.reason);
-    const r = await connectWebBluetooth();
-    deviceName = r.deviceName;
-    return r.transport;
-  });
+
+}
+
+/** Reattach only to a live owner; saved identity alone never triggers pairing. */
+async function restoreWebConnection(selectHat = false) {
+  if (sharedCap() || restoringWebConnection || !['Disconnected', 'Error'].includes(controller.state)) return;
+  const client = connectionTabClient();
+  const live = await client.status();
+  if (!live || restoringWebConnection || !['Disconnected', 'Error'].includes(controller.state)) return;
+  restoringWebConnection = true;
+  deviceName = live.deviceName;
+  restoreNote = `Reconnecting to ${live.deviceName}...`;
+  renderStatus();
+  try {
+    await controller.connect(async () => (await client.connect(live.deviceId, 10000)).transport);
+  } finally {
+    restoringWebConnection = false;
+    restoreNote = ['Ready'].includes(controller.state) ? '' : 'The connection tab is unavailable. Open Custom and use Connect hat to reconnect.';
+  }
+  if (controller.state === 'Ready') {
+    saveWebHat({ id: live.deviceId, name: live.deviceName });
+    if (selectHat) showTab?.('presets');
+  } else showTab?.('custom');
+  await afterWebConnect();
+}
+
+async function afterWebConnect() {
   if (settings.keepBlack && controller.state === 'Ready') {
     await controller.applyKeepBlackIdle(physical(solid(...logicalDims(), [0, 0, 0]))).catch(() => undefined);
   }
@@ -1149,6 +1211,10 @@ function setCreateFrom(c: Content, expand = true) {
 let showTab: ((name: string) => boolean) | undefined;
 
 function onTabSelected(name: string) {
+  if (!sharedCap()) {
+    const url = new URL(location.href); url.hash = name;
+    history.replaceState(null, '', url.href);
+  }
   if (name !== 'scan') scanner?.stopCamera();
   if (name !== 'sound') void sound?.stop();
   if (name === 'presets') void renderPresets();
@@ -1171,15 +1237,7 @@ function setupPwa() {
     onRegisterError(e) { console.error(e); },
   });
 
-  let deferred: (Event & { prompt: () => Promise<void> }) | null = null;
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferred = e as typeof deferred;
-    const b = document.getElementById('btn-install');
-    if (b) { b.hidden = false; b.onclick = () => deferred?.prompt(); }
-  });
-  if (!window.matchMedia('(display-mode: standalone)').matches)
-    setTimeout(() => { const h = document.getElementById('install-help'); if (h && !deferred) h.hidden = false; }, 1500);
+  setupInstallPrompt();
 }
 
 function setupAppUpdates() {
@@ -1236,9 +1294,27 @@ async function main() {
   renderDeviceSettings();
   // Navigation must not wait for optional features to restore storage or query native capabilities.
   showTab = initTabs($('#tab-bar'), onTabSelected);
+  $('#tab-custom').addEventListener('click', () => {
+    if (!sharedCap() && !restoringWebConnection && ['Disconnected', 'Error'].includes(controller.state)) {
+      $('#btn-connect')?.click();
+    }
+  });
   void renderPresets();
   void renderBackup();
   applyConnectionGate();
+  showTab(location.hash === '#scan' ? 'scan' : 'custom');
+  if (!sharedCap()) {
+    window.addEventListener('hashchange', () => {
+      const requested = location.hash.slice(1);
+      if (requested === 'hat') showTab?.(controller.state === 'Ready' ? 'custom' : 'scan');
+      else if (['presets', 'custom', 'sound', 'scan', 'settings'].includes(requested)) showTab?.(requested);
+    });
+    connectionTabClient().onAvailable(() => { void restoreWebConnection(true).catch(() => renderStatus()); });
+    void restoreWebConnection(true).catch((error: unknown) => {
+      restoreNote = `Could not reach the connection tab: ${error instanceof Error ? error.message : String(error)}`;
+      renderStatus();
+    });
+  }
   renderCreate();
   setupPwa();
   setupAppUpdates();

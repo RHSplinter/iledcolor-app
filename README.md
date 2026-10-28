@@ -22,13 +22,29 @@ This is the Xebia Led hat used/introduced at GitHub Universe 2026.
 
 4. If you have an Android device, you'll need it to allow bluetooth access in order to pair with the cap.
 5. In the browser (Bluefy browser for iPhone), navigate to https://rhsplinter.github.io/iledcolor-app.
-6. Press the connect button at the top of the page and connect to the Bluetooth name of the cap you discovered in step 2.
-7. Open **Custom**, expand the content section you want, and use its **Send to cap** button to apply your changes. The **Presets** tab is first and opens by default after connecting.
+6. On **LED Hat Connection**, press **Connect LED hat**, select the cap name from step 2, and pair. The controller opens after connection. You can also choose **Go to LED Hat Controller** to scan without a hat.
+7. Open **Custom**, expand the content section you want, and use its **Send to cap** button to apply your changes.
+   Keep the LED Hat Connection tab open. Refreshing the controller reattaches to that live link. If the link is gone, Scan stays available and Custom shows **Connect hat** to return to the connection screen. Explicit **Disconnect** in the top connection status releases the link and clears the remembered hat.
 8. Familiarize yourself with the controls in the app and ask questions if you don't understand it. We have loaded the app with some presets you can use.
+
+## Connect the hat or use the scanner
+
+The website opens on **LED Hat Connection**, with **Connect LED hat**, **Go to LED Hat Controller**, and **Install app**. This tab explains that it holds the Bluetooth link and must stay open while using a connected hat.
+
+- **Connect LED hat** opens the browser's device picker from that click. After pairing, the controller opens with **Presets** selected and receives focus. The connection tab stays open in the background.
+- **Go to LED Hat Controller** opens **Scan** immediately without attempting to pair or reconnect from an old saved device. Badge scanning works without a hat; results stay in the controller and nothing is sent to a hat.
+- The browser controller has five tabs: **Presets**, **Custom**, **Sound**, **Settings**, **Scan**. Custom uses the drawing/pencil icon. Without a hat, only **Connect hat** and **Scan** are shown. The connection screen opens by default; Scan remains available without pairing. Presets, Sound, and Settings appear after connection, and Connect hat becomes Custom.
+- On Custom, **Connect hat** opens or focuses the connection tab. The picker runs only there. When the hat connects, the controller automatically selects Presets.
+- **Return to LED Hat Controller** focuses the existing controller without reloading it, or opens a replacement if it was closed.
+- Go/Return and Connect hat use normal named-tab links. If the browser blocks the automatic controller opening after pairing, use Return; the hat remains connected and no second pairing is needed.
+- Refreshing the controller reattaches only to a live connection tab. It does not call the device picker or use experimental saved-device APIs. If the connection is gone or reattachment fails, the controller shows Connect hat and Scan remains available.
+- Disconnect releases the held link and forgets the saved hat. Closing or refreshing the connection tab also ends the Bluetooth link.
+
+No experimental browser flags are needed. Install app is the third action and supports desktop and mobile browsers that offer installation. If the browser has not supplied an install prompt, the button explains the browser menu option. The connection page remains open while the controller runs in another tab or window. Native Android/iOS builds continue to use their native Bluetooth connection and retain Approach mode.
 
 ## Custom content and backups
 
-The **Custom** tab replaces Connect. **Text**, **Solid color**, **Image** and
+The **Custom** tab contains the hat controls. **Text**, **Solid color**, **Image** and
 **GitHub Contributions** each start collapsed; a right-pointing chevron expands a
 section and turns down while it is open. Text scrolls automatically when it is wider than the cap,
 supports emoji, and has its own font choice (or the Settings default). Images support

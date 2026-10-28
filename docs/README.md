@@ -2,14 +2,14 @@
 
 ## App navigation
 
-The native apps have five icon tabs: **Custom**, **Approach**, **Scan**, **Sound**, and
-**Settings** (the gear icon at the far right). The web app has **Custom**, **Scan**, **Sound**
-and **Settings**; native-only Approach detection is not offered in the browser.
-Until a cap is connected, the app shows only the **Hat connection** controls (connect,
-connection status and install help); the tab bar, content editor and all other tabs appear
-once the cap is ready and stay available during uploads. If the connection is lost or you
-disconnect, the app returns to the connection controls. The whole **Hat connection**
-section is hidden while the cap is connected, including during uploads.
+The web controller has five icon tabs: **Presets**, **Custom**, **Sound**, **Settings**, and **Scan** (the gear icon). Custom uses the drawing/pencil icon. Native apps also retain their existing Approach mode.
+
+The website starts on **LED Hat Connection**. Connect there to select and pair the hat; the controller opens with Presets selected. Keep the connection tab open because it owns the Bluetooth link. **Go to LED Hat Controller** also works without a hat and opens Scan without an automatic pairing attempt.
+
+Without a hat, only **Connect hat** and **Scan** remain visible. The connection screen opens by default; Scan can recognize badges and show results locally. Connect hat opens or focuses the Bluetooth connection tab. After connecting, the full tab bar appears, Custom uses the pencil icon, and Scan is last. On connection success, the controller selects Presets. Refresh reattaches only to an existing live connection tab. If that link fails or is gone, the controller returns to Connect hat, with Scan still available.
+
+**Install app** uses the existing browser installation flow and is available on the connection screen. The installed app uses the same held-link and controller-window flow.
+
 The **Hat connection** section has no Disconnect button. To disconnect a connected cap,
 tap the connection status pill at the top and select **Disconnect**.
 Tap the pill again, tap elsewhere or press Escape to dismiss the button.
@@ -46,7 +46,7 @@ tab navigation and responsive controls on Android, iOS and web.
   phrase reactions, pocket-pause settings, dictionary and editable animation text.
 - **Settings:** saved presets and category-based sharing/import, then display brightness/on/off,
   **Keep cap black unless an approach, scan or sound event is active**, LED text font, expandable test patterns and protocol log, and rotation/mirroring/transport settings.
-  Loading a content preset opens its Custom section; loading a group preset opens Approach.
+  Loading a content preset opens its Hat section; loading a group preset opens Approach.
 
 **Settings → Built-in presets** includes **Xebia 💜 GitHub**, **LGTM 👍** and literal
 `<header>` scrolling text, the supplied **Xebia logo**, the **GitHub Copilot logo**,
@@ -73,7 +73,7 @@ display height. Glyphs have trimmed side bearings and a one-pixel gap between le
 emoji get a two-pixel gap on each side so they never touch neighbouring letters.
 Emoji retain their system colour appearance and reserve their actual
 rendered width rather than an assumed square. The sample
-and Custom preview update immediately (unless the text has its own font); send again to replace content already on the
+and Hat preview update immediately (unless the text has its own font); send again to replace content already on the
 hat. Running Approach content updates automatically; subsequent Scan greetings and
 Sound reactions use the chosen font. The app remembers the choice after reload.
 Font copyright and SIL Open Font License notices are bundled in [public/licenses](public/licenses/).
@@ -270,7 +270,7 @@ uses manual local cap order and deterministic phone-ID order across phones.
 
 In **Settings → Backup**, choose what to include before tapping **Share presets**:
 **Creations** (saved text, colors, images, GIFs, GitHub configurations and sequences,
-all current Custom section drafts including text font and image fit/background before
+all current Hat section drafts including text font and image fit/background before
 choosing a file, current content and sequence steps including a paused sequence draft,
 plus the current GitHub handle, prefix/postfix text and independent scroll speed),
 **Approach settings** (saved group presets, current group content, mode, beacon and nearby-cap detection),
@@ -350,7 +350,7 @@ selects the general parser. Regex named groups can include `name`, `firstname`,
 can use each of these fields. Manual scan-data entry is available when a camera cannot
 be used. Invalid or unmatched patterns show an error without changing the cap.
 
-Send content to the cap once before scanning, or enable **Keep cap black when idle**:
+Scanning works without a cap and shows results without sending a greeting. To play greetings, send content to the cap first or enable **Keep cap black when idle**:
 the protocol cannot read back content installed by another app or before the current
 connection. The app retains the last successfully sent image or GIF, including content
 sent by Approach mode; when keep-black is enabled, the cap restores its black,

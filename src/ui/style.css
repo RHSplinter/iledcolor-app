@@ -7,6 +7,8 @@ header { display:flex; gap:8px; padding:calc(8px + env(safe-area-inset-top)) 12p
 #status { padding:0; }
 #status-toggle { display:inline-flex; align-items:center; gap:6px; min-height:0; padding:4px 10px; max-width:100%; border-radius:99px; background:none; font:inherit; }
 #status-toggle:disabled { opacity:1; }
+#status.err #status-toggle { background:#4a2020; color:var(--bad); }
+#status.err .connection-icon.disconnected { color:inherit; }
 #connection-actions { position:absolute; top:calc(100% + 6px); left:0; z-index:1; padding:8px; border:1px solid var(--border); border-radius:12px; background:var(--card); box-shadow:0 4px 16px #0008; }
 .connection-icon { width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .connection-icon.connected { color:var(--ok); }
@@ -36,7 +38,7 @@ label:has(> input[type=checkbox]), label:has(> input[type=radio]) { display:flex
 input[type=checkbox], input[type=radio] { accent-color:var(--accent); flex:none; }
 button { padding:10px 14px; border-radius:10px; border:0; background:#2c2c2e; min-height:44px; }
 button.primary { background:var(--accent); color:#001; font-weight:600; min-height:48px; }
-button.danger { background:#4a2020; }
+button.danger { background:#4a2020; color:var(--bad); }
 button:disabled { opacity:.45; }
 button:not(:disabled) { cursor:pointer; }
 :is(button, input, select, textarea, summary, a):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
@@ -163,4 +165,8 @@ fieldset.tier legend { padding:0 6px; font-weight:600; }
 @media (prefers-reduced-motion:reduce) {
   .switch input, .switch input::after { transition:none; }
 }
-body.disconnected { padding-bottom:env(safe-area-inset-bottom); }
+body.disconnected { padding-bottom:calc(70px + env(safe-area-inset-bottom)); }
+
+.action-link { display:inline-block; padding:10px 14px; border:1px solid #555; border-radius:6px; color:inherit; background:#303030; text-decoration:none; font:inherit; cursor:pointer; }
+.action-link.primary { background:#1264a3; border-color:#2684c7; }
+.action-link[aria-disabled="true"] { opacity:.5; pointer-events:none; }

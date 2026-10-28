@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { openBackup, openCustomSection, connectHat, waitForServiceWorker } from './hat';
 
-test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page, context }) => {
+test('mock hat: connect, preview, send, preset, offline relaunch', async ({ page, context, baseURL }) => {
   const external: string[] = [];
-  page.on('request', (r) => { if (!r.url().startsWith('http://localhost:4173')) external.push(r.url()); });
+  const appOrigin = new URL(baseURL!).origin;
+  page.on('request', (r) => { if (new URL(r.url()).origin !== appOrigin) external.push(r.url()); });
 
   await page.goto('/#mock');
   await connectHat(page);
@@ -247,13 +248,18 @@ test('keepBlack keeps cap black when idle while displaying approach, sound and s
 
   await page.click('nav [data-tab=scan]');
   await expect(page.locator('#qr-ready')).toHaveText('Ready to scan a badge.');
+  // Keep playback active long enough to exercise cancellation on a busy runner.
+  await page.fill('#qr-repetitions', '30');
   await page.locator('#view-scan summary').click();
   await page.fill('#qr-raw', 'Ada');
   await page.click('#qr-submit');
   await expect(page.locator('#qr-status')).toContainText('Hi Ada!', { timeout: 15_000 });
+  // Wait for upload to finish before cancelling playback. The extended repeat
+  // count above keeps the greeting active after the controller returns to Ready.
   await expect(page.locator('#status')).toContainText('Ready', { timeout: 15_000 });
   await page.click('#qr-cancel');
   await expect(page.locator('#qr-status')).toContainText('ended early. Previous content restored.', { timeout: 15_000 });
+  await expect(page.locator('#status')).toContainText('Ready', { timeout: 15_000 });
 
   await page.click('nav [data-tab=approach]');
   await expect(page.locator('#ap-caps .cap-note')).toHaveText('keep black (idle)');
@@ -299,7 +305,7 @@ test('the Custom tab cap is cap 1 of approach mode', async ({ page }) => {
   await page.locator('#btn-status-disconnect').click();
   await expect(page.locator('#status')).toHaveText('Disconnected');
   // Without the primary cap only the connection controls remain, even while another cap is connected.
-  await expect(page.locator('#tab-bar')).toBeHidden();
+  await expect(page.locator('#tab-bar')).toBeVisible();
   await expect(page.locator('#view-approach')).toBeHidden();
   await connectHat(page);
   await page.click('nav button[data-tab=approach]');

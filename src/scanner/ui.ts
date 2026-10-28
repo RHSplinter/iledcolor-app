@@ -325,9 +325,9 @@ export class GreetingUi {
   updateStatus() {
     if (!document.getElementById('qr-start')) return;
     const ctl = this.ctx.controller();
-    const unavailable = ctl.state !== 'Ready' || !ctl.canRestoreContent || ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
-    $('qr-ready').textContent = this.scanning ? '' : ctl.state !== 'Ready' ? 'Connect your primary cap on Connect before scanning.'
-      : !ctl.canRestoreContent ? 'Send content from Connect first so it can be restored after the greeting.'
+    const unavailable = ctl.temporaryActive || this.processing || this.sharingLog || this.savingLogging;
+    $('qr-ready').textContent = this.scanning ? '' : ctl.state !== 'Ready' ? 'Ready to scan without a hat. Results stay here; no greeting is sent.'
+      : !ctl.canRestoreContent ? 'Ready to scan. Send content to the hat before playing greetings.'
       : ctl.temporaryActive || this.processing ? 'Wait for the current greeting to finish, or end it above.'
       : this.sharingLog || this.savingLogging ? 'Wait for the scan log operation to finish.' : 'Ready to scan a badge.';
     $<HTMLButtonElement>('qr-start').disabled = unavailable || this.scanning;
@@ -464,6 +464,11 @@ export class GreetingUi {
       await saveKv('qrGreeting', settings);
       const extracted: ExtractedName = await extractNameSafely(raw, settings.pattern);
       const text = greetingText(settings.template, extracted);
+      if (target !== this.ctx.controller()) throw new Error('The primary cap changed. Scan again for the current cap.');
+      if (target.state !== 'Ready' || !target.canRestoreContent) {
+        this.status(`Scanned: ${text}. ${target.state !== 'Ready' ? 'No hat connected' : 'Hat content is not ready'}; nothing sent to the hat.`);
+        return;
+      }
       await ensureFont();
       const [width, height] = this.ctx.logicalDims();
       const marquee = renderSpanMarquee(text, width, height, 1, 0, parseHexColor('#ffffff'), parseHexColor('#000000'));

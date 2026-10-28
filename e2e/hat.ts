@@ -1,12 +1,13 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type BrowserContext } from '@playwright/test';
 
 /**
  * Installs a fake LED hat behind both Web Bluetooth and the native BluetoothLe plugin bridge, so
  * plain web and app-shell pages can connect without hardware. It acks every write like the
  * in-app mock hat (`#mock`). Call it before `page.goto`.
  */
-export async function installFakeHat(page: Page) {
-  await page.addInitScript(() => {
+export async function installFakeHat(page: Page | BrowserContext) {
+  const target = 'context' in page ? page.context() : page;
+  await target.addInitScript(() => {
     const SERVICE = '0000a950-0000-1000-8000-00805f9b34fb';
     const CMD = '0000a951-0000-1000-8000-00805f9b34fb';
     const DATA = '0000a952-0000-1000-8000-00805f9b34fb';
@@ -110,12 +111,30 @@ export async function openBackup(page: Page) {
   await expect(page.locator('#btn-export')).toBeVisible();
 }
 
-/** Connects through the Custom tab and waits until the hat is ready. */
+/** Connects through the visible connection control and waits until the hat is ready. */
 export async function connectHat(page: Page, selectedTab: 'custom' | 'presets' = 'custom') {
-  await page.click('#btn-connect');
+  const native = await page.evaluate(() => location.hash === '#mock' || Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.()));
+  if (await page.locator('#status').textContent().then((text) => text?.includes('Ready'))) {
+    await page.getByRole('tab', { name: selectedTab === 'custom' ? 'Custom' : 'Presets', exact: true }).click();
+    return;
+  }
+  if (native) {
+    await page.locator('#tab-custom').click();
+    await page.click('#btn-connect');
+  } else {
+    // The Connect hat tab also opens the owner. Use just the page link, and
+    // start listening before clicking so a fast popup cannot be missed.
+    const existingOwner = page.context().pages().find((candidate) =>
+      candidate !== page && new URL(candidate.url()).searchParams.has('hatConnection'));
+    const ownerReady = existingOwner ? Promise.resolve(existingOwner) : page.waitForEvent('popup');
+    await page.getByRole('link', { name: 'Connect hat', exact: true }).click();
+    const owner = await ownerReady;
+    await owner.getByRole('button', { name: 'Connect LED hat', exact: true }).click();
+  }
   await expect(page.locator('#status')).toContainText('Ready', { timeout: 15000 });
-  if (selectedTab === 'custom') await page.getByRole('tab', { name: 'Custom', exact: true }).click();
+  await page.getByRole('tab', { name: selectedTab === 'custom' ? 'Custom' : 'Presets', exact: true }).click();
 }
+
 
 /**
  * Waits until the service worker is active, i.e. it has precached the app (about 8 MB including OCR assets).

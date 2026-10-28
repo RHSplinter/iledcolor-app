@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { initTabs } from '../src/ui/tabs';
 import shell from '../index.html?raw';
 
-const names = ['presets', 'custom', 'approach', 'scan', 'sound', 'settings'];
+const names = ['presets', 'custom', 'approach', 'sound', 'settings', 'scan'];
 const button = (name: string) => document.getElementById(`tab-${name}`) as HTMLButtonElement;
 const panel = (name: string) => document.getElementById(`view-${name}`)!;
 const selected = vi.fn();
@@ -28,6 +28,7 @@ describe('tab navigation using the actual app shell', () => {
     document.body.innerHTML = new DOMParser().parseFromString(shell, 'text/html').body.innerHTML;
     selected.mockReset();
     select = initTabs(document.getElementById('tab-bar')!, selected);
+    document.getElementById('tab-bar')!.hidden = false;
   });
 
   it('keeps Presets selected initially and Approach unavailable on web', () => {
@@ -70,8 +71,8 @@ describe('tab navigation using the actual app shell', () => {
   it('wraps arrows, skips hidden tabs, and moves focus with selection', () => {
     button('custom').focus();
     for (const [key, name] of [
-      ['ArrowRight', 'scan'], ['ArrowRight', 'sound'], ['ArrowRight', 'settings'],
-      ['ArrowRight', 'presets'], ['ArrowLeft', 'settings'], ['ArrowLeft', 'sound'],
+      ['ArrowRight', 'sound'], ['ArrowRight', 'settings'], ['ArrowRight', 'scan'],
+      ['ArrowRight', 'presets'], ['ArrowLeft', 'scan'], ['ArrowLeft', 'settings'],
     ] as const) {
       expect(press(key).defaultPrevented).toBe(true);
       expect(document.activeElement).toBe(button(name));
@@ -83,14 +84,14 @@ describe('tab navigation using the actual app shell', () => {
     button('custom').focus();
     button('settings').disabled = true;
     press('End');
-    expectSelection('sound');
+    expectSelection('scan');
     press('Home');
     expectSelection('presets');
     button('approach').hidden = false;
     button('approach').focus();
     press('ArrowRight');
-    expectSelection('scan');
-    expect(document.activeElement).toBe(button('scan'));
+    expectSelection('sound');
+    expect(document.activeElement).toBe(button('sound'));
   });
 
   it('leaves ordinary and modified keys and focus outside the tab bar alone', () => {

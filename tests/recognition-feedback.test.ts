@@ -17,7 +17,7 @@ vi.mock('../src/storage/db', () => ({
   saveKv: vi.fn().mockResolvedValue(undefined),
   savePreset: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('../src/sound/capture', () => ({ SoundCapture: class { capabilities = async () => ({ speech: true, proximity: false }); } }));
+vi.mock('../src/sound/capture', () => ({ SoundCapture: class { stop = async () => {}; capabilities = async () => ({ speech: true, proximity: false }); } }));
 vi.mock('../src/sound/analysis', async (original) => ({
   ...await original<typeof import('../src/sound/analysis')>(), verifyUtterance: vi.fn(),
 }));

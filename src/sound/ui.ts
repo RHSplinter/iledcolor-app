@@ -230,7 +230,7 @@ export class SoundUi {
     $<HTMLButtonElement>('sound-stop').disabled = this.mode === 'stopping';
     $('sound-end').hidden = !this.playing;
     $<HTMLButtonElement>('sound-end').disabled = target.state !== 'Ready';
-    $('sound-ready').textContent = target.state !== 'Ready' ? 'Connect your primary cap on Connect first.'
+    $('sound-ready').textContent = target.state !== 'Ready' ? 'Connect your hat on Custom first.'
       : !target.canRestoreContent ? 'Send content from Connect first so it can be restored after each reaction.'
       : target.temporaryActive ? 'Cap reaction or QR greeting in progress; other detections are ignored.' : 'Primary cap ready. Other caps are not interrupted.';
     $('sound-profile').textContent = this.profile ? 'Voice sample saved on this device.' : 'No voice sample. Record one before enabling phrases.';
@@ -242,6 +242,11 @@ export class SoundUi {
     $<HTMLButtonElement>('sound-forget').disabled = busy || !this.profile;
     $<HTMLButtonElement>('sound-preview-button').disabled = busy || this.rendering;
     $<HTMLButtonElement>('sound-test').disabled = busy || !ready;
+    if (target.state === 'Disconnected' || target.state === 'Error') {
+      for (const control of $('view-sound').querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input, button, select')) control.disabled = true;
+      if (this.mode !== 'idle' && this.mode !== 'stopping') void this.stop();
+    }
+
   }
 
   private async start(enrolling: boolean) {
